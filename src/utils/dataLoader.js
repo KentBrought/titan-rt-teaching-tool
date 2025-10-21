@@ -10,6 +10,10 @@ const dataCache = new Map();
  */
 export const clearDataCache = () => {
   dataCache.clear();
+  // Force garbage collection if available
+  if (window.gc) {
+    window.gc();
+  }
   console.log('Data cache cleared');
 };
 
@@ -21,12 +25,98 @@ export const getCacheSize = () => {
 };
 
 /**
+ * Get memory usage information
+ */
+export const getMemoryInfo = () => {
+  if (performance.memory) {
+    return {
+      used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + ' MB',
+      total: Math.round(performance.memory.totalJSHeapSize / 1024 / 1024) + ' MB',
+      limit: Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024) + ' MB'
+    };
+  }
+  return null;
+};
+
+/**
+ * Sample data to reduce memory usage
+ * @param {Object} data - The full dataset
+ * @param {number} maxPoints - Maximum number of points to keep
+ * @returns {Object} Sampled data
+ */
+const sampleData = (data, maxPoints = 100) => {
+  if (!data || !data.wavelength) return data;
+  
+  const { wavelength, standard, no_ch4, no_haze, inc, emi, daz } = data;
+  
+  // Calculate sampling step
+  const step = Math.max(1, Math.floor(wavelength.length / maxPoints));
+  
+  // Sample wavelengths evenly across the range
+  const sampledWavelength = [];
+  for (let i = 0; i < wavelength.length; i += step) {
+    sampledWavelength.push(wavelength[i]);
+  }
+  
+  // If we don't have enough points, add the last wavelength
+  if (sampledWavelength.length < maxPoints && wavelength.length > 0) {
+    sampledWavelength.push(wavelength[wavelength.length - 1]);
+  }
+  
+  console.log('Wavelength sampling info:');
+  console.log(`Original wavelength range: ${wavelength[0]} - ${wavelength[wavelength.length - 1]} μm (${wavelength.length} points)`);
+  console.log(`Sampled wavelength range: ${sampledWavelength[0]} - ${sampledWavelength[sampledWavelength.length - 1]} μm (${sampledWavelength.length} points)`);
+  console.log(`Sampling step: ${step} (every ${step} points)`);
+  console.log('First 10 sampled wavelengths:', sampledWavelength.slice(0, 10));
+  console.log('Last 10 sampled wavelengths:', sampledWavelength.slice(-10));
+  
+  // Sample spectral data - keep all spectra but sample wavelengths
+  const sampleSpectralArray = (spectralArray) => {
+    if (!spectralArray) return [];
+    return spectralArray.map(spectrum => {
+      if (!spectrum) return [];
+      const sampled = [];
+      for (let i = 0; i < spectrum.length; i += step) {
+        sampled.push(spectrum[i]);
+      }
+      return sampled;
+    });
+  };
+  
+  // Get unique angle values instead of sampling the arrays
+  const uniqueInc = [...new Set(inc || [])];
+  const uniqueEmi = [...new Set(emi || [])];
+  const uniqueDaz = [...new Set(daz || [])];
+  
+  console.log('Original angle arrays:', { 
+    inc: inc?.length, 
+    emi: emi?.length, 
+    daz: daz?.length 
+  });
+  console.log('Unique angles:', { 
+    inc: uniqueInc, 
+    emi: uniqueEmi, 
+    daz: uniqueDaz 
+  });
+  
+  return {
+    wavelength: sampledWavelength,
+    inc: uniqueInc,
+    emi: uniqueEmi,
+    daz: uniqueDaz,
+    standard: sampleSpectralArray(standard),
+    no_ch4: sampleSpectralArray(no_ch4),
+    no_haze: sampleSpectralArray(no_haze)
+  };
+};
+
+/**
  * Load and parse a JSON file with error handling and size limits
  * @param {string} url - The URL to the JSON file
  * @param {number} maxSize - Maximum file size in characters (default: 5MB for large files)
  * @returns {Promise<Object>} The parsed JSON data
  */
-export const loadJsonFile = async (url, maxSize = 5 * 1024 * 1024) => {
+export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
   // Check cache first
   if (dataCache.has(url)) {
     console.log(`Using cached data for ${url}`);
@@ -36,12 +126,6 @@ export const loadJsonFile = async (url, maxSize = 5 * 1024 * 1024) => {
   try {
     console.log(`Loading ${url}...`);
     
-    // For very large files, use a different approach
-    if (url.includes('init_gui_model.json')) {
-      console.log('Detected large atmospheric model file, using mock data');
-      throw new Error('File too large for client-side processing');
-    }
-    
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -50,10 +134,9 @@ export const loadJsonFile = async (url, maxSize = 5 * 1024 * 1024) => {
     const text = await response.text();
     console.log(`Loaded ${url}, size: ${text.length} characters`);
     
-    // Check file size
+    // Check file size - increased limit for real data
     if (text.length > maxSize) {
-      console.warn(`File ${url} is too large (${text.length} chars), using mock data instead`);
-      throw new Error(`File too large: ${text.length} characters (max: ${maxSize})`);
+      console.warn(`File ${url} is very large (${text.length} chars), but attempting to parse...`);
     }
     
     // Parse the JSON with error handling
@@ -63,6 +146,19 @@ export const loadJsonFile = async (url, maxSize = 5 * 1024 * 1024) => {
     } catch (parseError) {
       console.error(`JSON parse error in ${url}:`, parseError);
       throw new Error(`JSON parse error: ${parseError.message}`);
+    }
+    
+    // Sample the data to reduce memory usage
+    if (url.includes('init_gui_library.json')) {
+      console.log('Sampling spectral data to reduce memory usage...');
+      data = sampleData(data, 100);
+      console.log(`Sampled data: ${data.wavelength.length} wavelengths, ${data.standard.length} spectra`);
+      
+      // Check memory usage after sampling
+      const memoryInfo = getMemoryInfo();
+      if (memoryInfo && parseInt(memoryInfo.used) > 100) { // More than 100MB
+        throw new Error('Memory usage too high after data sampling');
+      }
     }
     
     // Cache the data
@@ -75,33 +171,3 @@ export const loadJsonFile = async (url, maxSize = 5 * 1024 * 1024) => {
   }
 };
 
-/**
- * Create mock spectral data for testing when real data fails to load
- * @returns {Object} Mock spectral data
- */
-export const createMockSpectralData = () => {
-  return {
-    wavelength: [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5],
-    inc: [0, 30, 60, 90],
-    emi: [0, 30, 60, 90],
-    daz: [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330],
-    standard: [
-      [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2],
-      [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25],
-      [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3],
-      [0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25, 1.35]
-    ],
-    no_ch4: [
-      [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15],
-      [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2],
-      [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25],
-      [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]
-    ],
-    no_haze: [
-      [0.08, 0.18, 0.28, 0.38, 0.48, 0.58, 0.68, 0.78, 0.88, 0.98, 1.08, 1.18],
-      [0.12, 0.22, 0.32, 0.42, 0.52, 0.62, 0.72, 0.82, 0.92, 1.02, 1.12, 1.22],
-      [0.16, 0.26, 0.36, 0.46, 0.56, 0.66, 0.76, 0.86, 0.96, 1.06, 1.16, 1.26],
-      [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3]
-    ]
-  };
-};

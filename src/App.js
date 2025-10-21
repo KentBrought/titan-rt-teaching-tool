@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
-import { loadJsonFile, createMockSpectralData, clearDataCache } from './utils/dataLoader';
+import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 
 function App() {
   const [activeTab, setActiveTab] = useState('tab1');
@@ -27,6 +27,7 @@ function App() {
   const [spectralData, setSpectralData] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
   const [incidenceIdx, setIncidenceIdx] = useState(0);
   const [emissionIdx, setEmissionIdx] = useState(0);
@@ -48,31 +49,32 @@ function App() {
     const loadSpectralData = async () => {
       try {
         setLoading(true);
+        setError(null);
         console.log('Loading spectral data...');
         
         const spectralJson = await loadJsonFile('/data/init_gui_library.json');
         console.log('Spectral data loaded successfully:', Object.keys(spectralJson));
+        console.log('Memory usage after loading:', getMemoryInfo());
+        
+        // Check if we have valid data
+        if (!spectralJson || !spectralJson.wavelength || !spectralJson.standard) {
+          throw new Error('Invalid spectral data structure');
+        }
+        
         setSpectralData(spectralJson);
         // Initialize angle options and indices
         const inc = spectralJson.inc || [];
         const emi = spectralJson.emi || [];
         const daz = spectralJson.daz || [];
+        console.log('Angle arrays:', { inc: inc.length, emi: emi.length, daz: daz.length });
         setAngleOptions({ inc, emi, daz });
         setIncidenceIdx(0);
         setEmissionIdx(0);
         setAzimuthIdx(0);
       } catch (err) {
         console.error('Error loading spectral data:', err);
-        console.log('Using mock spectral data for testing');
-        const mockSpectral = createMockSpectralData();
-        setSpectralData(mockSpectral);
-        const inc = mockSpectral.inc || [];
-        const emi = mockSpectral.emi || [];
-        const daz = mockSpectral.daz || [];
-        setAngleOptions({ inc, emi, daz });
-        setIncidenceIdx(0);
-        setEmissionIdx(0);
-        setAzimuthIdx(0);
+        setError('Unable to load spectral data due to memory constraints. The dataset is too large for the browser to handle safely.');
+        setSpectralData(null);
       } finally {
         setLoading(false);
         setDataLoaded(true);
@@ -134,14 +136,38 @@ function App() {
                 <div style={{ fontSize: '18px', marginBottom: '10px' }}>🔄</div>
                 <p>Loading spectral data...</p>
               </div>
+            ) : error ? (
+              <div style={{ 
+                padding: '40px', 
+                textAlign: 'center',
+                backgroundColor: '#f8d7da',
+                borderRadius: '8px',
+                margin: '10px',
+                border: '1px solid #f5c6cb'
+              }}>
+                <div style={{ fontSize: '24px', marginBottom: '15px' }}>⚠️</div>
+                <h3 style={{ color: '#721c24', marginBottom: '10px' }}>Memory Error</h3>
+                <p style={{ color: '#721c24', marginBottom: '15px' }}>{error}</p>
+                <p style={{ color: '#856404', fontSize: '14px' }}>
+                  The PyDISORT spectral dataset is too large for the browser to handle safely. 
+                  Consider using a more powerful machine or a different browser for this visualization.
+                </p>
+              </div>
             ) : spectralData ? (
-              <SpectralPlot 
-                spectralData={spectralData}
-                incidenceAngle={angleOptions.inc[incidenceIdx] ?? 0}
-                emissionAngle={angleOptions.emi[emissionIdx] ?? 0}
-                azimuthAngle={angleOptions.daz[azimuthIdx] ?? 0}
-                selectedCases={selectedCases}
-              />
+              <div>
+                <SpectralPlot 
+                  spectralData={spectralData}
+                  incidenceAngle={angleOptions.inc[incidenceIdx] ?? 0}
+                  emissionAngle={0}
+                  azimuthAngle={0}
+                  selectedCases={selectedCases}
+                />
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
+                  Debug: Inc={angleOptions.inc[incidenceIdx] ?? 0}°, 
+                  Emi=0°, 
+                  Az=0°
+                </div>
+              </div>
             ) : (
               <div className="plot-placeholder">
                 <p>No spectral data available</p>
@@ -193,31 +219,6 @@ function App() {
                 <span>{angleOptions.inc[incidenceIdx] ?? 0}°</span>
               </label>
               
-              <label style={{ fontWeight: 'bold' }}>
-                Emission angle
-                <input 
-                  type="range" 
-                  min={0} 
-                  max={Math.max((angleOptions.emi?.length || 1) - 1, 0)} 
-                  step={1}
-                  value={emissionIdx}
-                  onChange={(e) => setEmissionIdx(parseInt(e.target.value, 10))}
-                />
-                <span>{angleOptions.emi[emissionIdx] ?? 0}°</span>
-              </label>
-              
-              <label style={{ fontWeight: 'bold' }}>
-                Azimuth angle
-                <input 
-                  type="range" 
-                  min={0} 
-                  max={Math.max((angleOptions.daz?.length || 1) - 1, 0)} 
-                  step={1}
-                  value={azimuthIdx}
-                  onChange={(e) => setAzimuthIdx(parseInt(e.target.value, 10))}
-                />
-                <span>{angleOptions.daz[azimuthIdx] ?? 0}°</span>
-              </label>
 
               <label>
                 Spectral resolution*

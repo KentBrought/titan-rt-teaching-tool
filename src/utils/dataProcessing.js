@@ -80,12 +80,16 @@ export const createSpectralPlotData = (processedData, incidenceAngle, emissionAn
     return wavelength.map((w, i) => ({ wavelength: w, intensity: 0 }));
   }
 
-  // Calculate the flat index for the spectrum array
+  // For sampled data, we need to find the correct spectrum index
+  // The sampled data has fewer spectra, so we need to map the angle combination to the correct index
   const emissionLength = emi ? emi.length : 1;
   const azimuthLength = daz ? daz.length : 1;
   const angleIndex = incidenceIndex * emissionLength * azimuthLength + 
                      emissionIndex * azimuthLength + 
                      azimuthIndex;
+
+  console.log(`Looking for spectrum at angles: ${incidenceAngle}°, ${emissionAngle}°, ${azimuthAngle}°`);
+  console.log(`Calculated angle index: ${angleIndex} (max: ${(standard?.length || 0) - 1})`);
 
   // Get the spectral data for the selected case
   let spectralValues = [];
@@ -102,6 +106,8 @@ export const createSpectralPlotData = (processedData, incidenceAngle, emissionAn
     default:
       spectralValues = standard && standard[angleIndex] ? standard[angleIndex] : [];
   }
+
+  console.log(`Found ${spectralValues.length} spectral values for ${caseType}`);
 
   // Create plot data
   return wavelength.map((w, i) => ({

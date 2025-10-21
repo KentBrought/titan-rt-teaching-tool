@@ -59,15 +59,15 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
       showgrid: true,
       gridcolor: '#e0e0e0'
     },
-    yaxis: {
-      title: {
-        text: 'Brightness',
-        font: { size: 14, color: '#374151' }
-      },
-      type: 'linear',
-      showgrid: true,
-      gridcolor: '#e0e0e0'
-    },
+          yaxis: {
+            title: {
+              text: 'Apparent Reflectance',
+              font: { size: 14, color: '#374151' }
+            },
+            type: 'linear',
+            showgrid: true,
+            gridcolor: '#e0e0e0'
+          },
     margin: { l: 60, r: 30, t: 60, b: 60 },
     hovermode: 'closest',
     showlegend: true,
@@ -80,28 +80,28 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
 
   if (!spectralData) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center' }}>
+      <div style={{ padding: '20px', textAlign: 'center', height: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p>Loading spectral data...</p>
       </div>
     );
   }
 
-  return (
-    <div style={{ padding: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Plot */}
-      <div style={{ flex: 1, border: '1px solid #dee2e6', borderRadius: '8px' }}>
-        <Plot
-          data={plotData}
-          layout={plotLayout}
-          style={{ width: '100%', height: '100%' }}
-          useResizeHandler={true}
-          config={{
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-          }}
-        />
-      </div>
+        return (
+          <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column' }}>
+            {/* Plot */}
+            <div style={{ flex: 1, border: '1px solid #dee2e6', borderRadius: '8px', height: '500px' }}>
+              <Plot
+                data={plotData}
+                layout={plotLayout}
+                style={{ width: '100%', height: '500px' }}
+                useResizeHandler={true}
+                config={{
+                  displayModeBar: true,
+                  displaylogo: false,
+                  modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                }}
+              />
+            </div>
 
       {/* Info */}
       <div style={{ 
