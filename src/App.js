@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
+import { loadPds4Image, getAvailablePhaseAngles } from './utils/imageLoader';
 
 function App() {
   const [activeTab, setActiveTab] = useState('tab1');
@@ -11,7 +12,8 @@ function App() {
     incidenceAngle: 45,
     emissionAngle: 45,
     spectralResolution: 50,
-    hazeProperties: 50
+    hazeProperties: 50,
+    phaseAngle: 0
   });
 
   const [toggles, setToggles] = useState({
@@ -33,6 +35,7 @@ function App() {
   const [emissionIdx, setEmissionIdx] = useState(0);
   const [azimuthIdx, setAzimuthIdx] = useState(0);
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
+  const [currentImage, setCurrentImage] = useState(null);
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -41,6 +44,22 @@ function App() {
   const handleToggleChange = (name) => {
     setToggles(prev => ({ ...prev, [name]: !prev[name] }));
   };
+
+  // Load image when phase angle changes
+  useEffect(() => {
+    const loadImage = async () => {
+      try {
+        const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
+        const imageDataUrl = await loadPds4Image(phaseAngle);
+        setCurrentImage(imageDataUrl);
+      } catch (error) {
+        console.error('Error loading image:', error);
+        setCurrentImage(null);
+      }
+    };
+
+    loadImage();
+  }, [sliders.phaseAngle]);
 
   // Load spectral data
   useEffect(() => {
@@ -113,13 +132,17 @@ function App() {
         {/* Left side - Display panels */}
         <div className="left-panel">
           <div className="display-row">
-            <div className="display-box true-color">
-              <h2>True Color</h2>
-              <div className="placeholder-circle"></div>
-            </div>
             <div className="display-box ir-color">
               <h2>IR Color</h2>
-              <div className="placeholder-circle"></div>
+              {currentImage ? (
+                <img 
+                  src={currentImage} 
+                  alt="Titan IR Color Image" 
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <div className="placeholder-circle"></div>
+              )}
             </div>
           </div>
           
@@ -242,6 +265,19 @@ function App() {
                   onChange={(e) => handleSliderChange('hazeProperties', e.target.value)}
                 />
                 <span>{sliders.hazeProperties}</span>
+              </label>
+              
+              <label style={{ fontWeight: 'bold' }}>
+                Phase angle
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="71" 
+                  step="1"
+                  value={sliders.phaseAngle}
+                  onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
+                />
+                <span>{sliders.phaseAngle * 5}°</span>
               </label>
             </div>
           </div>
