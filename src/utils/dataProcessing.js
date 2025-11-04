@@ -86,6 +86,32 @@ export const findClosestAngleIndex = (angleArray, targetAngle) => {
 };
 
 /**
+ * Get the actual angles from data that are closest to the provided angles
+ * @param {Object} processedData - Processed spectral data
+ * @param {number} incidenceAngle - Target incidence angle
+ * @param {number} emissionAngle - Target emission angle
+ * @param {number} azimuthAngle - Target azimuth angle
+ * @returns {Object} Object with actual incidence, emission, and azimuth angles
+ */
+export const getActualAngles = (processedData, incidenceAngle, emissionAngle, azimuthAngle) => {
+  if (!processedData) return { incidence: 0, emission: 0, azimuth: 0 };
+
+  const { inc, emi, daz } = processedData;
+  
+  // Find the closest angle indices
+  const incidenceIndex = inc ? findClosestAngleIndex(inc, incidenceAngle) : 0;
+  const emissionIndex = emi ? findClosestAngleIndex(emi, emissionAngle) : 0;
+  const azimuthIndex = daz ? findClosestAngleIndex(daz, azimuthAngle) : 0;
+
+  // Return the actual angles from the data
+  return {
+    incidence: inc && inc[incidenceIndex] !== undefined ? inc[incidenceIndex] : incidenceAngle,
+    emission: emi && emi[emissionIndex] !== undefined ? emi[emissionIndex] : emissionAngle,
+    azimuth: daz && daz[azimuthIndex] !== undefined ? daz[azimuthIndex] : azimuthAngle
+  };
+};
+
+/**
  * Create spectral plot data for a specific angle combination and case
  * @param {Object} processedData - Processed spectral data
  * @param {number} incidenceAngle - Selected incidence angle

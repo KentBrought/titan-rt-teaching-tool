@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import Plot from 'react-plotly.js';
-import { processSpectralData, createSpectralPlotData } from '../utils/dataProcessing';
+import { processSpectralData, createSpectralPlotData, getActualAngles } from '../utils/dataProcessing';
 
 const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases }) => {
   const [processedData, setProcessedData] = useState(null);
   const [plotData, setPlotData] = useState([]);
+  const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
 
   // Process data when component mounts or data changes
   useEffect(() => {
@@ -17,6 +18,10 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
   // Update plot data when parameters change
   useEffect(() => {
     if (processedData) {
+      // Get the actual angles from the data
+      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+      setActualAngles(actual);
+
       const traces = [];
       
       // Create traces for each selected case
@@ -112,7 +117,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
         fontSize: '14px',
         color: '#495057'
       }}>
-        <strong>Current Selection:</strong> Incidence: {incidenceAngle}°, Emission: {emissionAngle}°, Azimuth: {azimuthAngle}°
+        <strong>Current Selection:</strong> Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°
         {Object.entries(selectedCases).filter(([_, selected]) => selected).length === 0 && (
           <span style={{ color: '#dc3545', marginLeft: '10px' }}>
             ⚠️ Please select at least one case to display
