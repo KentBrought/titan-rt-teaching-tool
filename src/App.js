@@ -33,9 +33,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
-  const [incidenceIdx, setIncidenceIdx] = useState(0);
-  const [emissionIdx, setEmissionIdx] = useState(0);
-  const [azimuthIdx, setAzimuthIdx] = useState(0);
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
   const [currentImage, setCurrentImage] = useState(null);
   const [geoValues, setGeoValues] = useState(null);
@@ -128,15 +125,12 @@ function App() {
         }
         
         setSpectralData(spectralJson);
-        // Initialize angle options and indices
+        // Initialize angle options
         const inc = spectralJson.inc || [];
         const emi = spectralJson.emi || [];
         const daz = spectralJson.daz || [];
         console.log('Angle arrays:', { inc: inc.length, emi: emi.length, daz: daz.length });
         setAngleOptions({ inc, emi, daz });
-        setIncidenceIdx(0);
-        setEmissionIdx(0);
-        setAzimuthIdx(0);
       } catch (err) {
         console.error('Error loading spectral data:', err);
         setError('Unable to load spectral data due to memory constraints. The dataset is too large for the browser to handle safely.');
@@ -207,6 +201,7 @@ function App() {
                       <p><strong>Phase (Layer 4):</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
                       <p><strong>Incidence (Layer 5):</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
                       <p><strong>Emis (Layer 6):</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Azimuth (Layer 7):</strong> {geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
                     </div>
                   )}
                   {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
@@ -245,20 +240,25 @@ function App() {
                   Consider using a more powerful machine or a different browser for this visualization.
                 </p>
               </div>
-            ) : spectralData ? (
+            ) : spectralData && geoValues ? (
               <div>
                 <SpectralPlot 
                   spectralData={spectralData}
-                  incidenceAngle={angleOptions.inc[incidenceIdx] ?? 0}
-                  emissionAngle={0}
-                  azimuthAngle={0}
+                  incidenceAngle={geoValues.incidence ?? 0}
+                  emissionAngle={geoValues.emis ?? 0}
+                  azimuthAngle={geoValues.azimuth ?? 0}
                   selectedCases={selectedCases}
                 />
                 <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
-                  Debug: Inc={angleOptions.inc[incidenceIdx] ?? 0}°, 
-                  Emi=0°, 
-                  Az=0°
+                  Using geo-extracted angles: 
+                  Inc={geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
+                  Emi={geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
+                  Az={geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
                 </div>
+              </div>
+            ) : spectralData ? (
+              <div className="plot-placeholder">
+                <p>Click on the image to place a marker and view the spectral plot</p>
               </div>
             ) : (
               <div className="plot-placeholder">
@@ -296,19 +296,6 @@ function App() {
                   onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
                 />
                 <span>{sliders.methaneAbundance}</span>
-              </label>
-              
-              <label style={{ fontWeight: 'bold' }}>
-                Incidence angle
-                <input 
-                  type="range" 
-                  min={0} 
-                  max={Math.max((angleOptions.inc?.length || 1) - 1, 0)} 
-                  step={1}
-                  value={incidenceIdx}
-                  onChange={(e) => setIncidenceIdx(parseInt(e.target.value, 10))}
-                />
-                <span>{angleOptions.inc[incidenceIdx] ?? 0}°</span>
               </label>
               
 

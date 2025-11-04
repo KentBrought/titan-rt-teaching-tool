@@ -86,11 +86,11 @@ export const getGeoValue = (geoCubeData, x, y, band) => {
 };
 
 /**
- * Extract values from layers 0, 1, 4, 5, and 6 at a specific position
+ * Extract values from layers 0, 1, 4, 5, 6, and 7 at a specific position
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {number} x - Sample coordinate (0-680)
  * @param {number} y - Line coordinate (0-680)
- * @returns {Promise<Object>} Object with lat, lon, phase, incidence, and emis values
+ * @returns {Promise<Object>} Object with lat, lon, phase, incidence, emis, and azimuth values
  */
 export const extractGeoValues = async (phaseAngle, x, y) => {
   try {
@@ -102,6 +102,7 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
     const phase = getGeoValue(geoData, x, y, 4);      // Layer 4: phase (Deg)
     const incidence = getGeoValue(geoData, x, y, 5);   // Layer 5: incidence (Deg)
     const emis = getGeoValue(geoData, x, y, 6);       // Layer 6: emis (Deg)
+    const azimuth = getGeoValue(geoData, x, y, 7);    // Layer 7: azimuth (Deg)
     
     return {
       lat: lat !== null ? lat : null,
@@ -109,6 +110,7 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
       phase: phase !== null ? phase : null,
       incidence: incidence !== null ? incidence : null,
       emis: emis !== null ? emis : null,
+      azimuth: azimuth !== null ? azimuth : null,
       x,
       y
     };
@@ -120,6 +122,7 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
       phase: null,
       incidence: null,
       emis: null,
+      azimuth: null,
       x,
       y,
       error: error.message

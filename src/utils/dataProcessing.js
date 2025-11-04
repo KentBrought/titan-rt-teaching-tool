@@ -57,6 +57,35 @@ export const getAvailableAngles = (spectralData) => {
 };
 
 /**
+ * Find the closest angle value in an array
+ * @param {Array} angleArray - Array of available angles
+ * @param {number} targetAngle - Target angle to find
+ * @returns {number} Index of closest angle
+ */
+export const findClosestAngleIndex = (angleArray, targetAngle) => {
+  if (!angleArray || angleArray.length === 0) return 0;
+  
+  // First try exact match
+  const exactIndex = angleArray.findIndex(angle => Math.abs(angle - targetAngle) < 1e-6);
+  if (exactIndex !== -1) return exactIndex;
+  
+  // Find closest match
+  let closestIndex = 0;
+  let minDiff = Math.abs(angleArray[0] - targetAngle);
+  
+  for (let i = 1; i < angleArray.length; i++) {
+    const diff = Math.abs(angleArray[i] - targetAngle);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestIndex = i;
+    }
+  }
+  
+  console.log(`Closest match for ${targetAngle}°: ${angleArray[closestIndex]}° (index ${closestIndex})`);
+  return closestIndex;
+};
+
+/**
  * Create spectral plot data for a specific angle combination and case
  * @param {Object} processedData - Processed spectral data
  * @param {number} incidenceAngle - Selected incidence angle
@@ -71,14 +100,9 @@ export const createSpectralPlotData = (processedData, incidenceAngle, emissionAn
   const { wavelength, inc, emi, daz, standard, no_ch4, no_haze } = processedData;
   
   // Find the closest angle indices
-  const incidenceIndex = inc ? inc.findIndex(angle => Math.abs(angle - incidenceAngle) < 1e-6) : 0;
-  const emissionIndex = emi ? emi.findIndex(angle => Math.abs(angle - emissionAngle) < 1e-6) : 0;
-  const azimuthIndex = daz ? daz.findIndex(angle => Math.abs(angle - azimuthAngle) < 1e-6) : 0;
-
-  if (incidenceIndex === -1 || emissionIndex === -1 || azimuthIndex === -1) {
-    console.warn('Could not find matching angles, using first available data');
-    return wavelength.map((w, i) => ({ wavelength: w, intensity: 0 }));
-  }
+  const incidenceIndex = inc ? findClosestAngleIndex(inc, incidenceAngle) : 0;
+  const emissionIndex = emi ? findClosestAngleIndex(emi, emissionAngle) : 0;
+  const azimuthIndex = daz ? findClosestAngleIndex(daz, azimuthAngle) : 0;
 
   // For sampled data, we need to find the correct spectrum index
   // The sampled data has fewer spectra, so we need to map the angle combination to the correct index
