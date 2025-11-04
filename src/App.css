@@ -109,6 +109,19 @@ body {
   border-color: #66ccff;
 }
 
+.geo-values-display {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #1a1a1a;
+  border-radius: 4px;
+  border: 1px solid #3a3a3a;
+  width: 100%;
+}
+
+.geo-values-display p {
+  margin: 5px 0;
+}
+
 /* Spectral Plot */
 .spectral-plot {
   background-color: #2a2a2a;

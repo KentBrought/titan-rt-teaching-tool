@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
+import ClickableImage from './components/ClickableImage';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles } from './utils/imageLoader';
+import { extractGeoValues } from './utils/geoCubeLoader';
 
 function App() {
   const [activeTab, setActiveTab] = useState('tab1');
@@ -36,6 +38,9 @@ function App() {
   const [azimuthIdx, setAzimuthIdx] = useState(0);
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
   const [currentImage, setCurrentImage] = useState(null);
+  const [geoValues, setGeoValues] = useState(null);
+  const [loadingGeo, setLoadingGeo] = useState(false);
+  const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -43,6 +48,41 @@ function App() {
 
   const handleToggleChange = (name) => {
     setToggles(prev => ({ ...prev, [name]: !prev[name] }));
+  };
+
+  // Fetch geo values for a given position
+  const fetchGeoValues = useCallback(async (x, y) => {
+    try {
+      setLoadingGeo(true);
+      const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
+      const values = await extractGeoValues(phaseAngle, x, y);
+      setGeoValues(values);
+      console.log('Extracted geo values:', values);
+    } catch (error) {
+      console.error('Error extracting geo values:', error);
+      setGeoValues({
+        error: error.message,
+        x,
+        y
+      });
+    } finally {
+      setLoadingGeo(false);
+    }
+  }, [sliders.phaseAngle]);
+
+  // Handle image click to extract geo values
+  const handleImageClick = async (x, y, position) => {
+    if (x === null || y === null) {
+      setGeoValues(null);
+      setClickedPosition(null);
+      return;
+    }
+
+    // Store the clicked position (natural coordinates for geo cube lookup)
+    setClickedPosition({ x, y, position });
+    
+    // Extract values immediately
+    await fetchGeoValues(x, y);
   };
 
   // Load image when phase angle changes
@@ -60,6 +100,13 @@ function App() {
 
     loadImage();
   }, [sliders.phaseAngle]);
+
+  // Update geo values when phase angle changes (if position is marked)
+  useEffect(() => {
+    if (clickedPosition) {
+      fetchGeoValues(clickedPosition.x, clickedPosition.y);
+    }
+  }, [sliders.phaseAngle, clickedPosition, fetchGeoValues]);
 
   // Load spectral data
   useEffect(() => {
@@ -135,13 +182,35 @@ function App() {
             <div className="display-box ir-color">
               <h2>IR Color</h2>
               {currentImage ? (
-                <img 
-                  src={currentImage} 
-                  alt="Titan IR Color Image" 
-                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                <ClickableImage
+                  src={currentImage}
+                  alt="Titan IR Color Image"
+                  onImageClick={handleImageClick}
+                  className="ir-color-image"
+                  style={{ width: '100%', height: '100%' }}
+                  initialPosition={clickedPosition}
                 />
               ) : (
                 <div className="placeholder-circle"></div>
+              )}
+              {geoValues && (
+                <div className="geo-values-display">
+                  <h3 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
+                    Geo Values at ({geoValues.x}, {geoValues.y})
+                  </h3>
+                  {geoValues.error ? (
+                    <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
+                  ) : (
+                    <div style={{ fontSize: '14px', color: '#ccc' }}>
+                      <p><strong>Latitude (Layer 0):</strong> {geoValues.lat !== null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                      <p><strong>Longitude (Layer 1):</strong> {geoValues.lon !== null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                      <p><strong>Phase (Layer 4):</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Incidence (Layer 5):</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Emis (Layer 6):</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                    </div>
+                  )}
+                  {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
+                </div>
               )}
             </div>
           </div>
