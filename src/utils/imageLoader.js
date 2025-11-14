@@ -34,11 +34,12 @@ export const getXmlFilename = (phaseAngle) => {
 /**
  * Get the public URL for an image file
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
  * @returns {string} Public URL to the image file
  */
-export const getImageUrl = (phaseAngle) => {
+export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3') => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  return `/assets/2012_A0.1_p${paddedPhase}.png`;
+  return `/assets/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
 };
 
 /**
@@ -55,19 +56,20 @@ export const getXmlUrl = (phaseAngle) => {
  * Load image data from a converted PNG file
  * 
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
  * @returns {Promise<string|null>} URL of the PNG image, or null if failed
  */
-export const loadPds4Image = async (phaseAngle) => {
+export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3') => {
   try {
-    const imageUrl = getImageUrl(phaseAngle);
-    console.log(`Loading image for phase angle: ${phaseAngle}° from ${imageUrl}`);
+    const imageUrl = getImageUrl(phaseAngle, compositeType);
+    console.log(`Loading image for phase angle: ${phaseAngle}° (${compositeType}) from ${imageUrl}`);
     
     // Test if the image exists by trying to load it
     const response = await fetch(imageUrl);
     if (response.ok) {
       return imageUrl;
     } else {
-      console.warn(`Image not found for phase angle ${phaseAngle}°`);
+      console.warn(`Image not found for phase angle ${phaseAngle}° (${compositeType})`);
       return null;
     }
   } catch (error) {

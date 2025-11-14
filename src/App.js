@@ -38,6 +38,7 @@ function App() {
   const [geoValues, setGeoValues] = useState(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
+  const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -82,12 +83,12 @@ function App() {
     await fetchGeoValues(x, y);
   };
 
-  // Load image when phase angle changes
+  // Load image when phase angle or composite type changes
   useEffect(() => {
     const loadImage = async () => {
       try {
         const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
-        const imageDataUrl = await loadPds4Image(phaseAngle);
+        const imageDataUrl = await loadPds4Image(phaseAngle, compositeType);
         setCurrentImage(imageDataUrl);
       } catch (error) {
         console.error('Error loading image:', error);
@@ -96,7 +97,7 @@ function App() {
     };
 
     loadImage();
-  }, [sliders.phaseAngle]);
+  }, [sliders.phaseAngle, compositeType]);
 
   // Update geo values when phase angle changes (if position is marked)
   useEffect(() => {
@@ -207,6 +208,31 @@ function App() {
                   {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
                 </div>
               )}
+            </div>
+            <div className="composite-selector">
+              <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
+              <div className="radio-group">
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="compositeType"
+                    value="5_2_1.3"
+                    checked={compositeType === '5_2_1.3'}
+                    onChange={(e) => setCompositeType(e.target.value)}
+                  />
+                  <span>5, 2, 1.3 µm</span>
+                </label>
+                <label className="radio-label">
+                  <input
+                    type="radio"
+                    name="compositeType"
+                    value="2_1.6_1.3"
+                    checked={compositeType === '2_1.6_1.3'}
+                    onChange={(e) => setCompositeType(e.target.value)}
+                  />
+                  <span>2, 1.6, 1.3 µm</span>
+                </label>
+              </div>
             </div>
           </div>
           
