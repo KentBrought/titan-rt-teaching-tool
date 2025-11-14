@@ -39,6 +39,7 @@ function App() {
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
+  const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -368,6 +369,31 @@ function App() {
           <div className="control-box toggles-box">
             <h2>Toggles:</h2>
             <div className="toggle-group">
+          {/* Haze Properties Radio Options */}
+          <p style={{ marginBottom: '2px', fontWeight: 'bold' }}>Haze Properties:</p>
+          <div>
+            <label className="toggle-label" style={{ float: 'left', marginRight: '20px' }}>
+              <input
+                type="radio"
+                name="hazePropertiesModel"
+                value="doose"
+                checked={hazePropertiesModel === 'doose'}
+                onChange={(e) => setHazePropertiesModel(e.target.value)}
+              />
+              <span>Doose</span>
+            </label>
+            <label className="toggle-label" style={{ float: 'left' }}>
+              <input
+                type="radio"
+                name="hazePropertiesModel"
+                value="tomasko"
+                checked={hazePropertiesModel === 'tomasko'}
+                onChange={(e) => setHazePropertiesModel(e.target.value)}
+              />
+              <span>Tomasko</span>
+            </label>
+            <div style={{ clear: 'both' }}></div>
+          </div>
               {/* Case toggles (functional) */}
               {['standard', 'no_ch4', 'no_haze'].map((caseKey) => (
                 <label key={caseKey} className="toggle-label" style={{ fontWeight: 'bold' }}>
