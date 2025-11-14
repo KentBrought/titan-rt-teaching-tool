@@ -14,7 +14,6 @@ function App() {
     incidenceAngle: 45,
     emissionAngle: 45,
     spectralResolution: 50,
-    hazeProperties: 50,
     phaseAngle: 0
   });
 
@@ -26,6 +25,13 @@ function App() {
     spectralUnits: false,
     logLinear: false
   });
+
+  const getHazeAbundanceValue = (sliderValue) => {
+    // Map slider value to the three options (0, 0.5, 1)
+    if (sliderValue <= 33) return 0;
+    if (sliderValue <= 67) return 0.5;
+    return 1;
+  };
 
   // Spectral data state
   const [spectralData, setSpectralData] = useState(null);
@@ -39,6 +45,7 @@ function App() {
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
+  const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -305,11 +312,16 @@ function App() {
                 <input 
                   type="range" 
                   min="0" 
-                  max="100" 
-                  value={sliders.hazeAbundance}
-                  onChange={(e) => handleSliderChange('hazeAbundance', e.target.value)}
+                  max="2" 
+                  step="1"
+                  value={sliders.hazeAbundance / 50} 
+                  onChange={(e) => {
+                    const stepValue = parseInt(e.target.value);
+                    const sliderValue = stepValue * 50; 
+                    handleSliderChange('hazeAbundance', sliderValue);
+                  }}
                 />
-                <span>{sliders.hazeAbundance}</span>
+                <span>{getHazeAbundanceValue(sliders.hazeAbundance)}</span>
               </label>
               
               <label>
@@ -368,6 +380,31 @@ function App() {
           <div className="control-box toggles-box">
             <h2>Toggles:</h2>
             <div className="toggle-group">
+          {/* Haze Properties Radio Options */}
+          <p style={{ marginBottom: '2px', fontWeight: 'bold' }}>Haze Properties:</p>
+          <div>
+            <label className="toggle-label" style={{ float: 'left', marginRight: '20px' }}>
+              <input
+                type="radio"
+                name="hazePropertiesModel"
+                value="doose"
+                checked={hazePropertiesModel === 'doose'}
+                onChange={(e) => setHazePropertiesModel(e.target.value)}
+              />
+              <span>Doose</span>
+            </label>
+            <label className="toggle-label" style={{ float: 'left' }}>
+              <input
+                type="radio"
+                name="hazePropertiesModel"
+                value="tomasko"
+                checked={hazePropertiesModel === 'tomasko'}
+                onChange={(e) => setHazePropertiesModel(e.target.value)}
+              />
+              <span>Tomasko</span>
+            </label>
+            <div style={{ clear: 'both' }}></div>
+          </div>
               {/* Case toggles (functional) */}
               {['standard', 'no_ch4', 'no_haze'].map((caseKey) => (
                 <label key={caseKey} className="toggle-label" style={{ fontWeight: 'bold' }}>
