@@ -316,7 +316,7 @@ function App() {
           <div className="control-box sliders-box">
             <h2>Sliders:</h2>
             <div className="slider-group">
-              <label>
+              <label style={{ fontWeight: 'bold' }}>
                 Haze abundance
                 <input 
                   type="range" 
@@ -345,7 +345,6 @@ function App() {
                 <span>{sliders.methaneAbundance}</span>
               </label>
               
-
               <label>
                 Spectral resolution*
                 <input 
@@ -356,18 +355,6 @@ function App() {
                   onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
                 />
                 <span>{sliders.spectralResolution}</span>
-              </label>
-              
-              <label>
-                Haze properties*
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliders.hazeProperties}
-                  onChange={(e) => handleSliderChange('hazeProperties', e.target.value)}
-                />
-                <span>{sliders.hazeProperties}</span>
               </label>
               
               <label style={{ fontWeight: 'bold' }}>
