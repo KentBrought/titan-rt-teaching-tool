@@ -19,11 +19,9 @@ function App() {
 
   const [toggles, setToggles] = useState({
     hazeProfile: false,
-    rayleighScattering: false,
     plotMultiple: false,
     transReflect: false,
     spectralUnits: false,
-    logLinear: false
   });
 
   const getHazeAbundanceValue = (sliderValue) => {
@@ -178,12 +176,6 @@ function App() {
         >
           Tab 1
         </button>
-        <button 
-          className={`tab ${activeTab === 'tab2' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tab2')}
-        >
-          Tab 2
-        </button>
       </div>
 
       <div className="main-container">
@@ -252,6 +244,7 @@ function App() {
             </div>
           </div>
           
+          
           <div className="spectral-plot">
             <h2>Spectral Plot</h2>
             {loading ? (
@@ -312,95 +305,100 @@ function App() {
 
         {/* Right side - Controls */}
         <div className="right-panel">
-          {/* Sliders */}
-          <div className="control-box sliders-box">
-            <h2>Sliders:</h2>
-            <div className="slider-group">
-              <label style={{ fontWeight: 'bold' }}>
-                Haze abundance
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="2" 
-                  step="1"
-                  value={sliders.hazeAbundance / 50} // Convert from 0,50,100 to 0,1,2
-                  onChange={(e) => {
-                    const stepValue = parseInt(e.target.value);
-                    const sliderValue = stepValue * 50; // Convert back to 0,50,100
-                    handleSliderChange('hazeAbundance', sliderValue);
-                  }}
-                />
-                <span>{hazeAbundanceSetting}</span>
-              </label>
-              
-              <label>
-                Methane abundance
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliders.methaneAbundance}
-                  onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
-                />
-                <span>{sliders.methaneAbundance}</span>
-              </label>
-              
-              <label>
-                Spectral resolution*
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliders.spectralResolution}
-                  onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
-                />
-                <span>{sliders.spectralResolution}</span>
-              </label>
-              
-              <label style={{ fontWeight: 'bold' }}>
-                Phase angle
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="71" 
-                  step="1"
-                  value={sliders.phaseAngle}
-                  onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
-                />
-                <span>{sliders.phaseAngle * 5}°</span>
-              </label>
+        {/* Sliders */}
+        <div className="control-box sliders-box">
+          <h2>Sliders:</h2>
+          <div className="slider-group">
+            {/* Haze Model Section */}
+            <div style={{ marginBottom: '15px' }}>
+              <p style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>Haze Model</p>
+              <div style={{ display: 'flex', gap: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="hazePropertiesModel"
+                    value="doose"
+                    checked={hazePropertiesModel === 'doose'}
+                    onChange={(e) => setHazePropertiesModel(e.target.value)}
+                    style={{ marginRight: '6px', cursor: 'pointer' }}
+                  />
+                  <span>Doose</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="hazePropertiesModel"
+                    value="tomasko"
+                    checked={hazePropertiesModel === 'tomasko'}
+                    onChange={(e) => setHazePropertiesModel(e.target.value)}
+                    style={{ marginRight: '6px', cursor: 'pointer' }}
+                  />
+                  <span>Tomasko</span>
+                </label>
+              </div>
             </div>
+
+            <label style={{ fontWeight: 'bold' }}>
+              Haze abundance
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="1"
+                value={sliders.hazeAbundance / 50}
+                onChange={(e) => {
+                  const stepValue = parseInt(e.target.value);
+                  const sliderValue = stepValue * 50;
+                  handleSliderChange('hazeAbundance', sliderValue);
+                }}
+              />
+              <span>{hazeAbundanceSetting}</span>
+            </label>
+            
+            <label>
+              Methane abundance
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                value={sliders.methaneAbundance}
+                onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
+              />
+              <span>{sliders.methaneAbundance}</span>
+            </label>
+            
+            <label>
+              Spectral resolution*
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                value={sliders.spectralResolution}
+                onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
+              />
+              <span>{sliders.spectralResolution}</span>
+            </label>
+            
+            <label style={{ fontWeight: 'bold' }}>
+              Phase angle
+              <input 
+                type="range" 
+                min="0" 
+                max="71" 
+                step="1"
+                value={sliders.phaseAngle}
+                onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
+              />
+              <span>{sliders.phaseAngle * 5}°</span>
+            </label>
           </div>
+        </div>
 
           {/* Toggles */}
           <div className="control-box toggles-box">
             <h2>Toggles:</h2>
             <div className="toggle-group">
-          {/* Haze Properties Radio Options */}
-          <p style={{ marginBottom: '2px', fontWeight: 'bold' }}>Haze Properties:</p>
-          <div>
-            <label className="toggle-label" style={{ float: 'left', marginRight: '20px' }}>
-              <input
-                type="radio"
-                name="hazePropertiesModel"
-                value="doose"
-                checked={hazePropertiesModel === 'doose'}
-                onChange={(e) => setHazePropertiesModel(e.target.value)}
-              />
-              <span>Doose</span>
-            </label>
-            <label className="toggle-label" style={{ float: 'left' }}>
-              <input
-                type="radio"
-                name="hazePropertiesModel"
-                value="tomasko"
-                checked={hazePropertiesModel === 'tomasko'}
-                onChange={(e) => setHazePropertiesModel(e.target.value)}
-              />
-              <span>Tomasko</span>
-            </label>
-            <div style={{ clear: 'both' }}></div>
-          </div>
+      
               {/* Case toggles (functional) */}
               {['standard', 'no_ch4', 'no_haze'].map((caseKey) => (
                 <label key={caseKey} className="toggle-label" style={{ fontWeight: 'bold' }}>
