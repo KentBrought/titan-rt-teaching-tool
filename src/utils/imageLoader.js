@@ -37,9 +37,24 @@ export const getXmlFilename = (phaseAngle) => {
  * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
  * @returns {string} Public URL to the image file
  */
-export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3') => {
+const getAssetBasePath = (hazeFolder) => {
+  if (hazeFolder) {
+    return `/assets/dt/${hazeFolder}`;
+  }
+  return '/assets';
+};
+
+/**
+ * Generate the image URL for a given phase angle and haze configuration
+ * @param {number} phaseAngle - Phase angle in degrees
+ * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
+ * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'doose_0.5')
+ * @returns {string} Public URL to the image file
+ */
+export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  return `/assets/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
+  const basePath = getAssetBasePath(hazeFolder);
+  return `${basePath}/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
 };
 
 /**
@@ -59,15 +74,25 @@ export const getXmlUrl = (phaseAngle) => {
  * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
  * @returns {Promise<string|null>} URL of the PNG image, or null if failed
  */
-export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3') => {
+export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
   try {
-    const imageUrl = getImageUrl(phaseAngle, compositeType);
+    const imageUrl = getImageUrl(phaseAngle, compositeType, hazeFolder);
     console.log(`Loading image for phase angle: ${phaseAngle}° (${compositeType}) from ${imageUrl}`);
     
     // Test if the image exists by trying to load it
     const response = await fetch(imageUrl);
     if (response.ok) {
       return imageUrl;
+    }
+
+    // Fallback to legacy assets path if the haze-specific asset is missing
+    if (hazeFolder) {
+      const legacyUrl = getImageUrl(phaseAngle, compositeType);
+      console.warn(`Image not found for ${hazeFolder}, attempting legacy path: ${legacyUrl}`);
+      const legacyResponse = await fetch(legacyUrl);
+      if (legacyResponse.ok) {
+        return legacyUrl;
+      }
     } else {
       console.warn(`Image not found for phase angle ${phaseAngle}° (${compositeType})`);
       return null;

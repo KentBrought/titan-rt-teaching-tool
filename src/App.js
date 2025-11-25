@@ -19,11 +19,9 @@ function App() {
 
   const [toggles, setToggles] = useState({
     hazeProfile: false,
-    rayleighScattering: false,
     plotMultiple: false,
     transReflect: false,
     spectralUnits: false,
-    logLinear: false
   });
 
   const getHazeAbundanceValue = (sliderValue) => {
@@ -35,7 +33,6 @@ function App() {
 
   // Spectral data state
   const [spectralData, setSpectralData] = useState(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
@@ -90,12 +87,15 @@ function App() {
     await fetchGeoValues(x, y);
   };
 
-  // Load image when phase angle or composite type changes
+  const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
+  const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
+
+  // Load image when relevant parameters change
   useEffect(() => {
     const loadImage = async () => {
       try {
         const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
-        const imageDataUrl = await loadPds4Image(phaseAngle, compositeType);
+        const imageDataUrl = await loadPds4Image(phaseAngle, compositeType, hazeFolderName);
         setCurrentImage(imageDataUrl);
       } catch (error) {
         console.error('Error loading image:', error);
@@ -104,7 +104,7 @@ function App() {
     };
 
     loadImage();
-  }, [sliders.phaseAngle, compositeType]);
+  }, [sliders.phaseAngle, compositeType, hazeFolderName]);
 
   // Update geo values when phase angle changes (if position is marked)
   useEffect(() => {
@@ -113,44 +113,51 @@ function App() {
     }
   }, [sliders.phaseAngle, clickedPosition, fetchGeoValues]);
 
-  // Load spectral data
+  // Load spectral data when haze configuration changes
   useEffect(() => {
-    if (dataLoaded) return;
+    let isCancelled = false;
 
     const loadSpectralData = async () => {
       try {
         setLoading(true);
         setError(null);
-        console.log('Loading spectral data...');
-        
-        const spectralJson = await loadJsonFile('/data/init_gui_library.json');
+        const dataPath = `/assets/dt/${hazeFolderName}/init_gui_library.json`;
+        console.log(`Loading spectral data from ${dataPath}...`);
+
+        const spectralJson = await loadJsonFile(dataPath);
+        if (isCancelled) return;
+
         console.log('Spectral data loaded successfully:', Object.keys(spectralJson));
         console.log('Memory usage after loading:', getMemoryInfo());
-        
-        // Check if we have valid data
+
         if (!spectralJson || !spectralJson.wavelength || !spectralJson.standard) {
           throw new Error('Invalid spectral data structure');
         }
-        
+
         setSpectralData(spectralJson);
-        // Initialize angle options
         const inc = spectralJson.inc || [];
         const emi = spectralJson.emi || [];
         const daz = spectralJson.daz || [];
         console.log('Angle arrays:', { inc: inc.length, emi: emi.length, daz: daz.length });
         setAngleOptions({ inc, emi, daz });
       } catch (err) {
+        if (isCancelled) return;
         console.error('Error loading spectral data:', err);
-        setError('Unable to load spectral data due to memory constraints. The dataset is too large for the browser to handle safely.');
+        setError(`Unable to load spectral data from ${hazeFolderName}. ${err.message}`);
         setSpectralData(null);
       } finally {
-        setLoading(false);
-        setDataLoaded(true);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
     loadSpectralData();
-  }, [dataLoaded]);
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [hazeFolderName]);
 
   // Cleanup effect
   useEffect(() => {
@@ -168,12 +175,6 @@ function App() {
           onClick={() => setActiveTab('tab1')}
         >
           Tab 1
-        </button>
-        <button 
-          className={`tab ${activeTab === 'tab2' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tab2')}
-        >
-          Tab 2
         </button>
       </div>
 
@@ -242,6 +243,7 @@ function App() {
               </div>
             </div>
           </div>
+          
           
           <div className="spectral-plot">
             <h2>Spectral Plot</h2>
@@ -374,11 +376,66 @@ function App() {
                 <span>{sliders.phaseAngle * 5}°</span>
               </label>
             </div>
-          </div>
 
-          {/* Toggles */}
+            <label style={{ fontWeight: 'bold' }}>
+              Haze abundance
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="1"
+                value={sliders.hazeAbundance / 50}
+                onChange={(e) => {
+                  const stepValue = parseInt(e.target.value);
+                  const sliderValue = stepValue * 50;
+                  handleSliderChange('hazeAbundance', sliderValue);
+                }}
+              />
+              <span>{hazeAbundanceSetting}</span>
+            </label>
+            
+            <label>
+              Methane abundance
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                value={sliders.methaneAbundance}
+                onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
+              />
+              <span>{sliders.methaneAbundance}</span>
+            </label>
+
+            <label style={{ fontWeight: 'bold' }}>
+              Phase angle
+              <input 
+                type="range" 
+                min="0" 
+                max="71" 
+                step="1"
+                value={sliders.phaseAngle}
+                onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
+              />
+              <span>{sliders.phaseAngle * 5}°</span>
+            </label>
+
+            <label>
+              Spectral resolution*
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                value={sliders.spectralResolution}
+                onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
+              />
+              <span>{sliders.spectralResolution}</span>
+            </label>
+          </div>
+        </div>
+
+          {/* Spectral Plot Options */}
           <div className="control-box toggles-box">
-            <h2>Toggles:</h2>
+            <h2>Spectral Plot Options</h2>
             <div className="toggle-group">
           {/* Haze Properties Radio Options */}
           <p style={{ marginBottom: '2px', fontWeight: 'bold' }}>Haze Properties:</p>

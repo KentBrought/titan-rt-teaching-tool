@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<?xml-model href="https://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1E00.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/mission/cassini/v1/PDS4_CASSINI_1D00_1500.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/disp/v1/PDS4_DISP_1B00.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/cart/v1/PDS4_CART_1700.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/sp/v1/PDS4_SP_1100.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<?xml-model href="https://pds.nasa.gov/pds4/img/v1/PDS4_IMG_1D00_1700.sch" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<Product_Observational xmlns="http://pds.nasa.gov/pds4/pds/v1" xmlns:cart="http://pds.nasa.gov/pds4/cart/v1" xmlns:cassini="http://pds.nasa.gov/pds4/mission/cassini/v1" xmlns:disp="http://pds.nasa.gov/pds4/disp/v1" xmlns:pds="http://pds.nasa.gov/pds4/pds/v1" xmlns:sp="http://pds.nasa.gov/pds4/sp/v1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://pds.nasa.gov/pds4/pds/v1 https://pds.nasa.gov/pds4/pds/v1/PDS4_PDS_1E00.xsd        http://pds.nasa.gov/pds4/disp/v1 https://pds.nasa.gov/pds4/disp/v1/PDS4_DISP_1B00.xsd        http://pds.nasa.gov/pds4/mission/cassini/v1 https://pds.nasa.gov/pds4/mission/cassini/v1/PDS4_CASSINI_1D00_1500.xsd        http://pds.nasa.gov/pds4/sp/v1 https://pds.nasa.gov/pds4/sp/v1/PDS4_SP_1100.xsd       http://pds.nasa.gov/pds4/cart/v1 https://pds.nasa.gov/pds4/cart/v1/PDS4_CART_1700.xsd">
+  <Identification_Area>
+    <logical_identifier>urn:nasa:pds:titan_vims_spectralmaps_barnes_2020:2012_a0:2012_a0.1_p035_snr</logical_identifier>
+    <version_id>1.0</version_id>
+    <title>2012_A0.1_p035_SNR.xml</title>
+    <information_model_version>1.14.0.0</information_model_version>
+    <product_class>Product_Observational</product_class>
+    <Citation_Information>
+      <author_list>Barnes, Jason W.; Miller, William J.; Mackenzie, Shannon M.; Chivers, Chase J.;
+                         Footh, Mason L.; Wheeler, Orion; Herman, Jacob; Vosburg, Ella; Maret, Kaylee; 
+                         Dabroski, Keith; Vashist, Aadvik; </author_list>
+      <publication_year>2025</publication_year>
+      <description>doi:10.17189/7040-f759</description>
+    </Citation_Information>
+  </Identification_Area>
+  <Observation_Area>
+    <Time_Coordinates>
+      <start_date_time nilReason="inapplicable" xsi:nil="true"/>
+      <stop_date_time nilReason="inapplicable" xsi:nil="true"/>
+    </Time_Coordinates>
+    <Investigation_Area>
+      <name>Cassini-Hyugens</name>
+      <type>Mission</type>
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:investigation:mission.cassini-huygens</lid_reference>
+        <reference_type>data_to_investigation</reference_type>
+      </Internal_Reference>
+    </Investigation_Area>
+    <Observing_System>
+      <name>Cassini VIMS</name>
+      <Observing_System_Component>
+        <name>Cassini Orbiter</name>
+        <type>Host</type>
+        <Internal_Reference>
+          <lid_reference>urn:nasa:pds:context:instrument_host:spacecraft.co</lid_reference>
+          <reference_type>is_instrument_host</reference_type>
+        </Internal_Reference>
+      </Observing_System_Component>
+      <Observing_System_Component>
+        <name>Visual and Infrared Mapping Spectrometer</name>
+        <type>Instrument</type>
+        <Internal_Reference>
+          <lid_reference>urn:nasa:pds:context:instrument:vims.co</lid_reference>
+          <reference_type>is_instrument</reference_type>
+        </Internal_Reference>
+      </Observing_System_Component>
+    </Observing_System>
+    <Target_Identification>
+      <name>Titan</name>
+      <type>Satellite</type>
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:target:satellite.saturn.titan</lid_reference>
+        <reference_type>data_to_target</reference_type>
+      </Internal_Reference>
+    </Target_Identification>
+    <Mission_Area>
+      <cassini:Cassini>
+        <cassini:VIMS_Specific_Attributes>
+          <cassini:mission_phase_name></cassini:mission_phase_name>
+          <cassini:spacecraft_clock_count_partition></cassini:spacecraft_clock_count_partition>
+          <cassini:spacecraft_clock_start_count></cassini:spacecraft_clock_start_count>
+          <cassini:spacecraft_clock_stop_count></cassini:spacecraft_clock_stop_count>
+          <cassini:antiblooming_state_flag></cassini:antiblooming_state_flag>
+          <cassini:background_sampling_frequency></cassini:background_sampling_frequency>
+          <cassini:background_sampling_mode_id_ir></cassini:background_sampling_mode_id_ir>
+          <cassini:bias_state_id></cassini:bias_state_id>
+          <cassini:command_file_name></cassini:command_file_name>
+          <cassini:command_sequence_number></cassini:command_sequence_number>
+          <cassini:compressor_id></cassini:compressor_id>
+          <cassini:data_buffer_state_flag></cassini:data_buffer_state_flag>
+          <cassini:detector_temperature_IR_high_res unit="K"></cassini:detector_temperature_IR_high_res>
+          <cassini:earth_received_start_time></cassini:earth_received_start_time>
+          <cassini:earth_received_stop_time></cassini:earth_received_stop_time>
+          <cassini:exposure_duration_ir unit="ms"></cassini:exposure_duration_ir>
+          <cassini:fast_hk_item_name_1></cassini:fast_hk_item_name_1>
+          <cassini:fast_hk_pickup_rate></cassini:fast_hk_pickup_rate>
+          <cassini:flight_software_version_id></cassini:flight_software_version_id>
+          <cassini:gain_mode_id_ir></cassini:gain_mode_id_ir>
+          <cassini:housekeeping_clock_count></cassini:housekeeping_clock_count>
+          <cassini:image_observation_type></cassini:image_observation_type>
+          <cassini:inst_cmprs_name></cassini:inst_cmprs_name>
+          <cassini:inst_cmprs_ratio></cassini:inst_cmprs_ratio>
+          <cassini:instrument_data_rate></cassini:instrument_data_rate>
+          <cassini:instrument_temperature_spectrometer unit="K"></cassini:instrument_temperature_spectrometer>
+          <cassini:integration_delay_flag></cassini:integration_delay_flag>
+          <cassini:interframe_delay_duration unit="ms"></cassini:interframe_delay_duration>
+          <cassini:interline_delay_duration unit="ms"></cassini:interline_delay_duration>
+          <cassini:missing_packet_flag></cassini:missing_packet_flag>
+          <cassini:missing_pixels></cassini:missing_pixels>
+          <cassini:native_start_time></cassini:native_start_time>
+          <cassini:native_stop_time></cassini:native_stop_time>
+          <cassini:observation_id></cassini:observation_id>
+          <cassini:optics_temperature_ir_1 unit="K"></cassini:optics_temperature_ir_1>
+          <cassini:overwritten_channel_flag></cassini:overwritten_channel_flag>
+          <cassini:packing_flag></cassini:packing_flag>
+          <cassini:parameter_set_id></cassini:parameter_set_id>
+          <cassini:pds3_product_creation_time></cassini:pds3_product_creation_time>
+          <cassini:pds3_product_version_type></cassini:pds3_product_version_type>
+          <cassini:pds3_target_desc></cassini:pds3_target_desc>
+          <cassini:pds3_target_name></cassini:pds3_target_name>
+          <cassini:power_state_flag_ir></cassini:power_state_flag_ir>
+          <cassini:sampling_mode_id_ir></cassini:sampling_mode_id_ir>
+          <cassini:scan_mode_id></cassini:scan_mode_id>
+          <cassini:sequence_id></cassini:sequence_id>
+          <cassini:sequence_title></cassini:sequence_title>
+          <cassini:shutter_state_flag></cassini:shutter_state_flag>
+          <cassini:snapshot_mode_flag></cassini:snapshot_mode_flag>
+          <cassini:spectral_editing_flag></cassini:spectral_editing_flag>
+          <cassini:spectral_summing_flag></cassini:spectral_summing_flag>
+          <cassini:start_time_doy></cassini:start_time_doy>
+          <cassini:stop_time_doy></cassini:stop_time_doy>
+          <cassini:swath_length unit="pixel"></cassini:swath_length>
+          <cassini:swath_width unit="pixel"></cassini:swath_width>
+          <cassini:telemetry_format_id></cassini:telemetry_format_id>
+        </cassini:VIMS_Specific_Attributes>
+      </cassini:Cassini>
+    </Mission_Area>
+    <Discipline_Area>
+      <disp:Display_Settings>
+        <Local_Internal_Reference>
+          <local_identifier_reference>Spectral_Cube_Object</local_identifier_reference>
+          <local_reference_type>display_settings_to_array</local_reference_type>
+        </Local_Internal_Reference>
+        <disp:Display_Direction>
+          <disp:horizontal_display_axis>Sample</disp:horizontal_display_axis>
+          <disp:horizontal_display_direction>Left to Right</disp:horizontal_display_direction>
+          <disp:vertical_display_axis>Line</disp:vertical_display_axis>
+          <disp:vertical_display_direction>Top to Bottom</disp:vertical_display_direction>
+        </disp:Display_Direction>
+      </disp:Display_Settings>
+      <sp:Spectral_Characteristics>
+        <sp:bin_width_desc>The approximate center wavelength of each VIMS bin.</sp:bin_width_desc>
+        <sp:Local_Internal_Reference>
+          <sp:local_identifier_reference>Spectral_Cube_Object</sp:local_identifier_reference>
+          <sp:local_reference_type>spectral_characteristics_to_array_object</sp:local_reference_type>
+        </sp:Local_Internal_Reference>
+        <sp:Spectral_Lookup>
+          <sp:Local_Internal_Reference>
+            <sp:local_identifier_reference>VIMS_Wavelength_File</sp:local_identifier_reference>
+            <sp:local_reference_type>spectral_characteristics_to_bin_center_values</sp:local_reference_type>
+          </sp:Local_Internal_Reference>
+          <sp:Internal_Reference>
+            <lid_reference>urn:nasa:pds:titan_vims_spectralmaps_barnes_2020:2012_a0:wavelengths</lid_reference>
+            <reference_type>data_to_ancillary_data</reference_type>
+          </sp:Internal_Reference>
+        </sp:Spectral_Lookup>
+      </sp:Spectral_Characteristics>
+      <cart:Cartography>
+        <cart:Spatial_Domain>
+          <cart:Bounding_Coordinates>
+            <cart:west_bounding_coordinate unit="deg">3400.000000</cart:west_bounding_coordinate>
+            <cart:east_bounding_coordinate unit="deg">-3400.000000</cart:east_bounding_coordinate>
+            <cart:north_bounding_coordinate unit="deg">3400.000000</cart:north_bounding_coordinate>
+            <cart:south_bounding_coordinate unit="deg">-3400.000000</cart:south_bounding_coordinate>
+          </cart:Bounding_Coordinates>
+        </cart:Spatial_Domain>
+        <cart:Spatial_Reference_Information>
+          <cart:Horizontal_Coordinate_System_Definition>
+            <cart:Planar>
+              <cart:Map_Projection>
+                <cart:map_projection_name>Equirectangular</cart:map_projection_name>
+                <cart:Equirectangular>
+                    <cart:standard_parallel_1 unit="deg">0</cart:standard_parallel_1>
+                    <cart:longitude_of_central_meridian unit="deg">0</cart:longitude_of_central_meridian>
+                    <cart:latitude_of_projection_origin unit="deg">0</cart:latitude_of_projection_origin>
+                </cart:Equirectangular>
+              </cart:Map_Projection>
+              <cart:Planar_Coordinate_Information>
+                <cart:planar_coordinate_encoding_method>Coordinate Pair</cart:planar_coordinate_encoding_method>
+                <cart:Coordinate_Representation>
+                  <cart:pixel_resolution_x unit="km/pixel">0.222508</cart:pixel_resolution_x>
+                  <cart:pixel_resolution_y unit="km/pixel">0.222508</cart:pixel_resolution_y>
+                  <cart:pixel_scale_x unit="pixel/deg">10.000000</cart:pixel_scale_x>
+                  <cart:pixel_scale_y unit="pixel/deg">10.000000</cart:pixel_scale_y>
+                </cart:Coordinate_Representation>
+              </cart:Planar_Coordinate_Information>
+            </cart:Planar>
+          </cart:Horizontal_Coordinate_System_Definition>
+        </cart:Spatial_Reference_Information>
+      </cart:Cartography>
+    </Discipline_Area>
+  </Observation_Area>
+  <File_Area_Observational>
+    <File>
+      <file_name>2012_A0.1_p035_SNR.img</file_name>
+      <file_size unit="byte">14840352</file_size></File>
+    <Array_3D_Spectrum>
+      <local_identifier>Spectral_Cube_Object</local_identifier>
+      <offset unit="byte">0</offset>
+      <axes>3</axes>
+      <axis_index_order>Last Index Fastest</axis_index_order>
+      <Element_Array>
+        <data_type>IEEE754LSBSingle</data_type>
+      </Element_Array>
+      <Axis_Array>
+        <axis_name>Band</axis_name>
+        <elements>8</elements>
+        <sequence_number>1</sequence_number>
+      </Axis_Array>
+      <Axis_Array>
+        <axis_name>Line</axis_name>
+        <elements>681</elements>
+        <sequence_number>2</sequence_number>
+      </Axis_Array>
+      <Axis_Array>
+        <axis_name>Sample</axis_name>
+        <elements>681</elements>
+        <sequence_number>3</sequence_number>
+      </Axis_Array>
+    </Array_3D_Spectrum>
+  </File_Area_Observational>
+
+</Product_Observational>
