@@ -171,12 +171,12 @@ body {
 }
 
 .sliders-box {
-  border-color: #cc99ff;
+  border-color: #66ccff;
   flex: 1.5;
 }
 
 .toggles-box {
-  border-color: #3399cc;
+  border-color: #4a9d4a;
   flex: 1;
 }
 
@@ -226,6 +226,20 @@ body {
 .slider-group span {
   float: right;
   color: #007acc;
+  font-weight: bold;
+}
+
+.case-toggle-group {
+  margin-top: 5px;
+}
+
+.case-toggle-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.case-toggle-label span {
   font-weight: bold;
 }
 

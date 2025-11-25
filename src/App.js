@@ -305,9 +305,9 @@ function App() {
 
         {/* Right side - Controls */}
         <div className="right-panel">
-        {/* Sliders */}
+        {/* IR Image Options */}
         <div className="control-box sliders-box">
-          <h2>Sliders:</h2>
+          <h2>IR Image Options</h2>
           <div className="slider-group">
             {/* Haze Model Section */}
             <div style={{ marginBottom: '15px' }}>
@@ -366,19 +366,7 @@ function App() {
               />
               <span>{sliders.methaneAbundance}</span>
             </label>
-            
-            <label>
-              Spectral resolution*
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={sliders.spectralResolution}
-                onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
-              />
-              <span>{sliders.spectralResolution}</span>
-            </label>
-            
+
             <label style={{ fontWeight: 'bold' }}>
               Phase angle
               <input 
@@ -391,26 +379,47 @@ function App() {
               />
               <span>{sliders.phaseAngle * 5}°</span>
             </label>
+
+            <label>
+              Spectral resolution*
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                value={sliders.spectralResolution}
+                onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
+              />
+              <span>{sliders.spectralResolution}</span>
+            </label>
           </div>
         </div>
 
-          {/* Toggles */}
+          {/* Spectral Plot Options */}
           <div className="control-box toggles-box">
-            <h2>Toggles:</h2>
+            <h2>Spectral Plot Options</h2>
             <div className="toggle-group">
-      
-              {/* Case toggles (functional) */}
-              {['standard', 'no_ch4', 'no_haze'].map((caseKey) => (
-                <label key={caseKey} className="toggle-label" style={{ fontWeight: 'bold' }}>
-                  <input 
-                    type="checkbox"
-                    checked={!!selectedCases[caseKey]}
-                    onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
-                  />
-                  <span>{caseKey.replace('_', ' ').toUpperCase()}</span>
-                </label>
-              ))}
-
+              <div className="case-toggle-group">
+                <div className="case-toggle-options">
+                  {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
+                    const labelMap = {
+                      standard: 'METHANE + HAZE',
+                      no_ch4: 'NO METHANE',
+                      no_haze: 'NO HAZE'
+                    };
+                    const label = labelMap[caseKey] || caseKey.replace('_', ' ').toUpperCase();
+                    return (
+                      <label key={caseKey} className="toggle-label case-toggle-label">
+                        <input 
+                          type="checkbox"
+                          checked={!!selectedCases[caseKey]}
+                          onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
               {/* Existing non-functional toggles */}
               {Object.entries(toggles).map(([key, value]) => (
                 <label key={key} className="toggle-label">
