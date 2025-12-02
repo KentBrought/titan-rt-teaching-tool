@@ -199,7 +199,8 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
                 config={{
                   displayModeBar: true,
                   displaylogo: false,
-                  modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                  modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+                  showTips: false
                 }}
               />
             </div>
@@ -216,28 +217,49 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
         maxWidth: '100%',
         boxSizing: 'border-box'
       }}>
-        <strong>Current Selection:</strong> {plotMultiple && Array.isArray(geoValues) && geoValues.length > 0 ? (
-          'Multiple points selected'
-        ) : (
-          <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°</>
-        )}
         {(() => {
+          // Check if cases are selected
           let hasSelectedCases = false;
-          if (plotMultiple && Array.isArray(geoValues)) {
-            // Check if any point has any case selected
-            hasSelectedCases = geoValues.some((_, idx) => {
-              const pointCases = selectedCases[idx] || {};
-              return Object.values(pointCases).some(v => v === true);
-            });
-          } else {
-            hasSelectedCases = Object.entries(selectedCases).some(([_, selected]) => selected);
+          if (geoValues) {
+            if (plotMultiple && Array.isArray(geoValues)) {
+              // Check if any point has any case selected
+              hasSelectedCases = geoValues.some((_, idx) => {
+                const pointCases = selectedCases[idx] || {};
+                return Object.values(pointCases).some(v => v === true);
+              });
+            } else if (!plotMultiple) {
+              // Single mode: check selectedCases object
+              hasSelectedCases = selectedCases && Object.values(selectedCases).some(v => v === true);
+            }
           }
-          // Only show warning if nothing is selected at all
-          return !hasSelectedCases ? (
-            <span style={{ color: '#dc3545', marginLeft: '10px' }}>
-              ⚠️ Please select at least one case to display
-            </span>
-          ) : null;
+          
+          // Show angle values only if a point is selected AND cases are selected
+          const showAngles = geoValues && hasSelectedCases;
+          
+          return (
+            <>
+              <strong>Current Selection:</strong> {
+                !geoValues ? (
+                  // No point selected - show nothing for angles
+                  null
+                ) : showAngles ? (
+                  plotMultiple && Array.isArray(geoValues) && geoValues.length > 1 ? (
+                    'Multiple points selected'
+                  ) : (
+                    <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°</>
+                  )
+                ) : (
+                  // Point selected but no cases - show nothing for angles
+                  null
+                )
+              }
+              {!hasSelectedCases && (
+                <span style={{ color: '#dc3545', marginLeft: '10px' }}>
+                  ⚠️ Please select at least one case to display
+                </span>
+              )}
+            </>
+          );
         })()}
       </div>
     </div>

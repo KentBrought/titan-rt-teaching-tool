@@ -49,6 +49,7 @@ function App() {
   const atmosphericComponentsContentRef = useRef(null);
   const togglesBoxRef = useRef(null);
   const irColorImageRef = useRef(null);
+  const prevGeoValuesRef = useRef(null);
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
 
@@ -346,11 +347,21 @@ function App() {
           // Reduce height by 30% to make it smaller
           const reducedHeight = calculatedHeight * 0.7;
           
-          // Set fixed height (only if it's positive)
+          // Set minimum height to ensure content is visible (at least enough for 3 checkboxes)
+          const minHeight = 120; // Minimum height to show 3 checkboxes comfortably
+          
+          // Set fixed height (only if it's positive, and ensure minimum height)
           if (reducedHeight > 0) {
-            content.style.height = `${reducedHeight}px`;
-            content.style.maxHeight = `${reducedHeight}px`;
-            content.style.minHeight = `${reducedHeight}px`;
+            const finalHeight = Math.max(reducedHeight, minHeight);
+            content.style.height = `${finalHeight}px`;
+            content.style.maxHeight = `${finalHeight}px`;
+            content.style.minHeight = `${finalHeight}px`;
+            content.style.flex = '0 0 auto';
+          } else if (minHeight > 0) {
+            // If calculated height is negative or zero, use minimum height
+            content.style.height = `${minHeight}px`;
+            content.style.maxHeight = `${minHeight}px`;
+            content.style.minHeight = `${minHeight}px`;
             content.style.flex = '0 0 auto';
           }
         }
@@ -369,6 +380,33 @@ function App() {
       window.removeEventListener('resize', setFixedHeight);
     };
   }, [toggles, selectedCasesByPoint, geoValues, multiplePositions]); // Re-run when content changes
+
+  // Reset selectedCases when no points are selected in single mode
+  useEffect(() => {
+    if (!toggles.plotMultiple && !geoValues) {
+      setSelectedCases({ standard: false, no_ch4: false, no_haze: false });
+    }
+  }, [toggles.plotMultiple, geoValues]);
+
+  // Auto-select "Methane + Haze" when a point is selected in single mode
+  useEffect(() => {
+    if (!toggles.plotMultiple && geoValues && !Array.isArray(geoValues)) {
+      // Check if geoValues just changed from null to a value (new point selected)
+      const wasNull = prevGeoValuesRef.current === null;
+      const isNowSet = geoValues !== null;
+      
+      if (wasNull && isNowSet) {
+        // Point just selected - auto-select "Methane + Haze"
+        setSelectedCases({ standard: true, no_ch4: false, no_haze: false });
+      }
+      
+      // Update ref for next comparison
+      prevGeoValuesRef.current = geoValues;
+    } else {
+      // Update ref even when conditions aren't met
+      prevGeoValuesRef.current = geoValues;
+    }
+  }, [toggles.plotMultiple, geoValues]);
 
   // Responsive sizing for IR color image and markers div
   useEffect(() => {
@@ -557,7 +595,7 @@ function App() {
               )}
             </div>
             <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
-              <div className="composite-selector">
+              <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
                 <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
                 <div className="radio-group">
                   <label className="radio-label">
@@ -741,7 +779,7 @@ function App() {
           </div>
           
           <div className="spectral-row">
-            <div className="spectral-plot">
+            <div className="spectral-plot" style={{ position: 'relative' }}>
               <h2>Spectral Plot</h2>
               {loading ? (
                 <div style={{ 
@@ -771,35 +809,61 @@ function App() {
                     Consider using a more powerful machine or a different browser for this visualization.
                   </p>
                 </div>
-              ) : spectralData && geoValues ? (
-                <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-                  <SpectralPlot 
-                    spectralData={spectralData}
-                    incidenceAngle={Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0}
-                    emissionAngle={Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0}
-                    azimuthAngle={Array.isArray(geoValues) ? geoValues[0]?.azimuth ?? 0 : geoValues.azimuth ?? 0}
-                    selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
-                    plotMultiple={toggles.plotMultiple}
-                    multiplePositions={toggles.plotMultiple ? multiplePositions : null}
-                    geoValues={geoValues}
-                  />
-                  <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                    {Array.isArray(geoValues) ? (
-                      `Multiple points selected (${geoValues.length})`
-                    ) : (
-                      <>
-                        Using geo-extracted angles: 
-                        Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
-                        Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
-                        Az={geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
-                      </>
+              ) : spectralData ? (
+                <>
+                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                    <SpectralPlot 
+                      spectralData={spectralData}
+                      incidenceAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0) : 0}
+                      emissionAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0) : 0}
+                      azimuthAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.azimuth ?? 0 : geoValues.azimuth ?? 0) : 0}
+                      selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
+                      plotMultiple={toggles.plotMultiple}
+                      multiplePositions={toggles.plotMultiple ? multiplePositions : null}
+                      geoValues={geoValues}
+                    />
+                    {geoValues && (
+                      <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                        {Array.isArray(geoValues) ? (
+                          `Multiple points selected (${geoValues.length})`
+                        ) : (
+                          <>
+                            Using geo-extracted angles: 
+                            Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
+                            Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
+                            Az={geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-              ) : spectralData ? (
-                <div className="plot-placeholder">
-                  <p>Click on the image to place a marker and view the spectral plot</p>
-                </div>
+                  {!geoValues && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 1000,
+                      backgroundColor: 'rgba(42, 42, 42, 0.95)',
+                      border: '2px solid #ffa500',
+                      borderRadius: '8px',
+                      padding: '20px 30px',
+                      textAlign: 'center',
+                      pointerEvents: 'none',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                      maxWidth: '80%'
+                    }}>
+                      <p style={{ 
+                        color: '#ffa500', 
+                        fontSize: '16px', 
+                        fontWeight: '500',
+                        margin: 0
+                      }}>
+                        Click on the IR image to plot a point and view the corresponding spectral plot data
+                      </p>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="plot-placeholder">
                   <p>No spectral data available</p>
@@ -896,14 +960,20 @@ function App() {
                           no_haze: 'No haze'
                         };
                         const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
+                        const isDisabled = !geoValues;
                         return (
-                          <label key={caseKey} className="toggle-label case-toggle-label">
+                          <label 
+                            key={caseKey} 
+                            className="toggle-label case-toggle-label"
+                            style={isDisabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                          >
                             <input 
                               type="checkbox"
-                              checked={!!selectedCases[caseKey]}
+                              checked={isDisabled ? false : !!selectedCases[caseKey]}
                               onChange={() => handleCaseChange(caseKey)}
+                              disabled={isDisabled}
                             />
-                            <span>{label}</span>
+                            <span style={isDisabled ? { color: '#666' } : {}}>{label}</span>
                           </label>
                         );
                       })}
