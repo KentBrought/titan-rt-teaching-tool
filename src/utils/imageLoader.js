@@ -38,10 +38,8 @@ export const getXmlFilename = (phaseAngle) => {
  * @returns {string} Public URL to the image file
  */
 const getAssetBasePath = (hazeFolder) => {
-  if (hazeFolder) {
-    return `/assets/dt/${hazeFolder}`;
-  }
-  return '/assets';
+  // Always use tomasko_1.0 directory
+  return '/assets/dt/tomasko_1.0';
 };
 
 /**
@@ -64,7 +62,7 @@ export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder) =
  */
 export const getXmlUrl = (phaseAngle) => {
   const filename = getXmlFilename(phaseAngle);
-  return `/src/assets/${filename}`;
+  return `/assets/dt/tomasko_1.0/${filename}`;
 };
 
 /**
@@ -85,18 +83,9 @@ export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeF
       return imageUrl;
     }
 
-    // Fallback to legacy assets path if the haze-specific asset is missing
-    if (hazeFolder) {
-      const legacyUrl = getImageUrl(phaseAngle, compositeType);
-      console.warn(`Image not found for ${hazeFolder}, attempting legacy path: ${legacyUrl}`);
-      const legacyResponse = await fetch(legacyUrl);
-      if (legacyResponse.ok) {
-        return legacyUrl;
-      }
-    } else {
-      console.warn(`Image not found for phase angle ${phaseAngle}° (${compositeType})`);
-      return null;
-    }
+    // No fallback - only use tomasko_1.0 directory
+    console.warn(`Image not found for phase angle ${phaseAngle}° (${compositeType})`);
+    return null;
   } catch (error) {
     console.error('Error loading image:', error);
     return null;

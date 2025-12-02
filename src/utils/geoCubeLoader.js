@@ -12,7 +12,7 @@
 export const loadGeoCubeFile = async (phaseAngle) => {
   const paddedPhase = String(Math.round(phaseAngle)).padStart(3, '0');
   const filename = `2012_A0.1_p${paddedPhase}_geo.img`;
-  const url = `/assets/raw/${filename}`;
+  const url = `/assets/dt/tomasko_1.0/${filename}`;
   
   try {
     const response = await fetch(url);

@@ -121,7 +121,7 @@ function App() {
       try {
         setLoading(true);
         setError(null);
-        const dataPath = `/assets/dt/${hazeFolderName}/init_gui_library.json`;
+        const dataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
         console.log(`Loading spectral data from ${dataPath}...`);
 
         const spectralJson = await loadJsonFile(dataPath);
@@ -489,7 +489,6 @@ function App() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
 
