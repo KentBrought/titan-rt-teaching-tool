@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
 import ClickableImage from './components/ClickableImage';
+import GasAbundancePlot from './components/GasAbundancePlot';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles } from './utils/imageLoader';
 import { extractGeoValues } from './utils/geoCubeLoader';
@@ -577,6 +578,13 @@ function App() {
         {/* Left side - Display panels */}
         <div className="left-panel">
           <div className="display-row">
+            {/* Gas Abundance Plot (Methane vs Altitude) */}
+            <div className="skinny-plot">
+              <h3>CH₄ Profile</h3>
+              <div className="skinny-plot-content">
+                <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
+              </div>
+            </div>
             <div ref={irColorImageRef} className="display-box ir-color">
               <h2>IR Color</h2>
               {currentImage ? (
@@ -741,7 +749,7 @@ function App() {
                 </label>
                 
                 <label>
-                  Methane abundance*
+                  Methane abundance
                   <input 
                     type="range" 
                     min="0" 
@@ -931,7 +939,7 @@ function App() {
                             {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                               const labelMap = {
                                 standard: 'Methane + haze',
-                                no_ch4: 'No CH4',
+                                no_ch4: 'No methane',
                                 no_haze: 'No haze'
                               };
                               const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -956,7 +964,7 @@ function App() {
                       {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                         const labelMap = {
                           standard: 'Methane + haze',
-                          no_ch4: 'No CH4',
+                          no_ch4: 'No methane',
                           no_haze: 'No haze'
                         };
                         const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());

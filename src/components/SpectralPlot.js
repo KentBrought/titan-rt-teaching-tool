@@ -65,7 +65,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
             if (data.length > 0) {
               const nameMap = {
                 standard: 'Methane + haze',
-                no_ch4: 'No CH4',
+                no_ch4: 'No methane',
                 no_haze: 'No haze'
               };
               const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -75,7 +75,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
               let lineColor = baseColor;
               if (selectedCaseTypes.length > 1) {
                 // If multiple cases selected, use different shades
-                // Standard: base color, No CH4: darker, No haze: lighter
+                // Standard: base color, No methane: darker, No haze: lighter
                 if (caseType === 'standard') {
                   lineColor = baseColor;
                 } else if (caseType === 'no_ch4') {
@@ -128,7 +128,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
             if (data.length > 0) {
               const nameMap = {
                 standard: 'Methane + haze',
-                no_ch4: 'No CH4',
+                no_ch4: 'No methane',
                 no_haze: 'No haze'
               };
               traces.push({
