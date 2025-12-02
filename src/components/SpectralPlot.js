@@ -36,11 +36,16 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
           );
           
           if (data.length > 0) {
+            const nameMap = {
+              standard: 'Methane + haze',
+              no_ch4: 'No CH4',
+              no_haze: 'No haze'
+            };
             traces.push({
               x: data.map(d => d.wavelength),
               y: data.map(d => d.intensity),
               mode: 'lines',
-              name: `${caseType.replace('_', ' ').toUpperCase()}`,
+              name: nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
               line: {
                 color: caseType === 'standard' ? '#1f77b4' : 
                        caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
