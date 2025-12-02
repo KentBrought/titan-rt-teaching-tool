@@ -48,6 +48,7 @@ function App() {
   const atmosphericComponentsSectionRef = useRef(null);
   const atmosphericComponentsContentRef = useRef(null);
   const togglesBoxRef = useRef(null);
+  const irColorImageRef = useRef(null);
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
 
@@ -369,6 +370,78 @@ function App() {
     };
   }, [toggles, selectedCasesByPoint, geoValues, multiplePositions]); // Re-run when content changes
 
+  // Responsive sizing for IR color image and markers div
+  useEffect(() => {
+    const calculateAndApplyWidth = () => {
+      const MIN_WIDTH = 200; // Hardcoded minimum limit
+      const screenWidth = window.innerWidth;
+      
+      // Calculate available width for the display row
+      // Account for padding, gaps, and other elements
+      const mainContainerPadding = 40; // 20px on each side
+      const displayRowGap = 40; // gap between elements (20px between image and markers, 20px between markers and sliders)
+      const slidersBoxMinWidth = 250; // min-width of sliders-box
+      const availableWidth = screenWidth - mainContainerPadding - displayRowGap - slidersBoxMinWidth;
+      
+      // Calculate target width - make it as small as reasonably possible
+      // while respecting the minimum width
+      let targetWidth;
+      if (screenWidth < 1200) {
+        // For smaller screens, calculate the minimum needed width
+        // Use the smaller of: available width or a reasonable max
+        // But always respect MIN_WIDTH
+        const maxReasonableWidth = Math.min(availableWidth * 0.6, 400);
+        targetWidth = Math.max(MIN_WIDTH, maxReasonableWidth);
+      } else {
+        // For large screens, let it grow naturally (don't restrict)
+        targetWidth = null; // null means use default flex behavior
+      }
+      
+      // Apply to IR color image container
+      if (irColorImageRef.current) {
+        if (targetWidth !== null) {
+          irColorImageRef.current.style.width = `${targetWidth}px`;
+          irColorImageRef.current.style.minWidth = `${MIN_WIDTH}px`;
+          irColorImageRef.current.style.maxWidth = `${targetWidth}px`;
+          irColorImageRef.current.style.flexShrink = '1';
+        } else {
+          // Reset to default for large screens
+          irColorImageRef.current.style.width = '';
+          irColorImageRef.current.style.minWidth = '';
+          irColorImageRef.current.style.maxWidth = '';
+          irColorImageRef.current.style.flexShrink = '';
+        }
+      }
+      
+      // Apply to markers div (geoValuesContainerRef)
+      if (geoValuesContainerRef.current) {
+        if (targetWidth !== null) {
+          geoValuesContainerRef.current.style.width = `${targetWidth}px`;
+          geoValuesContainerRef.current.style.minWidth = `${MIN_WIDTH}px`;
+          geoValuesContainerRef.current.style.maxWidth = `${targetWidth}px`;
+        } else {
+          // Reset to default for large screens
+          geoValuesContainerRef.current.style.width = '';
+          geoValuesContainerRef.current.style.minWidth = '';
+          geoValuesContainerRef.current.style.maxWidth = '';
+        }
+      }
+    };
+
+    // Calculate and apply initially
+    const timeoutId = setTimeout(() => {
+      requestAnimationFrame(calculateAndApplyWidth);
+    }, 0);
+    
+    // Recalculate on resize
+    window.addEventListener('resize', calculateAndApplyWidth);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', calculateAndApplyWidth);
+    };
+  }, []);
+
   // Load spectral data when haze configuration changes
   useEffect(() => {
     let isCancelled = false;
@@ -466,7 +539,7 @@ function App() {
         {/* Left side - Display panels */}
         <div className="left-panel">
           <div className="display-row">
-            <div className="display-box ir-color">
+            <div ref={irColorImageRef} className="display-box ir-color">
               <h2>IR Color</h2>
               {currentImage ? (
                 <ClickableImage
