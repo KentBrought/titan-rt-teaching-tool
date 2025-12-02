@@ -280,12 +280,15 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .control-box h2 {
   font-size: 20px;
   margin-bottom: 15px;
   color: #e0e0e0;
+  flex-shrink: 0;
 }
 
 .sliders-box {
@@ -299,7 +302,8 @@ body {
   border-color: #4a9d4a;
   min-width: 250px;
   max-width: 300px;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  align-self: stretch;
 }
 
 /* Sliders */
@@ -307,6 +311,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 15px;
+  flex-shrink: 0;
 }
 
 .slider-group label {
@@ -370,6 +375,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .toggle-label {
@@ -491,4 +497,66 @@ body {
 
 .radio-label span {
   user-select: none;
+}
+
+/* Atmospheric Components Section */
+.atmospheric-components-section {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.atmospheric-components-header {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #e0e0e0;
+  flex-shrink: 0;
+}
+
+.atmospheric-components-content {
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 0; /* Will be set by JavaScript */
+  flex: 0 0 auto;
+}
+
+.atmospheric-components-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.atmospheric-components-content::-webkit-scrollbar-track {
+  background: #2a2a2a;
+  border-radius: 4px;
+}
+
+.atmospheric-components-content::-webkit-scrollbar-thumb {
+  background: #4a9d4a;
+  border-radius: 4px;
+}
+
+.atmospheric-components-content::-webkit-scrollbar-thumb:hover {
+  background: #5aad5a;
+}
+
+.point-atmospheric-options {
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.point-atmospheric-options:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.point-atmospheric-header {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #e0e0e0;
 }

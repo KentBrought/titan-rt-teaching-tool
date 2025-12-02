@@ -37,6 +37,7 @@ function App() {
   const [error, setError] = useState(null);
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
+  const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // For multiple mode: { pointIndex: { standard: bool, no_ch4: bool, no_haze: bool } }
   const [currentImage, setCurrentImage] = useState(null);
   const [geoValues, setGeoValues] = useState(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
@@ -44,6 +45,9 @@ function App() {
   const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
   const geoValuesBoxRef = useRef(null);
   const geoValuesContainerRef = useRef(null);
+  const atmosphericComponentsSectionRef = useRef(null);
+  const atmosphericComponentsContentRef = useRef(null);
+  const togglesBoxRef = useRef(null);
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
 
@@ -59,16 +63,34 @@ function App() {
           // Switching to multiple mode: clear single position
           setClickedPosition(null);
           setGeoValues(null);
+          setSelectedCasesByPoint({});
         } else {
           // Switching to single mode: clear multiple positions
           setMultiplePositions([]);
           setGeoValues(null);
+          setSelectedCasesByPoint({});
         }
         return { ...prev, [name]: newValue };
       });
     } else {
       setToggles(prev => ({ ...prev, [name]: !prev[name] }));
     }
+  };
+
+  // Handle case selection change for single mode
+  const handleCaseChange = (caseKey) => {
+    setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }));
+  };
+
+  // Handle case selection change for multiple mode (per point)
+  const handleCaseChangeForPoint = (pointIndex, caseKey) => {
+    setSelectedCasesByPoint(prev => ({
+      ...prev,
+      [pointIndex]: {
+        ...(prev[pointIndex] || { standard: true, no_ch4: false, no_haze: false }),
+        [caseKey]: !(prev[pointIndex]?.[caseKey] ?? false)
+      }
+    }));
   };
 
   // Fetch geo values for a given position
@@ -153,8 +175,28 @@ function App() {
         if (existingIndex >= 0) {
           // Remove existing position
           const newPositions = prev.filter((_, idx) => idx !== existingIndex);
+          // Reindex case selections: indices after existingIndex shift down by 1
+          setSelectedCasesByPoint(prevCases => {
+            const newCases = {};
+            for (let i = 0; i < prev.length; i++) {
+              if (i < existingIndex) {
+                // Keep indices before the removed one
+                if (prevCases[i]) {
+                  newCases[i] = { ...prevCases[i] };
+                }
+              } else if (i > existingIndex) {
+                // Shift indices after the removed one down by 1
+                if (prevCases[i]) {
+                  newCases[i - 1] = { ...prevCases[i] };
+                }
+              }
+              // Skip the removed index (existingIndex)
+            }
+            return newCases;
+          });
           if (newPositions.length === 0) {
             setGeoValues(null);
+            setSelectedCasesByPoint({});
           } else {
             fetchMultipleGeoValues(newPositions);
           }
@@ -162,6 +204,12 @@ function App() {
         } else if (prev.length < 6) {
           // Add new position
           const newPositions = [...prev, { x, y, position }];
+          const newIndex = newPositions.length - 1;
+          // Initialize case selections for new point (default: methane + haze)
+          setSelectedCasesByPoint(prevCases => ({
+            ...prevCases,
+            [newIndex]: { standard: true, no_ch4: false, no_haze: false }
+          }));
           fetchMultipleGeoValues(newPositions);
           return newPositions;
         }
@@ -257,6 +305,69 @@ function App() {
       });
     }
   }, [geoValues]);
+
+  // Auto-scroll atmospheric components content to bottom when new points are added
+  useEffect(() => {
+    if (atmosphericComponentsContentRef.current && toggles.plotMultiple && Array.isArray(multiplePositions) && multiplePositions.length > 0) {
+      // Use requestAnimationFrame to ensure DOM is updated before scrolling
+      requestAnimationFrame(() => {
+        if (atmosphericComponentsContentRef.current) {
+          atmosphericComponentsContentRef.current.scrollTop = atmosphericComponentsContentRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [multiplePositions, toggles.plotMultiple]);
+
+  // Set fixed height on atmospheric-components-section to prevent it from changing
+  useEffect(() => {
+    const setFixedHeight = () => {
+      if (togglesBoxRef.current && atmosphericComponentsSectionRef.current && atmosphericComponentsContentRef.current) {
+        const togglesBox = togglesBoxRef.current;
+        const section = atmosphericComponentsSectionRef.current;
+        const content = atmosphericComponentsContentRef.current;
+        
+        const togglesBoxHeight = togglesBox.offsetHeight;
+        const header = section.querySelector('.atmospheric-components-header');
+        const sliderGroup = togglesBox.querySelector('.slider-group');
+        const toggleGroup = togglesBox.querySelector('.toggle-group');
+        const h2 = togglesBox.querySelector('h2');
+        
+        if (header && sliderGroup && toggleGroup && h2) {
+          const headerHeight = h2.offsetHeight;
+          const sliderGroupHeight = sliderGroup.offsetHeight;
+          const toggleGroupHeight = toggleGroup.offsetHeight;
+          const sectionHeaderHeight = header.offsetHeight;
+          const padding = 20 * 2; // top and bottom padding of control-box
+          const gaps = 15 + 12 + 20; // gaps between elements
+          
+          const calculatedHeight = togglesBoxHeight - headerHeight - sliderGroupHeight - toggleGroupHeight - sectionHeaderHeight - padding - gaps;
+          
+          // Reduce height by 30% to make it smaller
+          const reducedHeight = calculatedHeight * 0.7;
+          
+          // Set fixed height (only if it's positive)
+          if (reducedHeight > 0) {
+            content.style.height = `${reducedHeight}px`;
+            content.style.maxHeight = `${reducedHeight}px`;
+            content.style.minHeight = `${reducedHeight}px`;
+            content.style.flex = '0 0 auto';
+          }
+        }
+      }
+    };
+
+    // Set height initially and on resize
+    const timeoutId = setTimeout(() => {
+      requestAnimationFrame(setFixedHeight);
+    }, 0);
+    
+    window.addEventListener('resize', setFixedHeight);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', setFixedHeight);
+    };
+  }, [toggles, selectedCasesByPoint, geoValues, multiplePositions]); // Re-run when content changes
 
   // Load spectral data when haze configuration changes
   useEffect(() => {
@@ -587,20 +698,29 @@ function App() {
                     Consider using a more powerful machine or a different browser for this visualization.
                   </p>
                 </div>
-              ) : spectralData && geoValues && !Array.isArray(geoValues) ? (
+              ) : spectralData && geoValues ? (
                 <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
                   <SpectralPlot 
                     spectralData={spectralData}
-                    incidenceAngle={geoValues.incidence ?? 0}
-                    emissionAngle={geoValues.emis ?? 0}
-                    azimuthAngle={geoValues.azimuth ?? 0}
-                    selectedCases={selectedCases}
+                    incidenceAngle={Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0}
+                    emissionAngle={Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0}
+                    azimuthAngle={Array.isArray(geoValues) ? geoValues[0]?.azimuth ?? 0 : geoValues.azimuth ?? 0}
+                    selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
+                    plotMultiple={toggles.plotMultiple}
+                    multiplePositions={toggles.plotMultiple ? multiplePositions : null}
+                    geoValues={geoValues}
                   />
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                    Using geo-extracted angles: 
-                    Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
-                    Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
-                    Az={geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+                    {Array.isArray(geoValues) ? (
+                      `Multiple points selected (${geoValues.length})`
+                    ) : (
+                      <>
+                        Using geo-extracted angles: 
+                        Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
+                        Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
+                        Az={geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+                      </>
+                    )}
                   </div>
                 </div>
               ) : spectralData ? (
@@ -614,7 +734,7 @@ function App() {
               )}
             </div>
             {/* Spectral Plot Options */}
-            <div className="control-box toggles-box">
+            <div ref={togglesBoxRef} className="control-box toggles-box">
               <h2>Spectral Plot Options</h2>
               <div className="slider-group">
                 <label style={{ marginBottom: '20px' }}>
@@ -630,28 +750,6 @@ function App() {
                 </label>
               </div>
               <div className="toggle-group">
-                <div className="case-toggle-group">
-                  <div className="case-toggle-options">
-                    {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
-                      const labelMap = {
-                        standard: 'Methane + haze',
-                        no_ch4: 'No CH4',
-                        no_haze: 'No haze'
-                      };
-                      const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
-                      return (
-                        <label key={caseKey} className="toggle-label case-toggle-label">
-                          <input 
-                            type="checkbox"
-                            checked={!!selectedCases[caseKey]}
-                            onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
-                          />
-                          <span>{label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
                 {/* Existing non-functional toggles */}
                 {Object.entries(toggles)
                   .filter(([key]) => key !== 'plotMultiple')
@@ -673,6 +771,76 @@ function App() {
                       </label>
                     );
                   })}
+              </div>
+              {/* Atmospheric Components Section */}
+              <div ref={atmosphericComponentsSectionRef} className="atmospheric-components-section">
+                <h3 className="atmospheric-components-header">Atmospheric Components</h3>
+                <div ref={atmosphericComponentsContentRef} className="atmospheric-components-content">
+                  {toggles.plotMultiple && Array.isArray(geoValues) && geoValues.length > 0 ? (
+                    // Multiple mode: show per-point options
+                    multiplePositions.map((pos, pointIndex) => {
+                      const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
+                      const colorNames = colors[pointIndex] || 'Red';
+                      const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
+                      const colorValue = colorValues[pointIndex] || '#ff0000';
+                      const pointCases = selectedCasesByPoint[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
+                      
+                      return (
+                        <div key={pointIndex} className="point-atmospheric-options">
+                          <h4 className="point-atmospheric-header">
+                            Point {pointIndex + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
+                          </h4>
+                          <div className="case-toggle-options">
+                            {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
+                              const labelMap = {
+                                standard: 'Methane + haze',
+                                no_ch4: 'No CH4',
+                                no_haze: 'No haze'
+                              };
+                              const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
+                              return (
+                                <label key={caseKey} className="toggle-label case-toggle-label">
+                                  <input 
+                                    type="checkbox"
+                                    checked={!!pointCases[caseKey]}
+                                    onChange={() => handleCaseChangeForPoint(pointIndex, caseKey)}
+                                  />
+                                  <span>{label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : !toggles.plotMultiple ? (
+                    // Single mode: show single set of options
+                    <div className="case-toggle-options">
+                      {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
+                        const labelMap = {
+                          standard: 'Methane + haze',
+                          no_ch4: 'No CH4',
+                          no_haze: 'No haze'
+                        };
+                        const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
+                        return (
+                          <label key={caseKey} className="toggle-label case-toggle-label">
+                            <input 
+                              type="checkbox"
+                              checked={!!selectedCases[caseKey]}
+                              onChange={() => handleCaseChange(caseKey)}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ color: '#999', fontSize: '12px', fontStyle: 'italic' }}>
+                      Select points on the image to configure atmospheric components
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>

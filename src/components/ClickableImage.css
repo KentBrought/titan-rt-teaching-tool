@@ -11,6 +11,7 @@
   display: block;
   user-select: none;
   pointer-events: none;
+  border-radius: 4px;
 }
 
 .click-marker {
