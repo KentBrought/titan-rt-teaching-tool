@@ -92,13 +92,13 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
   }
 
         return (
-          <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             {/* Plot */}
-            <div style={{ flex: 1, border: '1px solid #dee2e6', borderRadius: '8px', height: '500px' }}>
+            <div style={{ flex: 1, border: '1px solid #dee2e6', borderRadius: '8px', height: '500px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: 'white' }}>
               <Plot
                 data={plotData}
                 layout={plotLayout}
-                style={{ width: '100%', height: '500px' }}
+                style={{ width: '100%', height: '500px', maxWidth: '100%' }}
                 useResizeHandler={true}
                 config={{
                   displayModeBar: true,
@@ -115,7 +115,10 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
         backgroundColor: '#e9ecef', 
         borderRadius: '4px',
         fontSize: '14px',
-        color: '#495057'
+        color: '#495057',
+        width: '100%',
+        maxWidth: '100%',
+        boxSizing: 'border-box'
       }}>
         <strong>Current Selection:</strong> Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°
         {Object.entries(selectedCases).filter(([_, selected]) => selected).length === 0 && (

@@ -18,42 +18,89 @@ const ClickableImage = ({
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const imageRef = useRef(null);
   const containerRef = useRef(null);
+  const clickPositionRef = useRef(clickPosition);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    clickPositionRef.current = clickPosition;
+  }, [clickPosition]);
 
   // Update image size when it loads and recalculate position
   useEffect(() => {
     const updateImageSize = () => {
-      if (imageRef.current) {
-        const img = imageRef.current;
-        setImageSize({
-          width: img.offsetWidth,
-          height: img.offsetHeight
-        });
-        setNaturalSize({
-          width: img.naturalWidth,
-          height: img.naturalHeight
-        });
+      // Use requestAnimationFrame to ensure layout is complete
+      requestAnimationFrame(() => {
+        if (imageRef.current && containerRef.current) {
+          const img = imageRef.current;
+          const container = containerRef.current;
+          
+          setImageSize({
+            width: img.offsetWidth,
+            height: img.offsetHeight
+          });
+          setNaturalSize({
+            width: img.naturalWidth,
+            height: img.naturalHeight
+          });
 
-        // Recalculate display position if we have natural coordinates
-        if (initialPosition && initialPosition.x !== undefined && initialPosition.y !== undefined) {
-          if (img.naturalWidth > 0 && img.naturalHeight > 0 && img.offsetWidth > 0 && img.offsetHeight > 0) {
-            const scaleX = img.offsetWidth / img.naturalWidth;
-            const scaleY = img.offsetHeight / img.naturalHeight;
-            const displayX = initialPosition.x * scaleX;
-            const displayY = initialPosition.y * scaleY;
-            setClickPosition({
-              displayX,
-              displayY,
-              naturalX: initialPosition.x,
-              naturalY: initialPosition.y
-            });
+          // Recalculate display position if we have natural coordinates
+          if (initialPosition && initialPosition.x !== undefined && initialPosition.y !== undefined) {
+            if (img.naturalWidth > 0 && img.naturalHeight > 0 && img.offsetWidth > 0 && img.offsetHeight > 0) {
+              const containerRect = container.getBoundingClientRect();
+              const imgRect = img.getBoundingClientRect();
+              
+              // Get image position within container
+              const imgLeft = imgRect.left - containerRect.left;
+              const imgTop = imgRect.top - containerRect.top;
+              
+              // Convert natural coordinates to image-relative display coordinates
+              const scaleX = img.offsetWidth / img.naturalWidth;
+              const scaleY = img.offsetHeight / img.naturalHeight;
+              const imageRelativeX = initialPosition.x * scaleX;
+              const imageRelativeY = initialPosition.y * scaleY;
+              
+              // Convert to container-relative coordinates
+              const displayX = imgLeft + imageRelativeX;
+              const displayY = imgTop + imageRelativeY;
+              
+              setClickPosition({
+                displayX,
+                displayY,
+                naturalX: initialPosition.x,
+                naturalY: initialPosition.y
+              });
+            }
+          } else if (initialPosition && initialPosition.position) {
+            // Recalculate stored position to account for current image position
+            const containerRect = container.getBoundingClientRect();
+            const imgRect = img.getBoundingClientRect();
+            
+            // Get image position within container
+            const imgLeft = imgRect.left - containerRect.left;
+            const imgTop = imgRect.top - containerRect.top;
+            
+            // If position has natural coordinates, recalculate display position
+            if (initialPosition.position.naturalX !== undefined && initialPosition.position.naturalY !== undefined) {
+              const scaleX = img.offsetWidth / img.naturalWidth;
+              const scaleY = img.offsetHeight / img.naturalHeight;
+              const imageRelativeX = initialPosition.position.naturalX * scaleX;
+              const imageRelativeY = initialPosition.position.naturalY * scaleY;
+              
+              setClickPosition({
+                displayX: imgLeft + imageRelativeX,
+                displayY: imgTop + imageRelativeY,
+                naturalX: initialPosition.position.naturalX,
+                naturalY: initialPosition.position.naturalY
+              });
+            } else {
+              // Use the stored position object if available
+              setClickPosition(initialPosition.position);
+            }
+          } else if (!initialPosition) {
+            setClickPosition(null);
           }
-        } else if (initialPosition && initialPosition.position) {
-          // Use the stored position object if available
-          setClickPosition(initialPosition.position);
-        } else if (!initialPosition) {
-          setClickPosition(null);
         }
-      }
+      });
     };
 
     const img = imageRef.current;
@@ -62,9 +109,27 @@ const ClickableImage = ({
         updateImageSize();
       } else {
         img.addEventListener('load', updateImageSize);
-        return () => img.removeEventListener('load', updateImageSize);
       }
     }
+
+    // Also recalculate on window resize if we have a position
+    const handleResize = () => {
+      if (imageRef.current && containerRef.current) {
+        const currentPosition = clickPositionRef.current || (initialPosition?.position);
+        if (currentPosition && currentPosition.naturalX !== undefined && currentPosition.naturalY !== undefined) {
+          updateImageSize();
+        }
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      if (img) {
+        img.removeEventListener('load', updateImageSize);
+      }
+      window.removeEventListener('resize', handleResize);
+    };
   }, [src, initialPosition]);
 
   const handleImageClick = (e) => {
@@ -102,18 +167,22 @@ const ClickableImage = ({
       const clampedY = Math.max(0, Math.min(naturalY, img.naturalHeight - 1));
       
       // Toggle marker: if clicking the same position, remove it
+      // Compare container-relative positions
+      const containerRelativeX = imgLeft + relativeX;
+      const containerRelativeY = imgTop + relativeY;
       if (clickPosition && 
-          Math.abs(clickPosition.displayX - relativeX) < 10 &&
-          Math.abs(clickPosition.displayY - relativeY) < 10) {
+          Math.abs(clickPosition.displayX - containerRelativeX) < 10 &&
+          Math.abs(clickPosition.displayY - containerRelativeY) < 10) {
         setClickPosition(null);
         if (onImageClick) {
           onImageClick(null, null, null);
         }
       } else {
         // Set new marker position
+        // displayX and displayY need to be relative to container for absolute positioning
         const newPosition = {
-          displayX: relativeX,
-          displayY: relativeY,
+          displayX: containerRelativeX,
+          displayY: containerRelativeY,
           naturalX: clampedX,
           naturalY: clampedY
         };
@@ -160,4 +229,5 @@ const ClickableImage = ({
 };
 
 export default ClickableImage;
+
 

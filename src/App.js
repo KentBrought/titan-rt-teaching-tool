@@ -196,8 +196,35 @@ function App() {
               ) : (
                 <div className="placeholder-circle"></div>
               )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px' }}>
+              <div className="composite-selector">
+                <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
+                <div className="radio-group">
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="compositeType"
+                      value="5_2_1.3"
+                      checked={compositeType === '5_2_1.3'}
+                      onChange={(e) => setCompositeType(e.target.value)}
+                    />
+                    <span>5, 2, 1.3 µm</span>
+                  </label>
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="compositeType"
+                      value="2_1.6_1.3"
+                      checked={compositeType === '2_1.6_1.3'}
+                      onChange={(e) => setCompositeType(e.target.value)}
+                    />
+                    <span>2, 1.6, 1.3 µm</span>
+                  </label>
+                </div>
+              </div>
               {geoValues && (
-                <div className="geo-values-display">
+                <div className="geo-values-box">
                   <h3 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
                     Geo Values at ({geoValues.x}, {geoValues.y})
                   </h3>
@@ -205,232 +232,204 @@ function App() {
                     <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
                   ) : (
                     <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      <p><strong>Latitude (Layer 0):</strong> {geoValues.lat !== null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                      <p><strong>Longitude (Layer 1):</strong> {geoValues.lon !== null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                      <p><strong>Phase (Layer 4):</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Incidence (Layer 5):</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Emis (Layer 6):</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Azimuth (Layer 7):</strong> {geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Latitude:</strong> {geoValues.lat !== null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                      <p><strong>Longitude:</strong> {geoValues.lon !== null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                      <p><strong>Phase:</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Incidence:</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Emis:</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Azimuth:</strong> {geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
                     </div>
                   )}
                   {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
                 </div>
               )}
             </div>
-            <div className="composite-selector">
-              <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
-              <div className="radio-group">
-                <label className="radio-label">
-                  <input
-                    type="radio"
-                    name="compositeType"
-                    value="5_2_1.3"
-                    checked={compositeType === '5_2_1.3'}
-                    onChange={(e) => setCompositeType(e.target.value)}
-                  />
-                  <span>5, 2, 1.3 µm</span>
-                </label>
-                <label className="radio-label">
-                  <input
-                    type="radio"
-                    name="compositeType"
-                    value="2_1.6_1.3"
-                    checked={compositeType === '2_1.6_1.3'}
-                    onChange={(e) => setCompositeType(e.target.value)}
-                  />
-                  <span>2, 1.6, 1.3 µm</span>
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          
-          <div className="spectral-plot">
-            <h2>Spectral Plot</h2>
-            {loading ? (
-              <div style={{ 
-                padding: '40px', 
-                textAlign: 'center',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '8px',
-                margin: '10px'
-              }}>
-                <div style={{ fontSize: '18px', marginBottom: '10px' }}>🔄</div>
-                <p>Loading spectral data...</p>
-              </div>
-            ) : error ? (
-              <div style={{ 
-                padding: '40px', 
-                textAlign: 'center',
-                backgroundColor: '#f8d7da',
-                borderRadius: '8px',
-                margin: '10px',
-                border: '1px solid #f5c6cb'
-              }}>
-                <div style={{ fontSize: '24px', marginBottom: '15px' }}>⚠️</div>
-                <h3 style={{ color: '#721c24', marginBottom: '10px' }}>Memory Error</h3>
-                <p style={{ color: '#721c24', marginBottom: '15px' }}>{error}</p>
-                <p style={{ color: '#856404', fontSize: '14px' }}>
-                  The PyDISORT spectral dataset is too large for the browser to handle safely. 
-                  Consider using a more powerful machine or a different browser for this visualization.
-                </p>
-              </div>
-            ) : spectralData && geoValues ? (
-              <div>
-                <SpectralPlot 
-                  spectralData={spectralData}
-                  incidenceAngle={geoValues.incidence ?? 0}
-                  emissionAngle={geoValues.emis ?? 0}
-                  azimuthAngle={geoValues.azimuth ?? 0}
-                  selectedCases={selectedCases}
-                />
-                <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
-                  Using geo-extracted angles: 
-                  Inc={geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
-                  Emi={geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
-                  Az={geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+            {/* IR Image Options */}
+            <div className="control-box sliders-box">
+              <h2>IR Image Options</h2>
+              <div className="slider-group">
+                {/* Haze Model Section */}
+                <div style={{ marginBottom: '15px' }}>
+                  <p style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>Haze Model</p>
+                  <div style={{ display: 'flex', gap: '20px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="hazePropertiesModel"
+                        value="doose"
+                        checked={hazePropertiesModel === 'doose'}
+                        onChange={(e) => setHazePropertiesModel(e.target.value)}
+                        style={{ marginRight: '6px', cursor: 'pointer' }}
+                      />
+                      <span>Doose</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="hazePropertiesModel"
+                        value="tomasko"
+                        checked={hazePropertiesModel === 'tomasko'}
+                        onChange={(e) => setHazePropertiesModel(e.target.value)}
+                        style={{ marginRight: '6px', cursor: 'pointer' }}
+                      />
+                      <span>Tomasko</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
-            ) : spectralData ? (
-              <div className="plot-placeholder">
-                <p>Click on the image to place a marker and view the spectral plot</p>
-              </div>
-            ) : (
-              <div className="plot-placeholder">
-                <p>No spectral data available</p>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Right side - Controls */}
-        <div className="right-panel">
-        {/* IR Image Options */}
-        <div className="control-box sliders-box">
-          <h2>IR Image Options</h2>
-          <div className="slider-group">
-            {/* Haze Model Section */}
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>Haze Model</p>
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="hazePropertiesModel"
-                    value="doose"
-                    checked={hazePropertiesModel === 'doose'}
-                    onChange={(e) => setHazePropertiesModel(e.target.value)}
-                    style={{ marginRight: '6px', cursor: 'pointer' }}
-                  />
-                  <span>Doose</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <input
-                    type="radio"
-                    name="hazePropertiesModel"
-                    value="tomasko"
-                    checked={hazePropertiesModel === 'tomasko'}
-                    onChange={(e) => setHazePropertiesModel(e.target.value)}
-                    style={{ marginRight: '6px', cursor: 'pointer' }}
-                  />
-                  <span>Tomasko</span>
-                </label>
-              </div>
-            </div>
-
-            <label style={{ fontWeight: 'bold' }}>
-              Haze abundance
-              <input 
-                type="range" 
-                min="0" 
-                max="2" 
-                step="1"
-                value={sliders.hazeAbundance / 50}
-                onChange={(e) => {
-                  const stepValue = parseInt(e.target.value);
-                  const sliderValue = stepValue * 50;
-                  handleSliderChange('hazeAbundance', sliderValue);
-                }}
-              />
-              <span>{hazeAbundanceSetting}</span>
-            </label>
-            
-            <label>
-              Methane abundance
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={sliders.methaneAbundance}
-                onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
-              />
-              <span>{sliders.methaneAbundance}</span>
-            </label>
-
-            <label style={{ fontWeight: 'bold' }}>
-              Phase angle
-              <input 
-                type="range" 
-                min="0" 
-                max="71" 
-                step="1"
-                value={sliders.phaseAngle}
-                onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
-              />
-              <span>{sliders.phaseAngle * 5}°</span>
-            </label>
-
-            <label>
-              Spectral resolution*
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={sliders.spectralResolution}
-                onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
-              />
-              <span>{sliders.spectralResolution}</span>
-            </label>
-          </div>
-        </div>
-
-          {/* Spectral Plot Options */}
-          <div className="control-box toggles-box">
-            <h2>Spectral Plot Options</h2>
-            <div className="toggle-group">
-              <div className="case-toggle-group">
-                <div className="case-toggle-options">
-                  {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
-                    const labelMap = {
-                      standard: 'METHANE + HAZE',
-                      no_ch4: 'NO METHANE',
-                      no_haze: 'NO HAZE'
-                    };
-                    const label = labelMap[caseKey] || caseKey.replace('_', ' ').toUpperCase();
-                    return (
-                      <label key={caseKey} className="toggle-label case-toggle-label">
-                        <input 
-                          type="checkbox"
-                          checked={!!selectedCases[caseKey]}
-                          onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Existing non-functional toggles */}
-              {Object.entries(toggles).map(([key, value]) => (
-                <label key={key} className="toggle-label">
+                <label style={{ fontWeight: 'bold' }}>
+                  Haze abundance
                   <input 
-                    type="checkbox"
-                    checked={value}
-                    onChange={() => handleToggleChange(key)}
+                    type="range" 
+                    min="0" 
+                    max="2" 
+                    step="1"
+                    value={sliders.hazeAbundance / 50}
+                    onChange={(e) => {
+                      const stepValue = parseInt(e.target.value);
+                      const sliderValue = stepValue * 50;
+                      handleSliderChange('hazeAbundance', sliderValue);
+                    }}
                   />
-                  <span>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</span>
+                  <span>{hazeAbundanceSetting}</span>
                 </label>
-              ))}
+                
+                <label>
+                  Methane abundance
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={sliders.methaneAbundance}
+                    onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
+                  />
+                  <span>{sliders.methaneAbundance}</span>
+                </label>
+
+                <label style={{ fontWeight: 'bold' }}>
+                  Phase angle
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="71" 
+                    step="1"
+                    value={sliders.phaseAngle}
+                    onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
+                  />
+                  <span>{sliders.phaseAngle * 5}°</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          
+          <div className="spectral-row">
+            <div className="spectral-plot">
+              <h2>Spectral Plot</h2>
+              {loading ? (
+                <div style={{ 
+                  padding: '40px', 
+                  textAlign: 'center',
+                  backgroundColor: '#f8f9fa',
+                  borderRadius: '8px',
+                  margin: '10px'
+                }}>
+                  <div style={{ fontSize: '18px', marginBottom: '10px' }}>🔄</div>
+                  <p>Loading spectral data...</p>
+                </div>
+              ) : error ? (
+                <div style={{ 
+                  padding: '40px', 
+                  textAlign: 'center',
+                  backgroundColor: '#f8d7da',
+                  borderRadius: '8px',
+                  margin: '10px',
+                  border: '1px solid #f5c6cb'
+                }}>
+                  <div style={{ fontSize: '24px', marginBottom: '15px' }}>⚠️</div>
+                  <h3 style={{ color: '#721c24', marginBottom: '10px' }}>Memory Error</h3>
+                  <p style={{ color: '#721c24', marginBottom: '15px' }}>{error}</p>
+                  <p style={{ color: '#856404', fontSize: '14px' }}>
+                    The PyDISORT spectral dataset is too large for the browser to handle safely. 
+                    Consider using a more powerful machine or a different browser for this visualization.
+                  </p>
+                </div>
+              ) : spectralData && geoValues ? (
+                <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                  <SpectralPlot 
+                    spectralData={spectralData}
+                    incidenceAngle={geoValues.incidence ?? 0}
+                    emissionAngle={geoValues.emis ?? 0}
+                    azimuthAngle={geoValues.azimuth ?? 0}
+                    selectedCases={selectedCases}
+                  />
+                  <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                    Using geo-extracted angles: 
+                    Inc={geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
+                    Emi={geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
+                    Az={geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+                  </div>
+                </div>
+              ) : spectralData ? (
+                <div className="plot-placeholder">
+                  <p>Click on the image to place a marker and view the spectral plot</p>
+                </div>
+              ) : (
+                <div className="plot-placeholder">
+                  <p>No spectral data available</p>
+                </div>
+              )}
+            </div>
+            {/* Spectral Plot Options */}
+            <div className="control-box toggles-box">
+              <h2>Spectral Plot Options</h2>
+              <div className="slider-group">
+                <label style={{ marginBottom: '20px' }}>
+                  Spectral resolution*
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={sliders.spectralResolution}
+                    onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
+                  />
+                  <span>{sliders.spectralResolution}</span>
+                </label>
+              </div>
+              <div className="toggle-group">
+                <div className="case-toggle-group">
+                  <div className="case-toggle-options">
+                    {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
+                      const labelMap = {
+                        standard: 'METHANE + HAZE',
+                        no_ch4: 'NO METHANE',
+                        no_haze: 'NO HAZE'
+                      };
+                      const label = labelMap[caseKey] || caseKey.replace('_', ' ').toUpperCase();
+                      return (
+                        <label key={caseKey} className="toggle-label case-toggle-label">
+                          <input 
+                            type="checkbox"
+                            checked={!!selectedCases[caseKey]}
+                            onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Existing non-functional toggles */}
+                {Object.entries(toggles).map(([key, value]) => (
+                  <label key={key} className="toggle-label">
+                    <input 
+                      type="checkbox"
+                      checked={value}
+                      onChange={() => handleToggleChange(key)}
+                    />
+                    <span>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
         </div>

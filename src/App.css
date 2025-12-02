@@ -16,6 +16,9 @@ body {
   min-height: 100vh;
   color: white;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  max-width: 100vw;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 /* Tabs */
@@ -51,13 +54,18 @@ body {
   padding: 20px;
   gap: 20px;
   height: calc(100vh - 60px);
+  max-width: 100vw;
+  box-sizing: border-box;
 }
 
 .left-panel {
-  flex: 2;
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .right-panel {
@@ -71,13 +79,23 @@ body {
   display: flex;
   gap: 20px;
   flex: 1;
-  justify-content: center;
-  align-items: flex-start;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.spectral-row {
+  display: flex;
+  gap: 20px;
+  flex: 2;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .display-box {
-  flex: 1;
-  max-width: 600px;
+  flex: 1 1 auto;
+  min-width: 0;
   background-color: #2a2a2a;
   border: 2px solid #3a3a3a;
   border-radius: 8px;
@@ -86,6 +104,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  height: 100%;
 }
 
 .display-box h2 {
@@ -131,8 +150,18 @@ body {
   padding: 20px;
   display: flex;
   flex-direction: column;
-  flex: 2;
-  min-height: 700px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.spectral-plot > div {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .spectral-plot h2 {
@@ -162,6 +191,9 @@ body {
   border: 2px solid #3a3a3a;
   border-radius: 8px;
   padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .control-box h2 {
@@ -172,12 +204,16 @@ body {
 
 .sliders-box {
   border-color: #66ccff;
-  flex: 1.5;
+  min-width: 250px;
+  max-width: 300px;
+  flex: 0 0 auto;
 }
 
 .toggles-box {
   border-color: #4a9d4a;
-  flex: 1;
+  min-width: 250px;
+  max-width: 300px;
+  flex: 0 0 auto;
 }
 
 /* Sliders */
@@ -278,8 +314,32 @@ body {
   padding: 20px;
   min-width: 200px;
   max-width: 250px;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+}
+
+.geo-values-box {
+  background-color: #2a2a2a;
+  border: 2px solid #66ccff;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 200px;
+  max-width: 250px;
+  display: flex;
+  flex-direction: column;
+}
+
+.geo-values-box h3 {
+  font-size: 16px;
+  margin-bottom: 10px;
+  color: #e0e0e0;
+}
+
+.geo-values-box p {
+  margin: 5px 0;
+  font-size: 14px;
+  color: #ccc;
 }
 
 .composite-selector h3 {
