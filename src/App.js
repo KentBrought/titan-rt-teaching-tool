@@ -205,12 +205,12 @@ function App() {
                     <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
                   ) : (
                     <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      <p><strong>Latitude:</strong> {geoValues.lat !== null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                      <p><strong>Longitude:</strong> {geoValues.lon !== null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                      <p><strong>Phase:</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Incidence:</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Emis:</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Azimuth:</strong> {geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Latitude (Layer 0):</strong> {geoValues.lat !== null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                      <p><strong>Longitude (Layer 1):</strong> {geoValues.lon !== null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                      <p><strong>Phase (Layer 4):</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Incidence (Layer 5):</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Emis (Layer 6):</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Azimuth (Layer 7):</strong> {geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
                     </div>
                   )}
                   {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
@@ -305,76 +305,37 @@ function App() {
 
         {/* Right side - Controls */}
         <div className="right-panel">
-          {/* Sliders */}
-          <div className="control-box sliders-box">
-            <h2>Sliders:</h2>
-            <div className="slider-group">
-              <label>
-                Haze abundance
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="2" 
-                  step="1"
-                  value={sliders.hazeAbundance / 50} 
-                  onChange={(e) => {
-                    const stepValue = parseInt(e.target.value);
-                    const sliderValue = stepValue * 50; 
-                    handleSliderChange('hazeAbundance', sliderValue);
-                  }}
-                />
-                <span>{getHazeAbundanceValue(sliders.hazeAbundance)}</span>
-              </label>
-              
-              <label>
-                Methane abundance
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliders.methaneAbundance}
-                  onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
-                />
-                <span>{sliders.methaneAbundance}</span>
-              </label>
-              
-
-              <label>
-                Spectral resolution*
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliders.spectralResolution}
-                  onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
-                />
-                <span>{sliders.spectralResolution}</span>
-              </label>
-              
-              <label>
-                Haze properties*
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliders.hazeProperties}
-                  onChange={(e) => handleSliderChange('hazeProperties', e.target.value)}
-                />
-                <span>{sliders.hazeProperties}</span>
-              </label>
-              
-              <label style={{ fontWeight: 'bold' }}>
-                Phase angle
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="71" 
-                  step="1"
-                  value={sliders.phaseAngle}
-                  onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
-                />
-                <span>{sliders.phaseAngle * 5}°</span>
-              </label>
+        {/* IR Image Options */}
+        <div className="control-box sliders-box">
+          <h2>IR Image Options</h2>
+          <div className="slider-group">
+            {/* Haze Model Section */}
+            <div style={{ marginBottom: '15px' }}>
+              <p style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px' }}>Haze Model</p>
+              <div style={{ display: 'flex', gap: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="hazePropertiesModel"
+                    value="doose"
+                    checked={hazePropertiesModel === 'doose'}
+                    onChange={(e) => setHazePropertiesModel(e.target.value)}
+                    style={{ marginRight: '6px', cursor: 'pointer' }}
+                  />
+                  <span>Doose</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="hazePropertiesModel"
+                    value="tomasko"
+                    checked={hazePropertiesModel === 'tomasko'}
+                    onChange={(e) => setHazePropertiesModel(e.target.value)}
+                    style={{ marginRight: '6px', cursor: 'pointer' }}
+                  />
+                  <span>Tomasko</span>
+                </label>
+              </div>
             </div>
 
             <label style={{ fontWeight: 'bold' }}>
@@ -437,43 +398,28 @@ function App() {
           <div className="control-box toggles-box">
             <h2>Spectral Plot Options</h2>
             <div className="toggle-group">
-          {/* Haze Properties Radio Options */}
-          <p style={{ marginBottom: '2px', fontWeight: 'bold' }}>Haze Properties:</p>
-          <div>
-            <label className="toggle-label" style={{ float: 'left', marginRight: '20px' }}>
-              <input
-                type="radio"
-                name="hazePropertiesModel"
-                value="doose"
-                checked={hazePropertiesModel === 'doose'}
-                onChange={(e) => setHazePropertiesModel(e.target.value)}
-              />
-              <span>Doose</span>
-            </label>
-            <label className="toggle-label" style={{ float: 'left' }}>
-              <input
-                type="radio"
-                name="hazePropertiesModel"
-                value="tomasko"
-                checked={hazePropertiesModel === 'tomasko'}
-                onChange={(e) => setHazePropertiesModel(e.target.value)}
-              />
-              <span>Tomasko</span>
-            </label>
-            <div style={{ clear: 'both' }}></div>
-          </div>
-              {/* Case toggles (functional) */}
-              {['standard', 'no_ch4', 'no_haze'].map((caseKey) => (
-                <label key={caseKey} className="toggle-label" style={{ fontWeight: 'bold' }}>
-                  <input 
-                    type="checkbox"
-                    checked={!!selectedCases[caseKey]}
-                    onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
-                  />
-                  <span>{caseKey.replace('_', ' ').toUpperCase()}</span>
-                </label>
-              ))}
-
+              <div className="case-toggle-group">
+                <div className="case-toggle-options">
+                  {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
+                    const labelMap = {
+                      standard: 'METHANE + HAZE',
+                      no_ch4: 'NO METHANE',
+                      no_haze: 'NO HAZE'
+                    };
+                    const label = labelMap[caseKey] || caseKey.replace('_', ' ').toUpperCase();
+                    return (
+                      <label key={caseKey} className="toggle-label case-toggle-label">
+                        <input 
+                          type="checkbox"
+                          checked={!!selectedCases[caseKey]}
+                          onChange={() => setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }))}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
               {/* Existing non-functional toggles */}
               {Object.entries(toggles).map(([key, value]) => (
                 <label key={key} className="toggle-label">
@@ -489,6 +435,7 @@ function App() {
           </div>
         </div>
       </div>
+    </div>
   );
 }
 
