@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
 import ClickableImage from './components/ClickableImage';
@@ -41,6 +41,9 @@ function App() {
   const [geoValues, setGeoValues] = useState(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
+  const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
+  const geoValuesBoxRef = useRef(null);
+  const geoValuesContainerRef = useRef(null);
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
 
@@ -49,7 +52,23 @@ function App() {
   };
 
   const handleToggleChange = (name) => {
-    setToggles(prev => ({ ...prev, [name]: !prev[name] }));
+    if (name === 'plotMultiple') {
+      setToggles(prev => {
+        const newValue = !prev[name];
+        if (newValue) {
+          // Switching to multiple mode: clear single position
+          setClickedPosition(null);
+          setGeoValues(null);
+        } else {
+          // Switching to single mode: clear multiple positions
+          setMultiplePositions([]);
+          setGeoValues(null);
+        }
+        return { ...prev, [name]: newValue };
+      });
+    } else {
+      setToggles(prev => ({ ...prev, [name]: !prev[name] }));
+    }
   };
 
   // Fetch geo values for a given position
@@ -72,19 +91,91 @@ function App() {
     }
   }, [sliders.phaseAngle]);
 
+  // Fetch geo values for multiple positions
+  const fetchMultipleGeoValues = useCallback(async (positions) => {
+    try {
+      setLoadingGeo(true);
+      const phaseAngle = sliders.phaseAngle * 5;
+      const geoValuesPromises = positions.map(async (pos, index) => {
+        try {
+          const values = await extractGeoValues(phaseAngle, pos.x, pos.y);
+          return {
+            ...values,
+            x: pos.x,
+            y: pos.y,
+            index,
+            color: ['red', 'orange', 'yellow', 'green', 'blue', 'purple'][index]
+          };
+        } catch (error) {
+          return {
+            error: error.message,
+            x: pos.x,
+            y: pos.y,
+            index,
+            color: ['red', 'orange', 'yellow', 'green', 'blue', 'purple'][index]
+          };
+        }
+      });
+      const allGeoValues = await Promise.all(geoValuesPromises);
+      setGeoValues(allGeoValues);
+    } catch (error) {
+      console.error('Error extracting geo values:', error);
+      setGeoValues(null);
+    } finally {
+      setLoadingGeo(false);
+    }
+  }, [sliders.phaseAngle]);
+
   // Handle image click to extract geo values
   const handleImageClick = async (x, y, position) => {
     if (x === null || y === null) {
-      setGeoValues(null);
-      setClickedPosition(null);
+      if (toggles.plotMultiple) {
+        // Clear all positions in multiple mode
+        setMultiplePositions([]);
+        setGeoValues(null);
+      } else {
+        setGeoValues(null);
+        setClickedPosition(null);
+      }
       return;
     }
 
-    // Store the clicked position (natural coordinates for geo cube lookup)
-    setClickedPosition({ x, y, position });
-    
-    // Extract values immediately
-    await fetchGeoValues(x, y);
+    if (toggles.plotMultiple) {
+      // Multiple mode: add or remove position
+      setMultiplePositions(prev => {
+        // Check if clicking on an existing position (within 10 pixels)
+        const existingIndex = prev.findIndex(pos => 
+          position && pos.position &&
+          Math.abs(pos.position.displayX - position.displayX) < 10 &&
+          Math.abs(pos.position.displayY - position.displayY) < 10
+        );
+        
+        if (existingIndex >= 0) {
+          // Remove existing position
+          const newPositions = prev.filter((_, idx) => idx !== existingIndex);
+          if (newPositions.length === 0) {
+            setGeoValues(null);
+          } else {
+            fetchMultipleGeoValues(newPositions);
+          }
+          return newPositions;
+        } else if (prev.length < 6) {
+          // Add new position
+          const newPositions = [...prev, { x, y, position }];
+          fetchMultipleGeoValues(newPositions);
+          return newPositions;
+        }
+        // Max 6 positions reached
+        return prev;
+      });
+    } else {
+      // Single mode: store the clicked position
+      setClickedPosition({ x, y, position });
+      setMultiplePositions([]);
+      
+      // Extract values immediately
+      await fetchGeoValues(x, y);
+    }
   };
 
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
@@ -108,10 +199,64 @@ function App() {
 
   // Update geo values when phase angle changes (if position is marked)
   useEffect(() => {
-    if (clickedPosition) {
+    if (toggles.plotMultiple && multiplePositions.length > 0) {
+      fetchMultipleGeoValues(multiplePositions);
+    } else if (!toggles.plotMultiple && clickedPosition) {
       fetchGeoValues(clickedPosition.x, clickedPosition.y);
     }
-  }, [sliders.phaseAngle, clickedPosition, fetchGeoValues]);
+  }, [sliders.phaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
+
+  // Set fixed height on geo-values-box to prevent it from changing
+  useEffect(() => {
+    const setFixedHeight = () => {
+      if (geoValuesContainerRef.current && geoValuesBoxRef.current) {
+        const container = geoValuesContainerRef.current;
+        const compositeSelector = container.querySelector('.composite-selector');
+        const geoBox = geoValuesBoxRef.current;
+        
+        if (compositeSelector) {
+          const containerHeight = container.offsetHeight;
+          const compositeHeight = compositeSelector.offsetHeight;
+          const gap = 20; // gap between elements
+          const calculatedHeight = containerHeight - compositeHeight - gap;
+          
+          // Set fixed height (only if it's positive)
+          if (calculatedHeight > 0) {
+            geoBox.style.height = `${calculatedHeight}px`;
+            geoBox.style.maxHeight = `${calculatedHeight}px`;
+            geoBox.style.minHeight = `${calculatedHeight}px`;
+            geoBox.style.flex = '0 0 auto';
+            geoBox.style.overflow = 'hidden';
+          }
+        }
+      }
+    };
+
+    // Set height initially and on resize
+    const timeoutId = setTimeout(() => {
+      requestAnimationFrame(setFixedHeight);
+    }, 0);
+    
+    window.addEventListener('resize', setFixedHeight);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', setFixedHeight);
+    };
+  }, [geoValues]); // Re-run when geoValues appears/disappears
+
+  // Auto-scroll geo values box to bottom when new points are added
+  useEffect(() => {
+    if (geoValuesBoxRef.current && Array.isArray(geoValues) && geoValues.length > 0) {
+      // Use requestAnimationFrame to ensure DOM is updated before scrolling
+      requestAnimationFrame(() => {
+        const scrollContainer = geoValuesBoxRef.current?.querySelector('.geo-values-scroll');
+        if (scrollContainer) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+      });
+    }
+  }, [geoValues]);
 
   // Load spectral data when haze configuration changes
   useEffect(() => {
@@ -190,14 +335,16 @@ function App() {
                   alt="Titan IR Color Image"
                   onImageClick={handleImageClick}
                   className="ir-color-image"
-                  style={{ width: '100%', height: '100%' }}
-                  initialPosition={clickedPosition}
+                  style={{ width: '100%' }}
+                  initialPosition={toggles.plotMultiple ? null : clickedPosition}
+                  multiplePositions={toggles.plotMultiple ? multiplePositions : []}
+                  plotMultiple={toggles.plotMultiple}
                 />
               ) : (
                 <div className="placeholder-circle"></div>
               )}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px' }}>
+            <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
               <div className="composite-selector">
                 <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
                 <div className="radio-group">
@@ -224,23 +371,72 @@ function App() {
                 </div>
               </div>
               {geoValues && (
-                <div className="geo-values-box">
-                  <h3 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
-                    Geo Values at ({geoValues.x}, {geoValues.y})
+                <div ref={geoValuesBoxRef} className="geo-values-box">
+                  <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
+                    {toggles.plotMultiple ? 'Selected Points' : 'Selected Point'}
                   </h3>
-                  {geoValues.error ? (
-                    <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
-                  ) : (
-                    <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      <p><strong>Latitude:</strong> {geoValues.lat !== null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                      <p><strong>Longitude:</strong> {geoValues.lon !== null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                      <p><strong>Phase:</strong> {geoValues.phase !== null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Incidence:</strong> {geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Emis:</strong> {geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Azimuth:</strong> {geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
-                    </div>
-                  )}
-                  {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
+                  <div className="geo-values-scroll" ref={geoValuesBoxRef}>
+                    {Array.isArray(geoValues) ? (
+                      // Multiple positions mode
+                      geoValues.map((values, index) => {
+                        const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
+                        const colorNames = colors[index] || 'Red';
+                        const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
+                        const colorValue = colorValues[index] || '#ff0000';
+                        return (
+                          <div key={index}>
+                            <div style={{ marginBottom: '10px' }}>
+                              <h4 style={{ marginBottom: '5px', fontSize: '16px', color: '#e0e0e0' }}>
+                                Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
+                              </h4>
+                              <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
+                                ({values.x}, {values.y})
+                              </p>
+                            </div>
+                            {values.error ? (
+                              <p style={{ color: '#ff6b6b' }}>Error: {values.error}</p>
+                            ) : (
+                              <div style={{ fontSize: '14px', color: '#ccc' }}>
+                                <p><strong>Latitude:</strong> {values.lat != null ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                                <p><strong>Longitude:</strong> {values.lon != null ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                                <p><strong>Phase:</strong> {values.phase != null ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
+                                <p><strong>Incidence:</strong> {values.incidence != null ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
+                                <p><strong>Emis:</strong> {values.emis != null ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
+                                <p><strong>Azimuth:</strong> {values.azimuth != null ? `${values.azimuth.toFixed(2)}°` : 'N/A'}</p>
+                              </div>
+                            )}
+                            {index < geoValues.length - 1 && (
+                              <div style={{ 
+                                borderTop: '1px solid #3a3a3a', 
+                                marginTop: '15px', 
+                                marginBottom: '15px' 
+                              }}></div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      // Single position mode
+                      <>
+                        <h4 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
+                          Point at ({geoValues.x}, {geoValues.y})
+                        </h4>
+                        {geoValues.error ? (
+                          <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
+                        ) : (
+                          <div style={{ fontSize: '14px', color: '#ccc' }}>
+                            <p><strong>Latitude:</strong> {geoValues.lat != null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                            <p><strong>Longitude:</strong> {geoValues.lon != null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                            <p><strong>Phase:</strong> {geoValues.phase != null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                            <p><strong>Incidence:</strong> {geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                            <p><strong>Emis:</strong> {geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                            <p><strong>Azimuth:</strong> {geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
+                  </div>
                 </div>
               )}
             </div>
@@ -319,6 +515,16 @@ function App() {
                   <span>{sliders.phaseAngle * 5}°</span>
                 </label>
               </div>
+              <div style={{ marginTop: '20px' }}>
+                <label className="toggle-label" style={{ fontWeight: 'bold' }}>
+                  <input 
+                    type="checkbox"
+                    checked={toggles.plotMultiple}
+                    onChange={() => handleToggleChange('plotMultiple')}
+                  />
+                  <span>Plot Multiple</span>
+                </label>
+              </div>
             </div>
           </div>
           
@@ -353,7 +559,7 @@ function App() {
                     Consider using a more powerful machine or a different browser for this visualization.
                   </p>
                 </div>
-              ) : spectralData && geoValues ? (
+              ) : spectralData && geoValues && !Array.isArray(geoValues) ? (
                 <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
                   <SpectralPlot 
                     spectralData={spectralData}
@@ -364,9 +570,9 @@ function App() {
                   />
                   <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                     Using geo-extracted angles: 
-                    Inc={geoValues.incidence !== null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
-                    Emi={geoValues.emis !== null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
-                    Az={geoValues.azimuth !== null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+                    Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}, 
+                    Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}, 
+                    Az={geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
                   </div>
                 </div>
               ) : spectralData ? (
@@ -419,16 +625,18 @@ function App() {
                   </div>
                 </div>
                 {/* Existing non-functional toggles */}
-                {Object.entries(toggles).map(([key, value]) => (
-                  <label key={key} className="toggle-label">
-                    <input 
-                      type="checkbox"
-                      checked={value}
-                      onChange={() => handleToggleChange(key)}
-                    />
-                    <span>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</span>
-                  </label>
-                ))}
+                {Object.entries(toggles)
+                  .filter(([key]) => key !== 'plotMultiple')
+                  .map(([key, value]) => (
+                    <label key={key} className="toggle-label">
+                      <input 
+                        type="checkbox"
+                        checked={value}
+                        onChange={() => handleToggleChange(key)}
+                      />
+                      <span>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}</span>
+                    </label>
+                  ))}
               </div>
             </div>
           </div>
