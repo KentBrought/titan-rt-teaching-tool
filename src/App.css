@@ -170,10 +170,9 @@ body {
   width: 100%;
 }
 
-/* Gas Abundance Plot (skinny vertical plot) */
 .skinny-plot {
-  width: 180px;
-  min-width: 180px;
+  width: 320px;
+  min-width: 320px;
   background-color: #2a2a2a;
   border: 2px solid #66ccff;
   border-radius: 8px;

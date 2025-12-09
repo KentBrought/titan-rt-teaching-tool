@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import Plot from 'react-plotly.js';
 
 /**
- * GasAbundancePlot - Displays methane mole fraction vs altitude for Titan atmosphere
- * Based on Huygens GCMS measurements (Niemann et al. 2010)
+ * GasAbundancePlot - Displays gas mole fractions vs altitude for Titan atmosphere
+ * Gases: N2, CH4, H2, CO, C2H6, C2H2
+ * CH4 profile based on Huygens GCMS measurements (Niemann et al. 2010)
+ * Trace gases use constant values from PyDISORT model
  */
 const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
   const [profileData, setProfileData] = useState(null);
@@ -15,15 +17,15 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
     const loadProfileData = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/data/methane_profile.json');
+        const response = await fetch('/data/gas_profiles.json');
         if (!response.ok) {
-          throw new Error('Failed to load methane profile data');
+          throw new Error('Failed to load gas profile data');
         }
         const data = await response.json();
         setProfileData(data);
         setError(null);
       } catch (err) {
-        console.error('Error loading methane profile:', err);
+        console.error('Error loading gas profiles:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -33,38 +35,50 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
     loadProfileData();
   }, []);
 
-  // Calculate scaled methane values based on abundance slider
-  const getScaledMethane = () => {
-    if (!profileData) return { x: [], y: [] };
+  // Build plot traces for all gases
+  const getPlotData = () => {
+    if (!profileData) return [];
 
-    // methaneAbundance slider: 0-100, where 50 is the default/baseline
-    // Scale factor: at 50 = 1.0, at 0 = 0.5, at 100 = 1.5
-    const scaleFactor = 0.5 + (methaneAbundance / 100);
+    // CH4 scale factor: at 50 = 1.0, at 0 = 0.5, at 100 = 1.5
+    const ch4ScaleFactor = 0.5 + (methaneAbundance / 100);
 
-    const scaledCH4 = profileData.ch4_mole_fraction.map(val => val * scaleFactor);
+    // bye bye nitrogen
 
-    return {
-      x: scaledCH4,
-      y: profileData.altitude_km
-    };
+    const gasOrder = ['CH4', 'H2', 'CO', 'C2H6', 'C2H2'];
+    
+    return gasOrder.map(gasKey => {
+      const gas = profileData.gases[gasKey];
+      if (!gas) return null;
+
+      let moleFractions = gas.mole_fraction;
+      
+      // Apply scaling only to CH4
+      if (gasKey === 'CH4') {
+        moleFractions = moleFractions.map(v => v * ch4ScaleFactor);
+      }
+
+      return {
+        x: moleFractions,
+        y: profileData.altitude_km,
+        type: 'scatter',
+        mode: 'lines',
+        name: gasKey,
+        line: {
+          color: gas.color,
+          width: 2
+        },
+        hovertemplate: `${gas.name}<br>%{x:.2e}<br>%{y:.1f} km<extra></extra>`
+      };
+    }).filter(Boolean);
   };
 
-  const plotData = profileData ? [{
-    ...getScaledMethane(),
-    type: 'scatter',
-    mode: 'lines',
-    name: 'CH₄',
-    line: {
-      color: '#00bcd4',
-      width: 2.5
-    },
-    hovertemplate: 'CH₄: %{x:.3f}<br>Alt: %{y:.1f} km<extra></extra>'
-  }] : [];
+  // Get max altitude from data for y-axis scaling
+  const maxAltitude = profileData ? Math.max(...profileData.altitude_km) : 50;
 
   const plotLayout = {
     xaxis: {
       title: {
-        text: 'CH₄ Mole Fraction',
+        text: 'Mole Fraction',
         font: { size: 11, color: '#ccc' },
         standoff: 5
       },
@@ -72,9 +86,8 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
       showgrid: true,
       gridcolor: 'rgba(255,255,255,0.1)',
       tickfont: { size: 9, color: '#999' },
-      tickformat: '.2f',
-      range: [-2, -1], // log scale: 0.01 to 0.1
-      dtick: 0.5,
+      tickformat: '.0e',
+      range: [-7, 0], // log scale: 10^-7 to 1
       side: 'bottom'
     },
     yaxis: {
@@ -86,13 +99,23 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
       showgrid: true,
       gridcolor: 'rgba(255,255,255,0.1)',
       tickfont: { size: 9, color: '#999' },
-      range: [0, 150],
-      dtick: 30
+      range: [0, maxAltitude],
+      dtick: 10
     },
-    margin: { l: 45, r: 10, t: 10, b: 40 },
+    margin: { l: 50, r: 10, t: 10, b: 40 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(26,26,26,1)',
-    showlegend: false,
+    showlegend: true,
+    legend: {
+      x: 0.98,
+      y: 0.98,
+      xanchor: 'right',
+      yanchor: 'top',
+      bgcolor: 'rgba(0,0,0,0.5)',
+      bordercolor: '#444',
+      borderwidth: 1,
+      font: { size: 9, color: '#ccc' }
+    },
     hovermode: 'closest'
   };
 
@@ -138,7 +161,7 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <Plot
-        data={plotData}
+        data={getPlotData()}
         layout={plotLayout}
         config={plotConfig}
         style={{ width: '100%', height: '100%' }}
@@ -149,4 +172,3 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
 };
 
 export default GasAbundancePlot;
-

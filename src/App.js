@@ -580,7 +580,7 @@ function App() {
           <div className="display-row">
             {/* Gas Abundance Plot (Methane vs Altitude) */}
             <div className="skinny-plot">
-              <h3>CH₄ Profile</h3>
+              <h3>Gas Abundance </h3>
               <div className="skinny-plot-content">
                 <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
               </div>
