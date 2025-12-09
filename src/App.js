@@ -19,10 +19,16 @@ function App() {
   });
 
   const [toggles, setToggles] = useState({
-    hazeProfile: false,
     plotMultiple: false,
-    transReflect: false,
     spectralUnits: false,
+  });
+
+  const [transmissionToggles, setTransmissionToggles] = useState({
+    ch4: true,
+    h2: true,
+    co: true,
+    c2h6: true,
+    c2h2: true,
   });
 
   const getHazeAbundanceValue = (sliderValue) => {
@@ -30,6 +36,10 @@ function App() {
     if (sliderValue <= 33) return 0;
     if (sliderValue <= 67) return 0.5;
     return 1;
+  };
+
+  const handleTransmissionToggleChange = (name) => {
+    setTransmissionToggles(prev => ({ ...prev, [name]: !prev[name] }));
   };
 
   // Spectral data state
@@ -900,8 +910,6 @@ function App() {
                   .filter(([key]) => key !== 'plotMultiple')
                   .map(([key, value]) => {
                     const labelMap = {
-                      hazeProfile: 'Haze profile*',
-                      transReflect: 'Trans reflect*',
                       spectralUnits: 'Spectral units*'
                     };
                     const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
@@ -916,6 +924,31 @@ function App() {
                       </label>
                     );
                   })}
+              </div>
+              <div className="transmission-box" style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
+                <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission*</h3>
+                <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+                  {Object.entries(transmissionToggles).map(([key, value]) => {
+                    const labelMap = {
+                      ch4: 'CH4',
+                      h2: 'H2',
+                      co: 'CO',
+                      c2h6: 'C2H6',
+                      c2h2: 'C2H2',
+                    };
+                    const label = labelMap[key] || key.toUpperCase();
+                    return (
+                      <label key={key} className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={value}
+                          onChange={() => handleTransmissionToggleChange(key)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
               {/* Atmospheric Components Section */}
               <div ref={atmosphericComponentsSectionRef} className="atmospheric-components-section">
