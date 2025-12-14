@@ -9,6 +9,7 @@ const ClickableImage = ({
   src, 
   alt, 
   onImageClick,
+  onImageHover = null, // Callback for hover events: (x, y, position) => void
   className = '',
   style = {},
   initialPosition = null, // Allow external control of position
@@ -132,18 +133,19 @@ const ClickableImage = ({
   // No longer need to position the inner container absolutely
   // It will stay in the normal flow and size to the image
 
-  const handleImageClick = (e) => {
-    if (!imageRef.current || !imageContainerRef.current) return;
+  // Helper function to calculate coordinates from mouse event
+  const calculateCoordinates = (e) => {
+    if (!imageRef.current || !imageContainerRef.current) return null;
 
     const img = imageRef.current;
     const imgContainer = imageContainerRef.current;
     
-    // Get click position relative to the inner image container
+    // Get position relative to the inner image container
     const rect = imgContainer.getBoundingClientRect();
     const relativeX = e.clientX - rect.left;
     const relativeY = e.clientY - rect.top;
     
-    // Check if click is within image container bounds (which matches image size in normal flow)
+    // Check if position is within image container bounds
     if (relativeX >= 0 && relativeX <= rect.width && 
         relativeY >= 0 && relativeY <= rect.height) {
       
@@ -158,35 +160,59 @@ const ClickableImage = ({
       const clampedY = Math.max(0, Math.min(naturalY, img.naturalHeight - 1));
       
       // Position relative to inner container (which matches image dimensions)
-      const newPosition = {
+      return {
         displayX: relativeX,
         displayY: relativeY,
         naturalX: clampedX,
         naturalY: clampedY
       };
+    }
+    return null;
+  };
 
-      if (plotMultiple) {
-        // In multiple mode, always call onImageClick - App.js handles the logic
+  const handleImageClick = (e) => {
+    const newPosition = calculateCoordinates(e);
+    if (!newPosition) return;
+
+    const { naturalX: clampedX, naturalY: clampedY } = newPosition;
+
+    if (plotMultiple) {
+      // In multiple mode, always call onImageClick - App.js handles the logic
+      if (onImageClick) {
+        onImageClick(clampedX, clampedY, newPosition);
+      }
+    } else {
+      // Single mode: toggle marker if clicking the same position
+      if (clickPosition && 
+          Math.abs(clickPosition.displayX - newPosition.displayX) < 10 &&
+          Math.abs(clickPosition.displayY - newPosition.displayY) < 10) {
+        setClickPosition(null);
+        if (onImageClick) {
+          onImageClick(null, null, null);
+        }
+      } else {
+        // Set new marker position
+        setClickPosition(newPosition);
         if (onImageClick) {
           onImageClick(clampedX, clampedY, newPosition);
         }
-      } else {
-        // Single mode: toggle marker if clicking the same position
-        if (clickPosition && 
-            Math.abs(clickPosition.displayX - relativeX) < 10 &&
-            Math.abs(clickPosition.displayY - relativeY) < 10) {
-          setClickPosition(null);
-          if (onImageClick) {
-            onImageClick(null, null, null);
-          }
-        } else {
-          // Set new marker position
-          setClickPosition(newPosition);
-          if (onImageClick) {
-            onImageClick(clampedX, clampedY, newPosition);
-          }
-        }
       }
+    }
+  };
+
+  const handleImageHover = (e) => {
+    if (!onImageHover) return;
+    const newPosition = calculateCoordinates(e);
+    if (newPosition) {
+      onImageHover(newPosition.naturalX, newPosition.naturalY, newPosition);
+    } else {
+      onImageHover(null, null, null);
+    }
+  };
+
+  const handleImageLeave = () => {
+    if (onImageHover) {
+      onImageHover(null, null, null);
     }
   };
 
@@ -196,6 +222,8 @@ const ClickableImage = ({
       className={`clickable-image-container ${className}`}
       style={style}
       onClick={handleImageClick}
+      onMouseMove={handleImageHover}
+      onMouseLeave={handleImageLeave}
     >
       {src && (
         <div

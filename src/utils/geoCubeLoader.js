@@ -4,6 +4,9 @@
  * Layers: 0=lat, 1=lon, 2=xres, 3=yres, 4=phase, 5=incidence, 6=emis, 7=azimuth, 8=distance
  */
 
+// Cache for parsed geo cube data (by phase angle)
+const geoCubeCache = new Map();
+
 /**
  * Load geo cube data from a .img file
  * @param {number} phaseAngle - Phase angle in degrees
@@ -70,10 +73,6 @@ export const getGeoValue = (geoCubeData, x, y, band) => {
   const clampedY = Math.max(0, Math.min(Math.floor(y), numLines - 1));
   const clampedBand = Math.max(0, Math.min(Math.floor(band), numBands - 1));
   
-  if (clampedX !== x || clampedY !== y || clampedBand !== band) {
-    console.warn(`Coordinates clamped: (${x}, ${y}, ${band}) -> (${clampedX}, ${clampedY}, ${clampedBand})`);
-  }
-  
   // Calculate index: [band][line][sample] order (Last Index Fastest = sample changes fastest)
   const index = clampedBand * numLines * numSamples + clampedY * numSamples + clampedX;
   
@@ -86,6 +85,29 @@ export const getGeoValue = (geoCubeData, x, y, band) => {
 };
 
 /**
+ * Get or load parsed geo cube data for a phase angle (with caching)
+ * @param {number} phaseAngle - Phase angle in degrees
+ * @returns {Promise<Float32Array>} Parsed geo cube data
+ */
+export const getGeoCubeData = async (phaseAngle) => {
+  const cacheKey = Math.round(phaseAngle);
+  
+  // Check cache first
+  if (geoCubeCache.has(cacheKey)) {
+    return geoCubeCache.get(cacheKey);
+  }
+  
+  // Load and parse
+  const buffer = await loadGeoCubeFile(phaseAngle);
+  const geoData = parseGeoCube(buffer);
+  
+  // Cache the parsed data
+  geoCubeCache.set(cacheKey, geoData);
+  
+  return geoData;
+};
+
+/**
  * Extract values from layers 0, 1, 4, 5, 6, and 7 at a specific position
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {number} x - Sample coordinate (0-680)
@@ -94,8 +116,7 @@ export const getGeoValue = (geoCubeData, x, y, band) => {
  */
 export const extractGeoValues = async (phaseAngle, x, y) => {
   try {
-    const buffer = await loadGeoCubeFile(phaseAngle);
-    const geoData = parseGeoCube(buffer);
+    const geoData = await getGeoCubeData(phaseAngle);
     
     const lat = getGeoValue(geoData, x, y, 0);         // Layer 0: lat (negative = North)
     const lon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon (negative = West)

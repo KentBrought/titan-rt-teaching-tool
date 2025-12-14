@@ -6,7 +6,7 @@ import GasAbundancePlot from './components/GasAbundancePlot';
 import ErrorBoundary from './components/ErrorBoundary';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles } from './utils/imageLoader';
-import { extractGeoValues } from './utils/geoCubeLoader';
+import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
 const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
@@ -164,6 +164,7 @@ function App() {
   const [currentImage, setCurrentImage] = useState(null);
   const [geoValues, setGeoValues] = useState(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
+  const [hoverGeoValues, setHoverGeoValues] = useState(null); // Geo values for hover position
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
   const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
   const geoValuesBoxRef = useRef(null);
@@ -280,6 +281,93 @@ function App() {
       setLoadingGeo(false);
     }
   }, [sliders.phaseAngle]);
+
+  // Cache for geo cube data (by phase angle)
+  const geoCubeDataRef = useRef(null);
+  const currentPhaseAngleRef = useRef(null);
+  
+  // Debounce timer ref for hover handler
+  const hoverDebounceTimerRef = useRef(null);
+
+  // Preload geo cube data when phase angle changes
+  useEffect(() => {
+    const loadGeoCube = async () => {
+      const phaseAngle = sliders.phaseAngle * 5;
+      if (currentPhaseAngleRef.current !== phaseAngle) {
+        try {
+          const geoData = await getGeoCubeData(phaseAngle);
+          geoCubeDataRef.current = geoData;
+          currentPhaseAngleRef.current = phaseAngle;
+        } catch (error) {
+          console.error('Error loading geo cube data:', error);
+          geoCubeDataRef.current = null;
+        }
+      }
+    };
+    loadGeoCube();
+  }, [sliders.phaseAngle]);
+
+  // Handle image hover to extract geo values (with debouncing and cached data)
+  const handleImageHover = useCallback((x, y, position) => {
+    // Clear any existing timer
+    if (hoverDebounceTimerRef.current) {
+      clearTimeout(hoverDebounceTimerRef.current);
+    }
+
+    if (x === null || y === null) {
+      setHoverGeoValues(null);
+      return;
+    }
+
+    // Use cached data for instant lookups (no async needed)
+    hoverDebounceTimerRef.current = setTimeout(() => {
+      const geoData = geoCubeDataRef.current;
+      if (!geoData) {
+        // If data not loaded yet, fall back to async call
+        const phaseAngle = sliders.phaseAngle * 5;
+        extractGeoValues(phaseAngle, x, y).then(values => {
+          setHoverGeoValues(values);
+        }).catch(error => {
+          console.error('Error extracting hover geo values:', error);
+          setHoverGeoValues(null);
+        });
+        return;
+      }
+
+      // Fast synchronous lookup from cached data
+      try {
+        const lat = getGeoValue(geoData, x, y, 0);
+        const lon = getGeoValue(geoData, x, y, 1);
+        const phase = getGeoValue(geoData, x, y, 4);
+        const incidence = getGeoValue(geoData, x, y, 5);
+        const emis = getGeoValue(geoData, x, y, 6);
+        const azimuth = getGeoValue(geoData, x, y, 7);
+
+        setHoverGeoValues({
+          lat: lat !== null ? lat : null,
+          lon: lon !== null ? lon : null,
+          phase: phase !== null ? phase : null,
+          incidence: incidence !== null ? incidence : null,
+          emis: emis !== null ? emis : null,
+          azimuth: azimuth !== null ? azimuth : null,
+          x,
+          y
+        });
+      } catch (error) {
+        console.error('Error extracting hover geo values:', error);
+        setHoverGeoValues(null);
+      }
+    }, 10); // Reduced debounce delay to 10ms since lookups are now instant
+  }, [sliders.phaseAngle]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverDebounceTimerRef.current) {
+        clearTimeout(hoverDebounceTimerRef.current);
+      }
+    };
+  }, []);
 
   // Handle image click to extract geo values
   const handleImageClick = async (x, y, position) => {
@@ -732,16 +820,27 @@ function App() {
             <div ref={irColorImageRef} className="display-box ir-color">
               <h2>IR Color</h2>
               {currentImage ? (
-                <ClickableImage
-                  src={currentImage}
-                  alt="Titan IR Color Image"
-                  onImageClick={handleImageClick}
-                  className="ir-color-image"
-                  style={{ width: '100%' }}
-                  initialPosition={toggles.plotMultiple ? null : clickedPosition}
-                  multiplePositions={toggles.plotMultiple ? multiplePositions : []}
-                  plotMultiple={toggles.plotMultiple}
-                />
+                <>
+                  <ClickableImage
+                    src={currentImage}
+                    alt="Titan IR Color Image"
+                    onImageClick={handleImageClick}
+                    onImageHover={handleImageHover}
+                    className="ir-color-image"
+                    style={{ width: '100%' }}
+                    initialPosition={toggles.plotMultiple ? null : clickedPosition}
+                    multiplePositions={toggles.plotMultiple ? multiplePositions : []}
+                    plotMultiple={toggles.plotMultiple}
+                  />
+                  {hoverGeoValues && (
+                    <div className="hover-geo-values-display">
+                      <p><strong>Coordinates:</strong> ({hoverGeoValues.x}, {hoverGeoValues.y})</p>
+                      <p><strong>Incidence:</strong> {hoverGeoValues.incidence != null ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Emission:</strong> {hoverGeoValues.emis != null ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                      <p><strong>Phase:</strong> {hoverGeoValues.phase != null ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="placeholder-circle"></div>
               )}
