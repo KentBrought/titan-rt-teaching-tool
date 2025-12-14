@@ -131,7 +131,7 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const text = await response.text();
+    let text = await response.text();
     console.log(`Loaded ${url}, size: ${text.length} characters`);
     
     // Check file size - increased limit for real data
@@ -140,24 +140,62 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
     }
     
     // Parse the JSON with error handling
+    // For very large files, this might cause memory issues
     let data;
     try {
-      data = JSON.parse(text);
+      // Check memory before parsing
+      const memoryBefore = getMemoryInfo();
+      if (memoryBefore) {
+        console.log(`Memory before parsing: ${memoryBefore.used} / ${memoryBefore.limit}`);
+      }
+      
+      // Use a try-catch around JSON.parse to catch memory errors
+      const textLength = text.length; // Store length before clearing
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        // Clear text immediately if parse fails to free memory
+        text = null;
+        
+        // Check if it's a memory-related error
+        const errorMsg = parseErr.message || String(parseErr);
+        if (errorMsg.toLowerCase().includes('memory') || 
+            errorMsg.toLowerCase().includes('out of') ||
+            parseErr.name === 'RangeError') {
+          throw new Error(`Out of memory while parsing ${url} (${(textLength / 1024 / 1024).toFixed(2)}MB). The file is too large for your browser.`);
+        }
+        throw parseErr;
+      }
+      
+      // Clear the text string to free memory immediately after parsing
+      // This helps reduce peak memory usage
+      text = null; // Allow GC to free the string immediately
+      
+      const memoryAfter = getMemoryInfo();
+      if (memoryAfter) {
+        console.log(`Memory after parsing: ${memoryAfter.used} / ${memoryAfter.limit}`);
+        const usedMB = parseInt(memoryAfter.used);
+        const limitMB = parseInt(memoryAfter.limit);
+        if (usedMB > limitMB * 0.9) {
+          console.warn(`Memory usage is very high (${usedMB}MB / ${limitMB}MB). Consider reducing dataset size.`);
+        }
+      }
     } catch (parseError) {
       console.error(`JSON parse error in ${url}:`, parseError);
-      throw new Error(`JSON parse error: ${parseError.message}`);
+      // Re-throw with better error message
+      throw parseError;
     }
     
-    // Sample the data to reduce memory usage
+    // Keep spectral library data as-is (no conversion to avoid memory spikes)
+    // Modern JS engines handle arrays efficiently, and conversion causes temporary memory doubling
     if (url.includes('init_gui_library.json')) {
-      console.log('Sampling spectral data to reduce memory usage...');
-      data = sampleData(data, 100);
-      console.log(`Sampled data: ${data.wavelength.length} wavelengths, ${data.standard.length} spectra`);
+      console.log('Loaded spectral data (keeping all wavelength points, no conversion)...');
+      console.log(`Full data: ${data.wavelength?.length || 0} wavelengths, ${data.standard?.length || 0} spectra`);
       
-      // Check memory usage after sampling
+      // Log memory usage for monitoring
       const memoryInfo = getMemoryInfo();
-      if (memoryInfo && parseInt(memoryInfo.used) > 100) { // More than 100MB
-        throw new Error('Memory usage too high after data sampling');
+      if (memoryInfo) {
+        console.log('Memory usage after loading:', memoryInfo);
       }
     }
     

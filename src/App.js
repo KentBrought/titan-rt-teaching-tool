@@ -1,11 +1,123 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
 import ClickableImage from './components/ClickableImage';
 import GasAbundancePlot from './components/GasAbundancePlot';
+import ErrorBoundary from './components/ErrorBoundary';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles } from './utils/imageLoader';
 import { extractGeoValues } from './utils/geoCubeLoader';
+
+// Memoized component for geoValues display to prevent unnecessary re-renders
+const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
+  const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
+  const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
+
+  if (!geoValues) return null;
+
+  return (
+    <div className="geo-values-box">
+      <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
+        {plotMultiple ? 'Selected Points' : 'Selected Point'}
+      </h3>
+      <div className="geo-values-scroll">
+        {Array.isArray(geoValues) ? (
+          // Multiple positions mode
+          geoValues.map((values, index) => {
+            const colorNames = colors[index] || 'Red';
+            const colorValue = colorValues[index] || '#ff0000';
+            return (
+              <div key={`${values.x}-${values.y}-${index}`}>
+                <div style={{ marginBottom: '10px' }}>
+                  <h4 style={{ marginBottom: '5px', fontSize: '16px', color: '#e0e0e0' }}>
+                    Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
+                  </h4>
+                  <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
+                    ({values.x}, {values.y})
+                  </p>
+                </div>
+                {values.error ? (
+                  <p style={{ color: '#ff6b6b' }}>Error: {values.error}</p>
+                ) : (
+                  <div style={{ fontSize: '14px', color: '#ccc' }}>
+                    <p><strong>Latitude:</strong> {values.lat != null ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                    <p><strong>Longitude:</strong> {values.lon != null ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                    <p><strong>Phase:</strong> {values.phase != null ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Incidence:</strong> {values.incidence != null ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Emis:</strong> {values.emis != null ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Azimuth:</strong> {values.azimuth != null ? `${values.azimuth.toFixed(2)}°` : 'N/A'}</p>
+                  </div>
+                )}
+                {index < geoValues.length - 1 && (
+                  <div style={{ 
+                    borderTop: '1px solid #3a3a3a', 
+                    marginTop: '15px', 
+                    marginBottom: '15px' 
+                  }}></div>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          // Single position mode
+          <>
+            <h4 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
+              Point at ({geoValues.x}, {geoValues.y})
+            </h4>
+            {geoValues.error ? (
+              <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
+            ) : (
+              <div style={{ fontSize: '14px', color: '#ccc' }}>
+                <p><strong>Latitude:</strong> {geoValues.lat != null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                <p><strong>Longitude:</strong> {geoValues.lon != null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                <p><strong>Phase:</strong> {geoValues.phase != null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Incidence:</strong> {geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Emis:</strong> {geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Azimuth:</strong> {geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
+              </div>
+            )}
+          </>
+        )}
+        {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison function for memo
+  // Only re-render if geoValues, plotMultiple, or loadingGeo actually changed
+  if (prevProps.plotMultiple !== nextProps.plotMultiple) return false;
+  if (prevProps.loadingGeo !== nextProps.loadingGeo) return false;
+  
+  // Deep comparison for geoValues
+  const prev = prevProps.geoValues;
+  const next = nextProps.geoValues;
+  
+  if (prev === next) return true; // Same reference
+  if (!prev || !next) return false; // One is null/undefined
+  
+  // If both are arrays, compare length and key properties
+  if (Array.isArray(prev) && Array.isArray(next)) {
+    if (prev.length !== next.length) return false;
+    // Compare each element by key properties
+    return prev.every((p, i) => {
+      const n = next[i];
+      return p.x === n.x && p.y === n.y && 
+             p.lat === n.lat && p.lon === n.lon &&
+             p.incidence === n.incidence && p.emis === n.emis && p.azimuth === n.azimuth;
+    });
+  }
+  
+  // For single object, compare key properties
+  if (!Array.isArray(prev) && !Array.isArray(next)) {
+    return prev.x === next.x && prev.y === next.y &&
+           prev.lat === next.lat && prev.lon === next.lon &&
+           prev.incidence === next.incidence && prev.emis === next.emis && prev.azimuth === next.azimuth;
+  }
+  
+  return false; // Different types
+});
+
+GeoValuesDisplay.displayName = 'GeoValuesDisplay';
 
 function App() {
   const [activeTab, setActiveTab] = useState('tab1');
@@ -77,6 +189,14 @@ function App() {
           setClickedPosition(null);
           setGeoValues(null);
           setSelectedCasesByPoint({});
+          // Unselect all transmission gasses
+          setTransmissionToggles({
+            ch4: false,
+            h2: false,
+            co: false,
+            c2h6: false,
+            c2h2: false,
+          });
         } else {
           // Switching to single mode: clear multiple positions
           setMultiplePositions([]);
@@ -393,9 +513,16 @@ function App() {
   }, [toggles, selectedCasesByPoint, geoValues, multiplePositions]); // Re-run when content changes
 
   // Reset selectedCases when no points are selected in single mode
+  // But preserve the state when a point is selected (don't reset to all false)
   useEffect(() => {
     if (!toggles.plotMultiple && !geoValues) {
-      setSelectedCases({ standard: false, no_ch4: false, no_haze: false });
+      // Only reset if we're going from having a point to not having one
+      // Don't reset if we never had a point
+      setSelectedCases(prev => {
+        // If we had selections before, keep them but they won't show until a point is selected
+        // Actually, let's reset to default state when no point is selected
+        return { standard: true, no_ch4: false, no_haze: false };
+      });
     }
   }, [toggles.plotMultiple, geoValues]);
 
@@ -521,7 +648,14 @@ function App() {
       } catch (err) {
         if (isCancelled) return;
         console.error('Error loading spectral data:', err);
-        setError(`Unable to load spectral data from ${hazeFolderName}. ${err.message}`);
+        
+        // Check if it's a memory error
+        const errorMessage = err.message || String(err);
+        if (errorMessage.toLowerCase().includes('memory') || errorMessage.toLowerCase().includes('out of')) {
+          setError('Out of memory error. The spectral dataset is too large for your browser. Please try refreshing the page or use a more powerful machine.');
+        } else {
+          setError(`Unable to load spectral data from ${hazeFolderName}. ${err.message}`);
+        }
         setSpectralData(null);
       } finally {
         if (!isCancelled) {
@@ -639,72 +773,12 @@ function App() {
                 </div>
               </div>
               {geoValues && (
-                <div ref={geoValuesBoxRef} className="geo-values-box">
-                  <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
-                    {toggles.plotMultiple ? 'Selected Points' : 'Selected Point'}
-                  </h3>
-                  <div className="geo-values-scroll" ref={geoValuesBoxRef}>
-                    {Array.isArray(geoValues) ? (
-                      // Multiple positions mode
-                      geoValues.map((values, index) => {
-                        const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
-                        const colorNames = colors[index] || 'Red';
-                        const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
-                        const colorValue = colorValues[index] || '#ff0000';
-                        return (
-                          <div key={index}>
-                            <div style={{ marginBottom: '10px' }}>
-                              <h4 style={{ marginBottom: '5px', fontSize: '16px', color: '#e0e0e0' }}>
-                                Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
-                              </h4>
-                              <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
-                                ({values.x}, {values.y})
-                              </p>
-                            </div>
-                            {values.error ? (
-                              <p style={{ color: '#ff6b6b' }}>Error: {values.error}</p>
-                            ) : (
-                              <div style={{ fontSize: '14px', color: '#ccc' }}>
-                                <p><strong>Latitude:</strong> {values.lat != null ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                                <p><strong>Longitude:</strong> {values.lon != null ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                                <p><strong>Phase:</strong> {values.phase != null ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
-                                <p><strong>Incidence:</strong> {values.incidence != null ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
-                                <p><strong>Emis:</strong> {values.emis != null ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
-                                <p><strong>Azimuth:</strong> {values.azimuth != null ? `${values.azimuth.toFixed(2)}°` : 'N/A'}</p>
-                              </div>
-                            )}
-                            {index < geoValues.length - 1 && (
-                              <div style={{ 
-                                borderTop: '1px solid #3a3a3a', 
-                                marginTop: '15px', 
-                                marginBottom: '15px' 
-                              }}></div>
-                            )}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      // Single position mode
-                      <>
-                        <h4 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
-                          Point at ({geoValues.x}, {geoValues.y})
-                        </h4>
-                        {geoValues.error ? (
-                          <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
-                        ) : (
-                          <div style={{ fontSize: '14px', color: '#ccc' }}>
-                            <p><strong>Latitude:</strong> {geoValues.lat != null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                            <p><strong>Longitude:</strong> {geoValues.lon != null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                            <p><strong>Phase:</strong> {geoValues.phase != null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
-                            <p><strong>Incidence:</strong> {geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                            <p><strong>Emis:</strong> {geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                            <p><strong>Azimuth:</strong> {geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {loadingGeo && <p style={{ color: '#999', fontSize: '12px' }}>Loading...</p>}
-                  </div>
+                <div ref={geoValuesBoxRef}>
+                  <GeoValuesDisplay 
+                    geoValues={geoValues} 
+                    plotMultiple={toggles.plotMultiple}
+                    loadingGeo={loadingGeo}
+                  />
                 </div>
               )}
             </div>
@@ -830,16 +904,18 @@ function App() {
               ) : spectralData ? (
                 <>
                   <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-                    <SpectralPlot 
-                      spectralData={spectralData}
-                      incidenceAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0) : 0}
-                      emissionAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0) : 0}
-                      azimuthAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.azimuth ?? 0 : geoValues.azimuth ?? 0) : 0}
-                      selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
-                      plotMultiple={toggles.plotMultiple}
-                      multiplePositions={toggles.plotMultiple ? multiplePositions : null}
-                      geoValues={geoValues}
-                    />
+                    <ErrorBoundary>
+                      <SpectralPlot 
+                        spectralData={spectralData}
+                        incidenceAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0) : 0}
+                        emissionAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0) : 0}
+                        azimuthAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.azimuth ?? 0 : geoValues.azimuth ?? 0) : 0}
+                        selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
+                        plotMultiple={toggles.plotMultiple}
+                        multiplePositions={toggles.plotMultiple ? multiplePositions : null}
+                        geoValues={geoValues}
+                      />
+                    </ErrorBoundary>
                     {geoValues && (
                       <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                         {Array.isArray(geoValues) ? (
@@ -925,31 +1001,33 @@ function App() {
                     );
                   })}
               </div>
-              <div className="transmission-box" style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
-                <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission*</h3>
-                <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
-                  {Object.entries(transmissionToggles).map(([key, value]) => {
-                    const labelMap = {
-                      ch4: 'CH4',
-                      h2: 'H2',
-                      co: 'CO',
-                      c2h6: 'C2H6',
-                      c2h2: 'C2H2',
-                    };
-                    const label = labelMap[key] || key.toUpperCase();
-                    return (
-                      <label key={key} className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input
-                          type="checkbox"
-                          checked={value}
-                          onChange={() => handleTransmissionToggleChange(key)}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    );
-                  })}
+              {!toggles.plotMultiple && (
+                <div className="transmission-box" style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission*</h3>
+                  <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
+                    {Object.entries(transmissionToggles).map(([key, value]) => {
+                      const labelMap = {
+                        ch4: 'CH4',
+                        h2: 'H2',
+                        co: 'CO',
+                        c2h6: 'C2H6',
+                        c2h2: 'C2H2',
+                      };
+                      const label = labelMap[key] || key.toUpperCase();
+                      return (
+                        <label key={key} className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <input
+                            type="checkbox"
+                            checked={value}
+                            onChange={() => handleTransmissionToggleChange(key)}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
               {/* Atmospheric Components Section */}
               <div ref={atmosphericComponentsSectionRef} className="atmospheric-components-section">
                 <h3 className="atmospheric-components-header">Atmospheric Components</h3>

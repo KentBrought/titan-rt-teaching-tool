@@ -121,7 +121,8 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
 
   const plotConfig = {
     displayModeBar: false,
-    responsive: true
+    responsive: true,
+    showTips: false
   };
 
   if (loading) {

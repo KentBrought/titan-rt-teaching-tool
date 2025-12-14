@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import { processSpectralData, createSpectralPlotData, getActualAngles } from '../utils/dataProcessing';
 
@@ -12,162 +12,174 @@ const adjustColorBrightness = (hex, percent) => {
 };
 
 const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, multiplePositions, geoValues }) => {
-  const [processedData, setProcessedData] = useState(null);
-  const [plotData, setPlotData] = useState([]);
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
 
-  // Process data when component mounts or data changes
-  useEffect(() => {
-    if (spectralData) {
-      const processed = processSpectralData(spectralData);
-      setProcessedData(processed);
-    }
+  // Process data when component mounts or data changes - use useMemo for efficiency
+  const processedData = useMemo(() => {
+    if (!spectralData) return null;
+    return processSpectralData(spectralData);
   }, [spectralData]);
 
-  // Update plot data when parameters change
-  useEffect(() => {
-    if (processedData) {
-      const traces = [];
-      const colors = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
-      const colorNames = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
-      
-      if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
-        // Multiple mode: create traces for each point and each selected case
-        geoValues.forEach((geoValue, pointIndex) => {
-          const pointCases = selectedCases[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
-          const pointIncidence = geoValue.incidence ?? 0;
-          const pointEmission = geoValue.emis ?? 0;
-          const pointAzimuth = geoValue.azimuth ?? 0;
-          
-          // Get actual angles for first point (for display)
-          if (pointIndex === 0) {
-            const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
-            setActualAngles(actual);
-          }
-          
-          // Count how many cases are selected for this point to determine shade variations
-          const selectedCaseTypes = Object.entries(pointCases)
-            .filter(([_, isSelected]) => isSelected)
-            .map(([caseType, _]) => caseType);
-          const baseColor = colors[pointIndex] || '#ff0000';
-          const pointColor = colorNames[pointIndex] || 'Red';
-          
-          // Create traces for each selected case with different shades
-          selectedCaseTypes.forEach((caseType, caseIndex) => {
-            const data = createSpectralPlotData(
-              processedData, 
-              pointIncidence, 
-              pointEmission, 
-              pointAzimuth, 
-              caseType
-            );
-            
-            if (data.length > 0) {
-              const nameMap = {
-                standard: 'Methane + haze',
-                no_ch4: 'No methane',
-                no_haze: 'No haze'
-              };
-              const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
-              const traceName = `${caseName} (${pointColor})`;
-              
-              // Use different shades of the same color for multiple components
-              let lineColor = baseColor;
-              if (selectedCaseTypes.length > 1) {
-                // If multiple cases selected, use different shades
-                // Standard: base color, No methane: darker, No haze: lighter
-                if (caseType === 'standard') {
-                  lineColor = baseColor;
-                } else if (caseType === 'no_ch4') {
-                  lineColor = adjustColorBrightness(baseColor, -80);
-                } else if (caseType === 'no_haze') {
-                  lineColor = adjustColorBrightness(baseColor, 80);
-                }
-              } else {
-                // Only one case selected, use base color
-                lineColor = baseColor;
-              }
-              
-              // Set line style based on case type
-              let dashStyle = 'solid';
-              if (caseType === 'no_ch4') {
-                dashStyle = 'dash';
-              } else if (caseType === 'no_haze') {
-                dashStyle = 'dot';
-              }
-              
-              traces.push({
-                x: data.map(d => d.wavelength),
-                y: data.map(d => d.intensity),
-                mode: 'lines',
-                name: traceName,
-                line: {
-                  color: lineColor,
-                  width: 2,
-                  dash: dashStyle
-                }
-              });
-            }
-          });
-        });
-      } else {
-        // Single mode: use the original logic
-        const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
-        setActualAngles(actual);
+  // Memoize plot data generation for performance - use useMemo to prevent blocking
+  // Use useMemo with async-friendly approach
+  const plotData = useMemo(() => {
+    if (!processedData) return [];
+    
+    // Use requestIdleCallback or setTimeout to yield to browser if processing is heavy
+    // For now, process synchronously but efficiently
+    
+    const traces = [];
+    const colors = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
+    const colorNames = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
+    
+    if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
+      // Multiple mode: create traces for each point and each selected case
+      geoValues.forEach((geoValue, pointIndex) => {
+        const pointCases = selectedCases[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
+        const pointIncidence = geoValue.incidence ?? 0;
+        const pointEmission = geoValue.emis ?? 0;
+        const pointAzimuth = geoValue.azimuth ?? 0;
         
-        Object.entries(selectedCases).forEach(([caseType, isSelected]) => {
-          if (isSelected) {
-            const data = createSpectralPlotData(
-              processedData, 
-              incidenceAngle, 
-              emissionAngle, 
-              azimuthAngle, 
-              caseType
-            );
+        // Get actual angles for first point (for display)
+        if (pointIndex === 0) {
+          const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
+          setActualAngles(actual);
+        }
+        
+        // Count how many cases are selected for this point to determine shade variations
+        const selectedCaseTypes = Object.entries(pointCases)
+          .filter(([_, isSelected]) => isSelected)
+          .map(([caseType, _]) => caseType);
+        const baseColor = colors[pointIndex] || '#ff0000';
+        const pointColor = colorNames[pointIndex] || 'Red';
+        
+        // Create traces for each selected case with different shades
+        selectedCaseTypes.forEach((caseType, caseIndex) => {
+          const data = createSpectralPlotData(
+            processedData, 
+            pointIncidence, 
+            pointEmission, 
+            pointAzimuth, 
+            caseType
+          );
+          
+          if (data && data.wavelengths && data.wavelengths.length > 0) {
+            // Use arrays directly - no extraction needed
+            const wavelengths = data.wavelengths;
+            const intensities = data.intensities;
             
-            if (data.length > 0) {
-              const nameMap = {
-                standard: 'Methane + haze',
-                no_ch4: 'No methane',
-                no_haze: 'No haze'
-              };
-              traces.push({
-                x: data.map(d => d.wavelength),
-                y: data.map(d => d.intensity),
-                mode: 'lines',
-                name: nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
-                line: {
-                  color: caseType === 'standard' ? '#1f77b4' : 
-                         caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
-                  width: 2
-                }
-              });
+            const nameMap = {
+              standard: 'Methane + haze',
+              no_ch4: 'No methane',
+              no_haze: 'No haze'
+            };
+            const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
+            const traceName = `${caseName} (${pointColor})`;
+            
+            // Use different shades of the same color for multiple components
+            let lineColor = baseColor;
+            if (selectedCaseTypes.length > 1) {
+              // If multiple cases selected, use different shades
+              // Standard: base color, No methane: darker, No haze: lighter
+              if (caseType === 'standard') {
+                lineColor = baseColor;
+              } else if (caseType === 'no_ch4') {
+                lineColor = adjustColorBrightness(baseColor, -80);
+              } else if (caseType === 'no_haze') {
+                lineColor = adjustColorBrightness(baseColor, 80);
+              }
+            } else {
+              // Only one case selected, use base color
+              lineColor = baseColor;
             }
+            
+            // Set line style based on case type
+            let dashStyle = 'solid';
+            if (caseType === 'no_ch4') {
+              dashStyle = 'dash';
+            } else if (caseType === 'no_haze') {
+              dashStyle = 'dot';
+            }
+            
+            traces.push({
+              x: wavelengths,
+              y: intensities,
+              type: 'scattergl',
+              mode: 'lines',
+              name: traceName,
+              line: {
+                color: lineColor,
+                width: 2,
+                dash: dashStyle
+              }
+            });
           }
         });
-      }
-
-      setPlotData(traces);
+      });
+    } else if (!plotMultiple && geoValues) {
+      // Single mode: use the original logic
+      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+      setActualAngles(actual);
+      
+      Object.entries(selectedCases).forEach(([caseType, isSelected]) => {
+        if (isSelected) {
+          const data = createSpectralPlotData(
+            processedData, 
+            incidenceAngle, 
+            emissionAngle, 
+            azimuthAngle, 
+            caseType
+          );
+          
+          if (data && data.wavelengths && data.wavelengths.length > 0) {
+            // Use arrays directly - no extraction needed
+            const wavelengths = data.wavelengths;
+            const intensities = data.intensities;
+            
+            const nameMap = {
+              standard: 'Methane + haze',
+              no_ch4: 'No methane',
+              no_haze: 'No haze'
+            };
+            traces.push({
+              x: wavelengths,
+              y: intensities,
+              type: 'scattergl',
+              mode: 'lines',
+              name: nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
+              line: {
+                color: caseType === 'standard' ? '#1f77b4' : 
+                       caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
+                width: 2
+              }
+            });
+          }
+        }
+      });
     }
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, multiplePositions, geoValues]);
+    
+    return traces;
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues]);
 
   const plotLayout = {
     xaxis: {
       title: {
         text: 'Wavelength (μm)',
-        font: { size: 14, color: '#374151' }
+        font: { size: 14, color: '#ccc' }
       },
       showgrid: true,
-      gridcolor: '#e0e0e0'
+      gridcolor: 'rgba(255,255,255,0.1)',
+      tickfont: { size: 11, color: '#999' }
     },
           yaxis: {
             title: {
               text: 'Apparent Reflectance',
-              font: { size: 14, color: '#374151' }
+              font: { size: 14, color: '#ccc' }
             },
             type: 'linear',
             showgrid: true,
-            gridcolor: '#e0e0e0'
+            gridcolor: 'rgba(255,255,255,0.1)',
+            tickfont: { size: 11, color: '#999' }
           },
     margin: { l: 60, r: 30, t: 60, b: 60 },
     hovermode: 'closest',
@@ -175,8 +187,13 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
     legend: {
       x: 0.02,
       y: 0.98,
-      bgcolor: 'rgba(255,255,255,0.8)'
-    }
+      bgcolor: 'rgba(0,0,0,0.5)',
+      bordercolor: '#444',
+      borderwidth: 1,
+      font: { size: 11, color: '#ccc' }
+    },
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: 'rgba(26,26,26,1)'
   };
 
   if (!spectralData) {
@@ -190,7 +207,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
         return (
           <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             {/* Plot */}
-            <div style={{ flex: 1, border: '1px solid #dee2e6', borderRadius: '8px', height: '500px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: 'white' }}>
+            <div style={{ flex: 1, border: '1px solid #444', borderRadius: '8px', height: '500px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
               <Plot
                 data={plotData}
                 layout={plotLayout}
