@@ -5,7 +5,7 @@ import ClickableImage from './components/ClickableImage';
 import GasAbundancePlot from './components/GasAbundancePlot';
 import ErrorBoundary from './components/ErrorBoundary';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
-import { loadPds4Image, getAvailablePhaseAngles } from './utils/imageLoader';
+import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
@@ -288,6 +288,8 @@ function App() {
   
   // Debounce timer ref for hover handler
   const hoverDebounceTimerRef = useRef(null);
+  // Debounce timer ref for image loading
+  const imageLoadTimerRef = useRef(null);
 
   // Preload geo cube data when phase angle changes
   useEffect(() => {
@@ -360,11 +362,14 @@ function App() {
     }, 10); // Reduced debounce delay to 10ms since lookups are now instant
   }, [sliders.phaseAngle]);
 
-  // Cleanup debounce timer on unmount
+  // Cleanup debounce timers on unmount
   useEffect(() => {
     return () => {
       if (hoverDebounceTimerRef.current) {
         clearTimeout(hoverDebounceTimerRef.current);
+      }
+      if (imageLoadTimerRef.current) {
+        clearTimeout(imageLoadTimerRef.current);
       }
     };
   }, []);
@@ -450,9 +455,15 @@ function App() {
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
 
-  // Load image when relevant parameters change
+  // Load image when relevant parameters change (with debouncing for smoother slider interaction)
   useEffect(() => {
-    const loadImage = async () => {
+    // Clear any existing timer
+    if (imageLoadTimerRef.current) {
+      clearTimeout(imageLoadTimerRef.current);
+    }
+
+    // Debounce image loading to avoid excessive requests during slider dragging
+    imageLoadTimerRef.current = setTimeout(async () => {
       try {
         const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
         // Determine which image type to load
@@ -463,15 +474,25 @@ function App() {
           // For incidence, emission, or phase, use the imageType directly
           imageTypeToLoad = imageType;
         }
+        
+        // Load the current image
         const imageDataUrl = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName);
         setCurrentImage(imageDataUrl);
+        
+        // Preload adjacent images in the background for smoother transitions
+        preloadAdjacentImages(phaseAngle, imageTypeToLoad, hazeFolderName, 2);
       } catch (error) {
         console.error('Error loading image:', error);
         setCurrentImage(null);
       }
-    };
+    }, 50); // 50ms debounce - fast enough for responsive feel, slow enough to reduce requests
 
-    loadImage();
+    // Cleanup function
+    return () => {
+      if (imageLoadTimerRef.current) {
+        clearTimeout(imageLoadTimerRef.current);
+      }
+    };
   }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
 
   // Update geo values when phase angle changes (if position is marked)

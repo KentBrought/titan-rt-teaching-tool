@@ -2,6 +2,10 @@
 // This is a simplified version - in a real implementation, you'd need to use
 // a library like pds4-tools or implement PDS4 parsing
 
+// Image cache to track loaded images
+const imageCache = new Map();
+const preloadingImages = new Set();
+
 /**
  * Convert phase angle to padded string for filename
  * @param {number} phaseAngle - Phase angle in degrees
@@ -73,7 +77,55 @@ export const getXmlUrl = (phaseAngle) => {
 };
 
 /**
+ * Preload an image using native Image object (faster than fetch)
+ * @param {string} imageUrl - URL of the image to preload
+ * @returns {Promise<boolean>} True if image loaded successfully, false otherwise
+ */
+const preloadImage = (imageUrl) => {
+  return new Promise((resolve) => {
+    // Check cache first
+    if (imageCache.has(imageUrl)) {
+      resolve(true);
+      return;
+    }
+
+    // Check if already preloading
+    if (preloadingImages.has(imageUrl)) {
+      // Wait for existing preload to complete
+      const checkInterval = setInterval(() => {
+        if (imageCache.has(imageUrl)) {
+          clearInterval(checkInterval);
+          resolve(true);
+        } else if (!preloadingImages.has(imageUrl)) {
+          // Preload failed
+          clearInterval(checkInterval);
+          resolve(false);
+        }
+      }, 50);
+      return;
+    }
+
+    preloadingImages.add(imageUrl);
+    const img = new Image();
+    
+    img.onload = () => {
+      imageCache.set(imageUrl, true);
+      preloadingImages.delete(imageUrl);
+      resolve(true);
+    };
+    
+    img.onerror = () => {
+      preloadingImages.delete(imageUrl);
+      resolve(false);
+    };
+    
+    img.src = imageUrl;
+  });
+};
+
+/**
  * Load image data from a converted PNG file
+ * Uses native image preloading for better performance
  * 
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3', or 'incidence', 'emission', 'phase'
@@ -83,11 +135,11 @@ export const getXmlUrl = (phaseAngle) => {
 export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
   try {
     const imageUrl = getImageUrl(phaseAngle, compositeType, hazeFolder);
-    console.log(`Loading image for phase angle: ${phaseAngle}° (${compositeType}) from ${imageUrl}`);
     
-    // Test if the image exists by trying to load it
-    const response = await fetch(imageUrl);
-    if (response.ok) {
+    // Use native image preloading (much faster than fetch)
+    const loaded = await preloadImage(imageUrl);
+    
+    if (loaded) {
       return imageUrl;
     }
 
@@ -97,6 +149,33 @@ export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeF
   } catch (error) {
     console.error('Error loading image:', error);
     return null;
+  }
+};
+
+/**
+ * Preload adjacent images for smoother transitions
+ * @param {number} currentPhaseAngle - Current phase angle in degrees
+ * @param {string} compositeType - Type of composite image
+ * @param {string} hazeFolder - Folder name for haze configuration
+ * @param {number} range - Number of adjacent angles to preload on each side (default: 2)
+ */
+export const preloadAdjacentImages = async (currentPhaseAngle, compositeType, hazeFolder, range = 2) => {
+  const availableAngles = getAvailablePhaseAngles();
+  const currentIndex = availableAngles.indexOf(currentPhaseAngle);
+  
+  if (currentIndex === -1) return;
+  
+  // Preload images in background (don't await)
+  for (let i = -range; i <= range; i++) {
+    const targetIndex = currentIndex + i;
+    if (targetIndex >= 0 && targetIndex < availableAngles.length && i !== 0) {
+      const targetAngle = availableAngles[targetIndex];
+      const imageUrl = getImageUrl(targetAngle, compositeType, hazeFolder);
+      // Preload without blocking
+      preloadImage(imageUrl).catch(() => {
+        // Silently fail for preloads
+      });
+    }
   }
 };
 
