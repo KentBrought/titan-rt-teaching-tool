@@ -6,7 +6,7 @@ A web-based interactive teaching tool for exploring Titan's atmospheric radiativ
 
 - Plot spectral reflectance curves with customizable atmospheric parameters
 - Click on planetary images to extract and visualize geophysical values at specific locations
-- Adjust haze abundance, methane abundance, incidence/emission angles, spectral resolution, and phase angle using sliders
+- Adjust haze abundance, methane abundance, incidence/emission angles, and phase angle using sliders
 - Compare spectral data from multiple locations simultaneously
 - Choose between different composite image types 
 - Switch between different haze property models 

@@ -126,7 +126,6 @@ function App() {
     methaneAbundance: 50,
     incidenceAngle: 45,
     emissionAngle: 45,
-    spectralResolution: 50,
     phaseAngle: 0
   });
 
@@ -176,6 +175,7 @@ function App() {
   const prevGeoValuesRef = useRef(null);
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
+  const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -455,7 +455,15 @@ function App() {
     const loadImage = async () => {
       try {
         const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
-        const imageDataUrl = await loadPds4Image(phaseAngle, compositeType, hazeFolderName);
+        // Determine which image type to load
+        let imageTypeToLoad;
+        if (imageType === 'irColor') {
+          imageTypeToLoad = compositeType;
+        } else {
+          // For incidence, emission, or phase, use the imageType directly
+          imageTypeToLoad = imageType;
+        }
+        const imageDataUrl = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName);
         setCurrentImage(imageDataUrl);
       } catch (error) {
         console.error('Error loading image:', error);
@@ -464,7 +472,7 @@ function App() {
     };
 
     loadImage();
-  }, [sliders.phaseAngle, compositeType, hazeFolderName]);
+  }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
 
   // Update geo values when phase angle changes (if position is marked)
   useEffect(() => {
@@ -552,16 +560,18 @@ function App() {
         const sliderGroup = togglesBox.querySelector('.slider-group');
         const toggleGroup = togglesBox.querySelector('.toggle-group');
         const h2 = togglesBox.querySelector('h2');
+        const transmissionBox = togglesBox.querySelector('.transmission-box');
         
         if (header && sliderGroup && toggleGroup && h2) {
           const headerHeight = h2.offsetHeight;
           const sliderGroupHeight = sliderGroup.offsetHeight;
           const toggleGroupHeight = toggleGroup.offsetHeight;
           const sectionHeaderHeight = header.offsetHeight;
+          const transmissionHeight = transmissionBox ? transmissionBox.offsetHeight : 0;
           const padding = 20 * 2; // top and bottom padding of control-box
-          const gaps = 15 + 12 + 20; // gaps between elements
+          const gaps = 15 + 12 + 20 + 20; // gaps between elements (including margin-top of atmospheric section)
           
-          const calculatedHeight = togglesBoxHeight - headerHeight - sliderGroupHeight - toggleGroupHeight - sectionHeaderHeight - padding - gaps;
+          const calculatedHeight = togglesBoxHeight - headerHeight - sliderGroupHeight - toggleGroupHeight - sectionHeaderHeight - transmissionHeight - padding - gaps;
           
           // Reduce height by 30% to make it smaller
           const reducedHeight = calculatedHeight * 0.7;
@@ -569,20 +579,14 @@ function App() {
           // Set minimum height to ensure content is visible (at least enough for 3 checkboxes)
           const minHeight = 120; // Minimum height to show 3 checkboxes comfortably
           
-          // Set fixed height (only if it's positive, and ensure minimum height)
-          if (reducedHeight > 0) {
-            const finalHeight = Math.max(reducedHeight, minHeight);
-            content.style.height = `${finalHeight}px`;
-            content.style.maxHeight = `${finalHeight}px`;
-            content.style.minHeight = `${finalHeight}px`;
-            content.style.flex = '0 0 auto';
-          } else if (minHeight > 0) {
-            // If calculated height is negative or zero, use minimum height
-            content.style.height = `${minHeight}px`;
-            content.style.maxHeight = `${minHeight}px`;
-            content.style.minHeight = `${minHeight}px`;
-            content.style.flex = '0 0 auto';
-          }
+          // Always set a height (use minimum if calculation fails)
+          const finalHeight = Math.max(reducedHeight, minHeight);
+          content.style.height = `${finalHeight}px`;
+          content.style.maxHeight = `${finalHeight}px`;
+          content.style.minHeight = `${finalHeight}px`;
+          content.style.flex = '0 0 auto';
+          content.style.visibility = 'visible';
+          content.style.display = 'block';
         }
       }
     };
@@ -598,7 +602,7 @@ function App() {
       clearTimeout(timeoutId);
       window.removeEventListener('resize', setFixedHeight);
     };
-  }, [toggles, selectedCasesByPoint, geoValues, multiplePositions]); // Re-run when content changes
+  }, [toggles, selectedCasesByPoint, geoValues, multiplePositions, transmissionToggles]); // Re-run when content changes
 
   // Reset selectedCases when no points are selected in single mode
   // But preserve the state when a point is selected (don't reset to all false)
@@ -832,45 +836,51 @@ function App() {
                     multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                     plotMultiple={toggles.plotMultiple}
                   />
-                  {hoverGeoValues && (
-                    <div className="hover-geo-values-display">
-                      <p><strong>Coordinates:</strong> ({hoverGeoValues.x}, {hoverGeoValues.y})</p>
-                      <p><strong>Incidence:</strong> {hoverGeoValues.incidence != null ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Emission:</strong> {hoverGeoValues.emis != null ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                      <p><strong>Phase:</strong> {hoverGeoValues.phase != null ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}</p>
-                    </div>
-                  )}
+                  <div className="hover-geo-values-display" style={{ minHeight: '100px', visibility: hoverGeoValues ? 'visible' : 'hidden' }}>
+                    {hoverGeoValues ? (
+                      <>
+                        <p><strong>Coordinates:</strong> ({hoverGeoValues.x}, {hoverGeoValues.y})</p>
+                        <p><strong>Incidence:</strong> {hoverGeoValues.incidence != null ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                        <p><strong>Emission:</strong> {hoverGeoValues.emis != null ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                        <p><strong>Phase:</strong> {hoverGeoValues.phase != null ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                      </>
+                    ) : (
+                      <div style={{ height: '100px' }}></div>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="placeholder-circle"></div>
               )}
             </div>
             <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
-              <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
-                <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
-                <div className="radio-group">
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name="compositeType"
-                      value="5_2_1.3"
-                      checked={compositeType === '5_2_1.3'}
-                      onChange={(e) => setCompositeType(e.target.value)}
-                    />
-                    <span>5, 2, 1.3 µm</span>
-                  </label>
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name="compositeType"
-                      value="2_1.6_1.3"
-                      checked={compositeType === '2_1.6_1.3'}
-                      onChange={(e) => setCompositeType(e.target.value)}
-                    />
-                    <span>2, 1.6, 1.3 µm</span>
-                  </label>
+              {imageType === 'irColor' && (
+                <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
+                  <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
+                  <div className="radio-group">
+                    <label className="radio-label">
+                      <input
+                        type="radio"
+                        name="compositeType"
+                        value="5_2_1.3"
+                        checked={compositeType === '5_2_1.3'}
+                        onChange={(e) => setCompositeType(e.target.value)}
+                      />
+                      <span>5, 2, 1.3 µm</span>
+                    </label>
+                    <label className="radio-label">
+                      <input
+                        type="radio"
+                        name="compositeType"
+                        value="2_1.6_1.3"
+                        checked={compositeType === '2_1.6_1.3'}
+                        onChange={(e) => setCompositeType(e.target.value)}
+                      />
+                      <span>2, 1.6, 1.3 µm</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
               {geoValues && (
                 <div ref={geoValuesBoxRef}>
                   <GeoValuesDisplay 
@@ -888,28 +898,26 @@ function App() {
                 {/* Haze Model Section */}
                 <div style={{ marginBottom: '15px' }}>
                   <p style={{ marginBottom: '8px', fontSize: '14px' }}>Haze model</p>
-                  <div style={{ display: 'flex', gap: '20px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <div className="radio-group">
+                    <label className="radio-label">
                       <input
                         type="radio"
                         name="hazePropertiesModel"
                         value="doose"
                         checked={hazePropertiesModel === 'doose'}
                         onChange={(e) => setHazePropertiesModel(e.target.value)}
-                        style={{ marginRight: '6px', cursor: 'pointer' }}
                       />
-                      <span>Doose</span>
+                      <span style={{ color: '#007acc', fontWeight: 'bold' }}>Doose</span>
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <label className="radio-label">
                       <input
                         type="radio"
                         name="hazePropertiesModel"
                         value="tomasko"
                         checked={hazePropertiesModel === 'tomasko'}
                         onChange={(e) => setHazePropertiesModel(e.target.value)}
-                        style={{ marginRight: '6px', cursor: 'pointer' }}
                       />
-                      <span>Tomasko</span>
+                      <span style={{ color: '#007acc', fontWeight: 'bold' }}>Tomasko</span>
                     </label>
                   </div>
                 </div>
@@ -965,6 +973,52 @@ function App() {
                   />
                   <span>Plot multiple</span>
                 </label>
+              </div>
+              {/* Image Type Section */}
+              <div style={{ marginTop: '20px' }}>
+                <p style={{ marginBottom: '8px', fontSize: '14px' }}>Image Type</p>
+                <div className="radio-group">
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="imageType"
+                      value="irColor"
+                      checked={imageType === 'irColor'}
+                      onChange={(e) => setImageType(e.target.value)}
+                    />
+                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>IR Color</span>
+                  </label>
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="imageType"
+                      value="incidence"
+                      checked={imageType === 'incidence'}
+                      onChange={(e) => setImageType(e.target.value)}
+                    />
+                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>Incidence</span>
+                  </label>
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="imageType"
+                      value="emission"
+                      checked={imageType === 'emission'}
+                      onChange={(e) => setImageType(e.target.value)}
+                    />
+                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>Emission</span>
+                  </label>
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="imageType"
+                      value="phase"
+                      checked={imageType === 'phase'}
+                      onChange={(e) => setImageType(e.target.value)}
+                    />
+                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>Phase</span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
@@ -1066,19 +1120,6 @@ function App() {
             {/* Spectral Plot Options */}
             <div ref={togglesBoxRef} className="control-box toggles-box">
               <h2>Spectral Plot Options</h2>
-              <div className="slider-group">
-                <label style={{ marginBottom: '20px' }}>
-                  Spectral resolution*
-                  <input 
-                    type="range" 
-                    min="0" 
-                    max="100" 
-                    value={sliders.spectralResolution}
-                    onChange={(e) => handleSliderChange('spectralResolution', e.target.value)}
-                  />
-                  <span>{sliders.spectralResolution}</span>
-                </label>
-              </div>
               <div className="toggle-group">
                 {/* Existing non-functional toggles */}
                 {Object.entries(toggles)

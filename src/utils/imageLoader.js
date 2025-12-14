@@ -45,13 +45,20 @@ const getAssetBasePath = (hazeFolder) => {
 /**
  * Generate the image URL for a given phase angle and haze configuration
  * @param {number} phaseAngle - Phase angle in degrees
- * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
+ * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3', or 'incidence', 'emission', 'phase'
  * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'doose_0.5')
  * @returns {string} Public URL to the image file
  */
 export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
   const basePath = getAssetBasePath(hazeFolder);
+  
+  // Handle geo-based image types (incidence, emission, phase)
+  if (compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase') {
+    return `${basePath}/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
+  }
+  
+  // Handle composite image types
   return `${basePath}/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
 };
 
@@ -69,7 +76,8 @@ export const getXmlUrl = (phaseAngle) => {
  * Load image data from a converted PNG file
  * 
  * @param {number} phaseAngle - Phase angle in degrees
- * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
+ * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3', or 'incidence', 'emission', 'phase'
+ * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'doose_0.5')
  * @returns {Promise<string|null>} URL of the PNG image, or null if failed
  */
 export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
