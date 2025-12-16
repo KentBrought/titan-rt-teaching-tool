@@ -878,16 +878,24 @@ function App() {
                       </div>
                     )}
                   </div>
-                  <div className="hover-geo-values-display" style={{ minHeight: '100px', visibility: hoverGeoValues ? 'visible' : 'hidden' }}>
+                  <div style={{ 
+                    marginTop: '15px', 
+                    padding: '10px', 
+                    backgroundColor: '#2a2a2a', 
+                    borderRadius: '4px',
+                    border: '1px solid #66ccff',
+                    fontSize: '14px',
+                    color: '#e0e0e0',
+                    width: '100%',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box'
+                  }}>
                     {hoverGeoValues ? (
                       <>
-                        <p><strong>Coordinates:</strong> ({hoverGeoValues.x}, {hoverGeoValues.y})</p>
-                        <p><strong>Incidence:</strong> {hoverGeoValues.incidence != null ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                        <p><strong>Emission:</strong> {hoverGeoValues.emis != null ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                        <p><strong>Phase:</strong> {hoverGeoValues.phase != null ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                        <strong>Hover Position:</strong> Coordinates: (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{hoverGeoValues.x}, {hoverGeoValues.y}</span>), Incidence: {hoverGeoValues.incidence != null ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}, Emission: {hoverGeoValues.emis != null ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}, Phase: {hoverGeoValues.phase != null ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}
                       </>
                     ) : (
-                      <div style={{ height: '100px' }}></div>
+                      <span>Hover over the image to see coordinates and angles</span>
                     )}
                   </div>
                 </>
