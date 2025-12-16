@@ -20,10 +20,12 @@ const SpectralPlot = ({
   plotMultiple, 
   multiplePositions, 
   geoValues,
-  transmissionToggles = {}
+  transmissionToggles = {},
+  spectralUnits = false
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
+  const [solarSpectrum, setSolarSpectrum] = useState(null);
 
   // Load gas transmission data on mount
   useEffect(() => {
@@ -41,11 +43,80 @@ const SpectralPlot = ({
     loadGasTransmission();
   }, []);
 
+  // Load solar spectrum data on mount
+  useEffect(() => {
+    const loadSolarSpectrum = async () => {
+      try {
+        const response = await fetch('/data/solar_spectrum_vims.txt');
+        if (response.ok) {
+          const text = await response.text();
+          const lines = text.trim().split('\n');
+          
+          // Skip header line and parse data
+          const spectrumData = [];
+          for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            // Split by whitespace (can be space or tab)
+            const parts = line.split(/\s+/);
+            if (parts.length >= 2) {
+              const wavelength = parseFloat(parts[0]);
+              const flux = parseFloat(parts[1]);
+              if (!isNaN(wavelength) && !isNaN(flux)) {
+                spectrumData.push({ wavelength, flux });
+              }
+            }
+          }
+          
+          // Sort by wavelength to ensure proper ordering
+          spectrumData.sort((a, b) => a.wavelength - b.wavelength);
+          
+          setSolarSpectrum(spectrumData);
+          console.log('Solar spectrum loaded:', spectrumData.length, 'points');
+        }
+      } catch (err) {
+        console.error('Error loading solar spectrum:', err);
+      }
+    };
+    loadSolarSpectrum();
+  }, []);
+
   // Process data when component mounts or data changes - use useMemo for efficiency
   const processedData = useMemo(() => {
     if (!spectralData) return null;
     return processSpectralData(spectralData);
   }, [spectralData]);
+
+  // Interpolation function to get solar flux for a given wavelength
+  const getSolarFlux = useCallback((wavelength) => {
+    if (!solarSpectrum || solarSpectrum.length === 0) return 1; // Return 1 if no spectrum loaded (no conversion)
+    
+    // If exact match, return it
+    const exactMatch = solarSpectrum.find(s => Math.abs(s.wavelength - wavelength) < 1e-10);
+    if (exactMatch) return exactMatch.flux;
+    
+    // If wavelength is outside range, return nearest edge value
+    if (wavelength <= solarSpectrum[0].wavelength) return solarSpectrum[0].flux;
+    if (wavelength >= solarSpectrum[solarSpectrum.length - 1].wavelength) {
+      return solarSpectrum[solarSpectrum.length - 1].flux;
+    }
+    
+    // Linear interpolation
+    for (let i = 0; i < solarSpectrum.length - 1; i++) {
+      const w1 = solarSpectrum[i].wavelength;
+      const w2 = solarSpectrum[i + 1].wavelength;
+      const f1 = solarSpectrum[i].flux;
+      const f2 = solarSpectrum[i + 1].flux;
+      
+      if (wavelength >= w1 && wavelength <= w2) {
+        const t = (wavelength - w1) / (w2 - w1);
+        return f1 + t * (f2 - f1);
+      }
+    }
+    
+    return 1; // Fallback
+  }, [solarSpectrum]);
 
   // Check if any gas transmission is selected
   const hasGasTransmission = !plotMultiple && Object.values(transmissionToggles).some(v => v);
@@ -90,11 +161,20 @@ const SpectralPlot = ({
           if (data && data.wavelengths && data.wavelengths.length > 0) {
             // Use arrays directly - no extraction needed
             const wavelengths = data.wavelengths;
-            const intensities = data.intensities;
+            let intensities = data.intensities;
+            
+            // Convert to flux units if spectralUnits is enabled
+            if (spectralUnits && solarSpectrum) {
+              intensities = intensities.map((reflectance, idx) => {
+                const wavelength = wavelengths[idx];
+                const solarFlux = getSolarFlux(wavelength);
+                return reflectance * solarFlux;
+              });
+            }
             
             const nameMap = {
-              standard: 'Methane + haze',
-              no_ch4: 'No methane',
+              standard: 'CH₄ + haze',
+              no_ch4: 'No CH₄',
               no_haze: 'No haze'
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -155,11 +235,20 @@ const SpectralPlot = ({
           if (data && data.wavelengths && data.wavelengths.length > 0) {
             // Use arrays directly - no extraction needed
             const wavelengths = data.wavelengths;
-            const intensities = data.intensities;
+            let intensities = data.intensities;
+            
+            // Convert to flux units if spectralUnits is enabled
+            if (spectralUnits && solarSpectrum) {
+              intensities = intensities.map((reflectance, idx) => {
+                const wavelength = wavelengths[idx];
+                const solarFlux = getSolarFlux(wavelength);
+                return reflectance * solarFlux;
+              });
+            }
             
             const nameMap = {
-              standard: 'Methane + haze',
-              no_ch4: 'No methane',
+              standard: 'CH₄ + haze',
+              no_ch4: 'No CH₄',
               no_haze: 'No haze'
             };
             traces.push({
@@ -227,7 +316,7 @@ const SpectralPlot = ({
     }
     
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData]);
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux]);
 
   // Update actualAngles in a separate effect to avoid infinite loop
   useEffect(() => {
@@ -243,7 +332,7 @@ const SpectralPlot = ({
     }
   }, [processedData, geoValues, plotMultiple, incidenceAngle, emissionAngle, azimuthAngle]);
 
-  const plotLayout = {
+  const plotLayout = useMemo(() => ({
     xaxis: {
       title: {
         text: 'Wavelength (μm)',
@@ -255,7 +344,7 @@ const SpectralPlot = ({
     },
     yaxis: {
       title: {
-        text: 'Apparent Reflectance',
+        text: spectralUnits ? 'Flux (W/m²/sr/μm)' : 'Apparent Reflectance',
         font: { size: 14, color: '#ccc' }
       },
       type: 'linear',
@@ -290,7 +379,7 @@ const SpectralPlot = ({
     },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(26,26,26,1)'
-  };
+  }), [hasGasTransmission, spectralUnits]);
 
   if (!spectralData) {
     return (
@@ -322,10 +411,11 @@ const SpectralPlot = ({
       <div style={{ 
         marginTop: '15px', 
         padding: '10px', 
-        backgroundColor: '#e9ecef', 
+        backgroundColor: '#2a2a2a', 
         borderRadius: '4px',
+        border: '1px solid #4a9d4a',
         fontSize: '14px',
-        color: '#495057',
+        color: '#e0e0e0',
         width: '100%',
         maxWidth: '100%',
         boxSizing: 'border-box'
@@ -367,7 +457,7 @@ const SpectralPlot = ({
                 )
               }
               {!hasSelectedCases && (
-                <span style={{ color: '#dc3545', marginLeft: '10px' }}>
+                <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
                   ⚠️ Please select at least one case to display
                 </span>
               )}

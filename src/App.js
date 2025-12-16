@@ -129,6 +129,27 @@ function App() {
     phaseAngle: 0
   });
 
+  // State for RT expansion on hover
+  const [rtExpanded, setRtExpanded] = useState(false);
+  const [rtExpansionText, setRtExpansionText] = useState({ left: 'Radiative', right: 'Transfer' });
+
+  // State for development notice message (randomly selected on mount)
+  const [developmentNotice, setDevelopmentNotice] = useState(() => {
+    const random = Math.random();
+    // 1% chance (1/100) to show the joke message
+    if (random < 0.01) {
+      return 'RT stands for "real-time"... just kidding!';
+    }
+    // Otherwise, randomly select from the other messages
+    const messages = [
+      'Check out our GitHub repo!',
+      'Star our GitHub repo!',
+      'RT stands for "radiative transfer"'
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
+  });
+  const [isHoveringRealtime, setIsHoveringRealtime] = useState(false);
+
   const [toggles, setToggles] = useState({
     plotMultiple: false,
     spectralUnits: false,
@@ -539,6 +560,13 @@ function App() {
             geoBox.style.flex = '0 0 auto';
             geoBox.style.overflow = 'hidden';
           }
+        } else {
+          // When composite-selector doesn't exist, let geo-values-box take full height
+          geoBox.style.height = '100%';
+          geoBox.style.maxHeight = '100%';
+          geoBox.style.minHeight = '0';
+          geoBox.style.flex = '1 1 auto';
+          geoBox.style.overflow = 'hidden';
         }
       }
     };
@@ -554,7 +582,7 @@ function App() {
       clearTimeout(timeoutId);
       window.removeEventListener('resize', setFixedHeight);
     };
-  }, [geoValues]); // Re-run when geoValues appears/disappears
+  }, [geoValues, imageType]); // Re-run when geoValues appears/disappears or imageType changes
 
   // Auto-scroll geo values box to bottom when new points are added
   useEffect(() => {
@@ -814,12 +842,51 @@ function App() {
             alt="Logo" 
             className="header-logo"
           />
-          <h1 className="app-title">Titan RT Teaching Tool*</h1>
+          <h1 
+            className="app-title"
+            onMouseEnter={() => {
+              // Always show "Radiative Transfer"
+              setRtExpansionText({ left: 'Radiative', right: 'Transfer' }); // R + "adiative", T + "ransfer"
+              setRtExpanded(true);
+            }}
+            onMouseLeave={() => {
+              setRtExpanded(false);
+            }}
+          >
+            Titan <span className="rt-container">
+              <span className="rt-letter-wrapper">
+                <span className="rt-letter r-letter">R</span>
+                <span className={`rt-expanded-left ${rtExpanded ? 'rt-visible' : ''}`}>
+                  {rtExpanded && rtExpansionText.left.substring(1)}
+                </span>
+              </span>
+              <span className="rt-letter-wrapper">
+                <span className="rt-letter t-letter">T</span>
+                <span className={`rt-expanded-right ${rtExpanded ? 'rt-visible' : ''}`}>
+                  {rtExpanded && rtExpansionText.right.substring(1)}
+                </span>
+              </span>
+            </span> <span className={`teaching-tool-text ${rtExpanded ? 'shifted' : ''}`}>Teaching Tool</span>
+          </h1>
         </div>
         <div className="header-right">
-          <div className="development-notice">
-            <div>* Things with an asterisk</div>
-            <div>are marked as still in development!</div>
+          <div 
+            className={`development-notice ${developmentNotice === 'RT stands for "real-time"' || developmentNotice === 'RT stands for "real-time"... just kidding!' ? 'realtime-message' : ''}`}
+            onMouseEnter={() => {
+              if (developmentNotice === 'RT stands for "real-time"' || developmentNotice === 'RT stands for "real-time"... just kidding!') {
+                setIsHoveringRealtime(true);
+              }
+            }}
+            onMouseLeave={() => {
+              setIsHoveringRealtime(false);
+            }}
+          >
+            <div className="development-notice-text">
+              {developmentNotice}
+            </div>
+            <div className={`development-notice-overlay ${isHoveringRealtime && (developmentNotice === 'RT stands for "real-time"' || developmentNotice === 'RT stands for "real-time"... just kidding!') ? 'visible' : ''}`}>
+              No it doesn't
+            </div>
           </div>
           <div className="github-container">
             <a 
@@ -932,7 +999,7 @@ function App() {
                 </div>
               )}
               {geoValues && (
-                <div ref={geoValuesBoxRef} style={{ flex: imageType === 'irColor' ? '1 1 auto' : '1 1 0', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div ref={geoValuesBoxRef} style={{ flex: imageType === 'irColor' ? '1 1 auto' : '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <GeoValuesDisplay 
                     geoValues={geoValues} 
                     plotMultiple={toggles.plotMultiple}
@@ -1127,6 +1194,7 @@ function App() {
                         multiplePositions={toggles.plotMultiple ? multiplePositions : null}
                         geoValues={geoValues}
                         transmissionToggles={transmissionToggles}
+                        spectralUnits={toggles.spectralUnits}
                       />
                     </ErrorBoundary>
                     {geoValues && (
@@ -1186,7 +1254,7 @@ function App() {
                   .filter(([key]) => key !== 'plotMultiple')
                   .map(([key, value]) => {
                     const labelMap = {
-                      spectralUnits: 'Spectral units*'
+                      spectralUnits: 'Spectral units'
                     };
                     const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                     return (
