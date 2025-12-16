@@ -135,11 +135,11 @@ function App() {
   });
 
   const [transmissionToggles, setTransmissionToggles] = useState({
-    ch4: true,
-    h2: true,
-    co: true,
-    c2h6: true,
-    c2h2: true,
+    ch4: false,
+    h2: false,
+    co: false,
+    c2h6: false,
+    c2h2: false,
   });
 
   const getHazeAbundanceValue = (sliderValue) => {
@@ -1088,6 +1088,8 @@ function App() {
                         plotMultiple={toggles.plotMultiple}
                         multiplePositions={toggles.plotMultiple ? multiplePositions : null}
                         geoValues={geoValues}
+                        transmissionToggles={transmissionToggles}
+
                       />
                     </ErrorBoundary>
                     {geoValues && (
@@ -1164,7 +1166,7 @@ function App() {
               </div>
               {!toggles.plotMultiple && (
                 <div className="transmission-box" style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission*</h3>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission</h3>
                   <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                     {Object.entries(transmissionToggles).map(([key, value]) => {
                       const labelMap = {

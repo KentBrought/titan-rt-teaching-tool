@@ -11,8 +11,36 @@ const adjustColorBrightness = (hex, percent) => {
   return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
 };
 
-const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, multiplePositions, geoValues }) => {
+const SpectralPlot = ({ 
+  spectralData, 
+  incidenceAngle, 
+  emissionAngle, 
+  azimuthAngle, 
+  selectedCases, 
+  plotMultiple, 
+  multiplePositions, 
+  geoValues,
+  transmissionToggles = {}  // { ch4: bool, h2: bool, co: bool, c2h6: bool, c2h2: bool }
+}) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
+  const [gasTransmissionData, setGasTransmissionData] = useState(null);
+
+  // Load gas transmission data on mount
+  useEffect(() => {
+    const loadGasTransmission = async () => {
+      try {
+        const response = await fetch('/data/gas_transmission.json');
+        if (response.ok) {
+          const data = await response.json();
+          setGasTransmissionData(data);
+          console.log('Gas transmission data loaded:', Object.keys(data.gases));
+        }
+      } catch (err) {
+        console.error('Error loading gas transmission data:', err);
+      }
+    };
+    loadGasTransmission();
+  }, []);
 
   // Process data when component mounts or data changes - use useMemo for efficiency
   const processedData = useMemo(() => {
@@ -20,13 +48,31 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
     return processSpectralData(spectralData);
   }, [spectralData]);
 
-  // Memoize plot data generation for performance - use useMemo to prevent blocking
-  // Use useMemo with async-friendly approach
+  // Check if any gas transmission is selected
+  const hasGasTransmission = useMemo(() => {
+    return !plotMultiple && Object.values(transmissionToggles).some(v => v);
+  }, [plotMultiple, transmissionToggles]);
+
+  // Update actual angles separately via useEffect to avoid re-render loop
+  useEffect(() => {
+    if (!processedData) return;
+    
+    if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
+      const geoValue = geoValues[0];
+      const pointIncidence = geoValue.incidence ?? 0;
+      const pointEmission = geoValue.emis ?? 0;
+      const pointAzimuth = geoValue.azimuth ?? 0;
+      const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
+      setActualAngles(actual);
+    } else if (!plotMultiple && geoValues && !Array.isArray(geoValues)) {
+      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+      setActualAngles(actual);
+    }
+  }, [processedData, geoValues, plotMultiple, incidenceAngle, emissionAngle, azimuthAngle]);
+
+  // Memoize plot data generation for performance
   const plotData = useMemo(() => {
     if (!processedData) return [];
-    
-    // Use requestIdleCallback or setTimeout to yield to browser if processing is heavy
-    // For now, process synchronously but efficiently
     
     const traces = [];
     const colors = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
@@ -39,12 +85,6 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
         const pointIncidence = geoValue.incidence ?? 0;
         const pointEmission = geoValue.emis ?? 0;
         const pointAzimuth = geoValue.azimuth ?? 0;
-        
-        // Get actual angles for first point (for display)
-        if (pointIndex === 0) {
-          const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
-          setActualAngles(actual);
-        }
         
         // Count how many cases are selected for this point to determine shade variations
         const selectedCaseTypes = Object.entries(pointCases)
@@ -107,6 +147,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
               type: 'scattergl',
               mode: 'lines',
               name: traceName,
+              yaxis: 'y',
               line: {
                 color: lineColor,
                 width: 2,
@@ -118,9 +159,6 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
       });
     } else if (!plotMultiple && geoValues) {
       // Single mode: use the original logic
-      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
-      setActualAngles(actual);
-      
       Object.entries(selectedCases).forEach(([caseType, isSelected]) => {
         if (isSelected) {
           const data = createSpectralPlotData(
@@ -147,6 +185,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
               type: 'scattergl',
               mode: 'lines',
               name: nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
+              yaxis: 'y',
               line: {
                 color: caseType === 'standard' ? '#1f77b4' : 
                        caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
@@ -157,11 +196,59 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
         }
       });
     }
+
+    // Add gas transmission traces if enabled and not in multiple mode
+    if (!plotMultiple && gasTransmissionData) {
+      // Map from toggle keys to the JSON gas names
+      const toggleToGasMap = {
+        'ch4': 'CH4',
+        'co': 'CO',
+        'c2h2': 'C2H2',
+        'c2h6': 'C2H6',
+        'h2': 'Haze',  // H2 maps to Haze in the data
+      };
+
+      const gasColors = {
+        'CH4': '#00bcd4',
+        'CO': '#e91e63', 
+        'C2H2': '#9c27b0',
+        'C2H6': '#4caf50',
+        'Haze': '#ff9800',
+      };
+
+      const gasLabels = {
+        'CH4': 'CH₄',
+        'CO': 'CO',
+        'C2H2': 'C₂H₂',
+        'C2H6': 'C₂H₆',
+        'Haze': 'Haze',
+      };
+
+      Object.entries(transmissionToggles).forEach(([toggleKey, isSelected]) => {
+        const gasName = toggleToGasMap[toggleKey];
+        if (isSelected && gasName && gasTransmissionData.gases[gasName]) {
+          const gasData = gasTransmissionData.gases[gasName];
+          traces.push({
+            x: gasTransmissionData.wavelength,
+            y: gasData.transmission,
+            type: 'scattergl',
+            mode: 'lines',
+            name: `${gasLabels[gasName] || gasName} Trans.`,
+            yaxis: 'y2',
+            line: {
+              color: gasColors[gasName] || '#888888',
+              width: 1.5,
+            },
+            opacity: 0.7
+          });
+        }
+      });
+    }
     
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues]);
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData]);
 
-  const plotLayout = {
+  const plotLayout = useMemo(() => ({
     xaxis: {
       title: {
         text: 'Wavelength (μm)',
@@ -171,17 +258,32 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
       gridcolor: 'rgba(255,255,255,0.1)',
       tickfont: { size: 11, color: '#999' }
     },
-          yaxis: {
-            title: {
-              text: 'Apparent Reflectance',
-              font: { size: 14, color: '#ccc' }
-            },
-            type: 'linear',
-            showgrid: true,
-            gridcolor: 'rgba(255,255,255,0.1)',
-            tickfont: { size: 11, color: '#999' }
-          },
-    margin: { l: 60, r: 30, t: 60, b: 60 },
+    yaxis: {
+      title: {
+        text: 'Apparent Reflectance',
+        font: { size: 14, color: '#ccc' }
+      },
+      type: 'linear',
+      showgrid: true,
+      gridcolor: 'rgba(255,255,255,0.1)',
+      tickfont: { size: 11, color: '#999' }
+    },
+    // Secondary y-axis for transmission (only shown when gas transmission is active)
+    ...(hasGasTransmission && {
+      yaxis2: {
+        title: {
+          text: 'Transmission',
+          font: { size: 14, color: '#888' }
+        },
+        type: 'linear',
+        range: [0, 1],
+        overlaying: 'y',
+        side: 'right',
+        showgrid: false,
+        tickfont: { size: 11, color: '#888' }
+      }
+    }),
+    margin: { l: 60, r: hasGasTransmission ? 60 : 30, t: 60, b: 60 },
     hovermode: 'closest',
     showlegend: true,
     legend: {
@@ -194,7 +296,7 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
     },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(26,26,26,1)'
-  };
+  }), [hasGasTransmission]);
 
   if (!spectralData) {
     return (
@@ -204,23 +306,23 @@ const SpectralPlot = ({ spectralData, incidenceAngle, emissionAngle, azimuthAngl
     );
   }
 
-        return (
-          <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
-            {/* Plot */}
-            <div style={{ flex: 1, border: '1px solid #444', borderRadius: '8px', height: '500px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
-              <Plot
-                data={plotData}
-                layout={plotLayout}
-                style={{ width: '100%', height: '500px', maxWidth: '100%' }}
-                useResizeHandler={true}
-                config={{
-                  displayModeBar: true,
-                  displaylogo: false,
-                  modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
-                  showTips: false
-                }}
-              />
-            </div>
+  return (
+    <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+      {/* Plot */}
+      <div style={{ flex: 1, border: '1px solid #444', borderRadius: '8px', height: '500px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
+        <Plot
+          data={plotData}
+          layout={plotLayout}
+          style={{ width: '100%', height: '500px', maxWidth: '100%' }}
+          useResizeHandler={true}
+          config={{
+            displayModeBar: true,
+            displaylogo: false,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+            showTips: false
+          }}
+        />
+      </div>
 
       {/* Info */}
       <div style={{ 

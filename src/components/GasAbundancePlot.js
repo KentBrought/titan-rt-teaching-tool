@@ -3,9 +3,9 @@ import Plot from 'react-plotly.js';
 
 /**
  * GasAbundancePlot - Displays gas mole fractions vs altitude for Titan atmosphere
- * Gases: N2, CH4, H2, CO, C2H6, C2H2
- * CH4 profile based on Huygens GCMS measurements (Niemann et al. 2010)
- * Trace gases use constant values from PyDISORT model
+ * Gases: CH4, H2, CO, C2H6, C2H2
+ * CH4 on linear scale (top x-axis) to show variability
+ * Trace gases on log scale (bottom x-axis)
  */
 const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
   const [profileData, setProfileData] = useState(null);
@@ -42,53 +42,86 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
     // CH4 scale factor: at 50 = 1.0, at 0 = 0.5, at 100 = 1.5
     const ch4ScaleFactor = 0.5 + (methaneAbundance / 100);
 
-    // bye bye nitrogen
-
-    const gasOrder = ['CH4', 'H2', 'CO', 'C2H6', 'C2H2'];
+    const traces = [];
     
-    return gasOrder.map(gasKey => {
+    // CH4 on linear scale (x2 axis - top)
+    const ch4Gas = profileData.gases['CH4'];
+    if (ch4Gas) {
+      const scaledCH4 = ch4Gas.mole_fraction.map(v => v * ch4ScaleFactor);
+      traces.push({
+        x: scaledCH4,
+        y: profileData.altitude_km,
+        type: 'scatter',
+        mode: 'lines',
+        name: 'CH₄',
+        xaxis: 'x2',
+        line: {
+          color: ch4Gas.color,
+          width: 2.5
+        },
+        hovertemplate: `CH₄<br>%{x:.3f}<br>%{y:.1f} km<extra></extra>`
+      });
+    }
+
+    // Trace gases on log scale (x axis - bottom)
+    const traceGases = ['H2', 'CO', 'C2H6', 'C2H2'];
+    traceGases.forEach(gasKey => {
       const gas = profileData.gases[gasKey];
-      if (!gas) return null;
+      if (!gas) return;
 
-      let moleFractions = gas.mole_fraction;
-      
-      // Apply scaling only to CH4
-      if (gasKey === 'CH4') {
-        moleFractions = moleFractions.map(v => v * ch4ScaleFactor);
-      }
-
-      return {
-        x: moleFractions,
+      traces.push({
+        x: gas.mole_fraction,
         y: profileData.altitude_km,
         type: 'scatter',
         mode: 'lines',
         name: gasKey,
+        xaxis: 'x',
         line: {
           color: gas.color,
           width: 2
         },
         hovertemplate: `${gas.name}<br>%{x:.2e}<br>%{y:.1f} km<extra></extra>`
-      };
-    }).filter(Boolean);
+      });
+    });
+
+    return traces;
   };
 
   // Get max altitude from data for y-axis scaling
   const maxAltitude = profileData ? Math.max(...profileData.altitude_km) : 50;
 
   const plotLayout = {
+    // Bottom x-axis (log scale for trace gases)
     xaxis: {
       title: {
-        text: 'Mole Fraction',
-        font: { size: 11, color: '#ccc' },
-        standoff: 5
+        text: 'Trace Gas Mole Fraction',
+        font: { size: 10, color: '#999' },
+        standoff: 2
       },
       type: 'log',
       showgrid: true,
       gridcolor: 'rgba(255,255,255,0.1)',
-      tickfont: { size: 9, color: '#999' },
+      tickfont: { size: 8, color: '#999' },
       tickformat: '.0e',
-      range: [-7, 0], // log scale: 10^-7 to 1
-      side: 'bottom'
+      range: [-7, -2],
+      side: 'bottom',
+      domain: [0, 1]
+    },
+    // Top x-axis (linear scale for CH4)
+    xaxis2: {
+      title: {
+        text: 'CH₄ Mole Fraction',
+        font: { size: 10, color: '#00bcd4' },
+        standoff: 2
+      },
+      type: 'linear',
+      showgrid: false,
+      tickfont: { size: 8, color: '#00bcd4' },
+      tickformat: '.3f',
+      range: [0.02, 0.07],
+      side: 'top',
+      overlaying: 'x',
+      anchor: 'y'
     },
     yaxis: {
       title: {
@@ -102,7 +135,7 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
       range: [0, maxAltitude],
       dtick: 10
     },
-    margin: { l: 50, r: 10, t: 10, b: 40 },
+    margin: { l: 50, r: 10, t: 40, b: 45 },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(26,26,26,1)',
     showlegend: true,
@@ -121,8 +154,7 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
 
   const plotConfig = {
     displayModeBar: false,
-    responsive: true,
-    showTips: false
+    responsive: true
   };
 
   if (loading) {
