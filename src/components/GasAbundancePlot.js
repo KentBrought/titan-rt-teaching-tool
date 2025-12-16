@@ -65,6 +65,12 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
 
     // Trace gases on log scale (x axis - bottom)
     const traceGases = ['H2', 'CO', 'C2H6', 'C2H2'];
+    const gasNameMap = {
+      'H2': 'H₂',
+      'CO': 'CO',
+      'C2H6': 'C₂H₆',
+      'C2H2': 'C₂H₂'
+    };
     traceGases.forEach(gasKey => {
       const gas = profileData.gases[gasKey];
       if (!gas) return;
@@ -74,7 +80,7 @@ const GasAbundancePlot = ({ methaneAbundance = 50 }) => {
         y: profileData.altitude_km,
         type: 'scatter',
         mode: 'lines',
-        name: gasKey,
+        name: gasNameMap[gasKey] || gasKey,
         xaxis: 'x',
         line: {
           color: gas.color,

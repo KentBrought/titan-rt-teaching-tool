@@ -109,8 +109,8 @@ const SpectralPlot = ({
             const intensities = data.intensities;
             
             const nameMap = {
-              standard: 'Methane + haze',
-              no_ch4: 'No methane',
+              standard: 'CH₄ + Haze',
+              no_ch4: 'No CH₄',
               no_haze: 'No haze'
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -175,8 +175,8 @@ const SpectralPlot = ({
             const intensities = data.intensities;
             
             const nameMap = {
-              standard: 'Methane + haze',
-              no_ch4: 'No methane',
+              standard: 'CH₄ + Haze',
+              no_ch4: 'No CH₄',
               no_haze: 'No haze'
             };
             traces.push({

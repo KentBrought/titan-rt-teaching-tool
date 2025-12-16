@@ -16,11 +16,11 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
   if (!geoValues) return null;
 
   return (
-    <div className="geo-values-box">
+    <div className="geo-values-box" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
         {plotMultiple ? 'Selected Points' : 'Selected Point'}
       </h3>
-      <div className="geo-values-scroll">
+      <div className="geo-values-scroll" style={{ flex: '1 1 auto', overflowY: 'auto' }}>
         {Array.isArray(geoValues) ? (
           // Multiple positions mode
           geoValues.map((values, index) => {
@@ -33,7 +33,7 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
                     Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
                   </h4>
                   <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
-                    ({values.x}, {values.y})
+                    (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{values.x}, {values.y}</span>)
                   </p>
                 </div>
                 {values.error ? (
@@ -62,7 +62,7 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
           // Single position mode
           <>
             <h4 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
-              Point at ({geoValues.x}, {geoValues.y})
+              Point at (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{geoValues.x}, {geoValues.y}</span>)
             </h4>
             {geoValues.error ? (
               <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
@@ -895,7 +895,7 @@ function App() {
                 <div className="placeholder-circle"></div>
               )}
             </div>
-            <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
+            <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch', height: '100%' }}>
               {imageType === 'irColor' && (
                 <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
                   <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
@@ -924,7 +924,7 @@ function App() {
                 </div>
               )}
               {geoValues && (
-                <div ref={geoValuesBoxRef}>
+                <div ref={geoValuesBoxRef} style={{ flex: imageType === 'irColor' ? '1 1 auto' : '1 1 0', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   <GeoValuesDisplay 
                     geoValues={geoValues} 
                     plotMultiple={toggles.plotMultiple}
@@ -938,9 +938,9 @@ function App() {
               <h2>IR Image Options</h2>
               <div className="slider-group">
                 {/* Haze Model Section */}
-                <div style={{ marginBottom: '15px' }}>
-                  <p style={{ marginBottom: '8px', fontSize: '14px' }}>Haze model</p>
-                  <div className="radio-group">
+                <div style={{ marginBottom: '0' }}>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Haze Model</h3>
+                  <div className="radio-group" style={{ flexDirection: 'row', gap: '20px' }}>
                     <label className="radio-label">
                       <input
                         type="radio"
@@ -949,7 +949,7 @@ function App() {
                         checked={hazePropertiesModel === 'doose'}
                         onChange={(e) => setHazePropertiesModel(e.target.value)}
                       />
-                      <span style={{ color: '#007acc', fontWeight: 'bold' }}>Doose</span>
+                      <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Doose</span>
                     </label>
                     <label className="radio-label">
                       <input
@@ -959,10 +959,11 @@ function App() {
                         checked={hazePropertiesModel === 'tomasko'}
                         onChange={(e) => setHazePropertiesModel(e.target.value)}
                       />
-                      <span style={{ color: '#007acc', fontWeight: 'bold' }}>Tomasko</span>
+                      <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Tomasko</span>
                     </label>
                   </div>
                 </div>
+                <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
 
                 <label>
                   Haze abundance
@@ -1006,7 +1007,8 @@ function App() {
                   <span>{sliders.phaseAngle * 5}°</span>
                 </label>
               </div>
-              <div style={{ marginTop: '20px' }}>
+              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+              <div style={{ marginTop: '0' }}>
                 <label className="toggle-label">
                   <input 
                     type="checkbox"
@@ -1016,9 +1018,10 @@ function App() {
                   <span>Plot multiple</span>
                 </label>
               </div>
+              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
               {/* Image Type Section */}
-              <div style={{ marginTop: '20px' }}>
-                <p style={{ marginBottom: '8px', fontSize: '14px' }}>Image Type</p>
+              <div style={{ marginTop: '0' }}>
+                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Image Type</h3>
                 <div className="radio-group">
                   <label className="radio-label">
                     <input
@@ -1028,7 +1031,7 @@ function App() {
                       checked={imageType === 'irColor'}
                       onChange={(e) => setImageType(e.target.value)}
                     />
-                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>IR Color</span>
+                    <span>IR Color</span>
                   </label>
                   <label className="radio-label">
                     <input
@@ -1038,7 +1041,7 @@ function App() {
                       checked={imageType === 'incidence'}
                       onChange={(e) => setImageType(e.target.value)}
                     />
-                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>Incidence</span>
+                    <span>Incidence</span>
                   </label>
                   <label className="radio-label">
                     <input
@@ -1048,7 +1051,7 @@ function App() {
                       checked={imageType === 'emission'}
                       onChange={(e) => setImageType(e.target.value)}
                     />
-                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>Emission</span>
+                    <span>Emission</span>
                   </label>
                   <label className="radio-label">
                     <input
@@ -1058,7 +1061,7 @@ function App() {
                       checked={imageType === 'phase'}
                       onChange={(e) => setImageType(e.target.value)}
                     />
-                    <span style={{ color: '#007acc', fontWeight: 'bold' }}>Phase</span>
+                    <span>Phase</span>
                   </label>
                 </div>
               </div>
@@ -1191,16 +1194,16 @@ function App() {
                   })}
               </div>
               {!toggles.plotMultiple && (
-                <div className="transmission-box" style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission*</h3>
+                <div className="transmission-box" style={{ marginTop: '20px', marginBottom: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Transmission</h3>
                   <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                     {Object.entries(transmissionToggles).map(([key, value]) => {
                       const labelMap = {
-                        ch4: 'CH4',
-                        h2: 'H2',
+                        ch4: 'CH₄',
+                        h2: 'H₂',
                         co: 'CO',
-                        c2h6: 'C2H6',
-                        c2h2: 'C2H2',
+                        c2h6: 'C₂H₆',
+                        c2h2: 'C₂H₂',
                       };
                       const label = labelMap[key] || key.toUpperCase();
                       return (
@@ -1217,6 +1220,7 @@ function App() {
                   </div>
                 </div>
               )}
+              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '0', marginBottom: '0' }}></div>
               {/* Atmospheric Components Section */}
               <div ref={atmosphericComponentsSectionRef} className="atmospheric-components-section">
                 <h3 className="atmospheric-components-header">Atmospheric Components</h3>
@@ -1238,8 +1242,8 @@ function App() {
                           <div className="case-toggle-options">
                             {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                               const labelMap = {
-                                standard: 'Methane + haze',
-                                no_ch4: 'No methane',
+                                standard: 'CH₄ + Haze',
+                                no_ch4: 'No CH₄',
                                 no_haze: 'No haze'
                               };
                               const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -1263,8 +1267,8 @@ function App() {
                     <div className="case-toggle-options">
                       {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                         const labelMap = {
-                          standard: 'Methane + haze',
-                          no_ch4: 'No methane',
+                          standard: 'CH₄ + Haze',
+                          no_ch4: 'No CH₄',
                           no_haze: 'No haze'
                         };
                         const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
