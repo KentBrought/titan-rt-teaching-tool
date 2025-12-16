@@ -625,3 +625,48 @@ body {
   margin-bottom: 8px;
   color: #e0e0e0;
 }
+
+/* Loading Indicators */
+.loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(26, 26, 26, 0.95);
+  border: 2px solid #66ccff;
+  border-radius: 8px;
+  padding: 20px 30px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
+  width: auto;
+  max-width: none;
+  min-width: 150px;
+}
+
+.loading-indicator p {
+  margin-top: 15px;
+  color: #66ccff;
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(102, 204, 255, 0.3);
+  border-top: 4px solid #66ccff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

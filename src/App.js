@@ -161,8 +161,10 @@ function App() {
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
   const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // For multiple mode: { pointIndex: { standard: bool, no_ch4: bool, no_haze: bool } }
   const [currentImage, setCurrentImage] = useState(null);
+  const [loadingImage, setLoadingImage] = useState(false);
   const [geoValues, setGeoValues] = useState(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
+  const [loadingSpectral, setLoadingSpectral] = useState(false); // Loading state for spectral plot updates
   const [hoverGeoValues, setHoverGeoValues] = useState(null); // Geo values for hover position
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
   const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
@@ -231,6 +233,7 @@ function App() {
   const fetchGeoValues = useCallback(async (x, y) => {
     try {
       setLoadingGeo(true);
+      setLoadingSpectral(true); // Also set spectral loading state
       const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
       const values = await extractGeoValues(phaseAngle, x, y);
       setGeoValues(values);
@@ -244,6 +247,8 @@ function App() {
       });
     } finally {
       setLoadingGeo(false);
+      // Delay clearing spectral loading to allow plot to update
+      setTimeout(() => setLoadingSpectral(false), 100);
     }
   }, [sliders.phaseAngle]);
 
@@ -251,6 +256,7 @@ function App() {
   const fetchMultipleGeoValues = useCallback(async (positions) => {
     try {
       setLoadingGeo(true);
+      setLoadingSpectral(true); // Also set spectral loading state
       const phaseAngle = sliders.phaseAngle * 5;
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
@@ -279,6 +285,8 @@ function App() {
       setGeoValues(null);
     } finally {
       setLoadingGeo(false);
+      // Delay clearing spectral loading to allow plot to update
+      setTimeout(() => setLoadingSpectral(false), 100);
     }
   }, [sliders.phaseAngle]);
 
@@ -462,6 +470,9 @@ function App() {
       clearTimeout(imageLoadTimerRef.current);
     }
 
+    // Set loading state immediately when phase angle changes
+    setLoadingImage(true);
+
     // Debounce image loading to avoid excessive requests during slider dragging
     imageLoadTimerRef.current = setTimeout(async () => {
       try {
@@ -484,6 +495,8 @@ function App() {
       } catch (error) {
         console.error('Error loading image:', error);
         setCurrentImage(null);
+      } finally {
+        setLoadingImage(false);
       }
     }, 50); // 50ms debounce - fast enough for responsive feel, slow enough to reduce requests
 
@@ -842,21 +855,29 @@ function App() {
                 <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
               </div>
             </div>
-            <div ref={irColorImageRef} className="display-box ir-color">
+            <div ref={irColorImageRef} className="display-box ir-color" style={{ position: 'relative' }}>
               <h2>IR Color</h2>
               {currentImage ? (
                 <>
-                  <ClickableImage
-                    src={currentImage}
-                    alt="Titan IR Color Image"
-                    onImageClick={handleImageClick}
-                    onImageHover={handleImageHover}
-                    className="ir-color-image"
-                    style={{ width: '100%' }}
-                    initialPosition={toggles.plotMultiple ? null : clickedPosition}
-                    multiplePositions={toggles.plotMultiple ? multiplePositions : []}
-                    plotMultiple={toggles.plotMultiple}
-                  />
+                  <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
+                    <ClickableImage
+                      src={currentImage}
+                      alt="Titan IR Color Image"
+                      onImageClick={handleImageClick}
+                      onImageHover={handleImageHover}
+                      className="ir-color-image"
+                      style={{ width: '100%' }}
+                      initialPosition={toggles.plotMultiple ? null : clickedPosition}
+                      multiplePositions={toggles.plotMultiple ? multiplePositions : []}
+                      plotMultiple={toggles.plotMultiple}
+                    />
+                    {loadingImage && (
+                      <div className="loading-indicator">
+                        <div className="loading-spinner"></div>
+                        <p>Loading image...</p>
+                      </div>
+                    )}
+                  </div>
                   <div className="hover-geo-values-display" style={{ minHeight: '100px', visibility: hoverGeoValues ? 'visible' : 'hidden' }}>
                     {hoverGeoValues ? (
                       <>
@@ -1077,7 +1098,13 @@ function App() {
                 </div>
               ) : spectralData ? (
                 <>
-                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', position: 'relative' }}>
+                    {loadingSpectral && (
+                      <div className="loading-indicator">
+                        <div className="loading-spinner"></div>
+                        <p>Updating plot...</p>
+                      </div>
+                    )}
                     <ErrorBoundary>
                       <SpectralPlot 
                         spectralData={spectralData}
@@ -1089,7 +1116,6 @@ function App() {
                         multiplePositions={toggles.plotMultiple ? multiplePositions : null}
                         geoValues={geoValues}
                         transmissionToggles={transmissionToggles}
-
                       />
                     </ErrorBoundary>
                     {geoValues && (
@@ -1107,7 +1133,7 @@ function App() {
                       </div>
                     )}
                   </div>
-                  {!geoValues && (
+                  {!geoValues && !Object.values(transmissionToggles).some(v => v) && (
                     <div style={{
                       position: 'absolute',
                       top: '50%',
@@ -1166,7 +1192,7 @@ function App() {
               </div>
               {!toggles.plotMultiple && (
                 <div className="transmission-box" style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission</h3>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px' }}>Transmission*</h3>
                   <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                     {Object.entries(transmissionToggles).map(([key, value]) => {
                       const labelMap = {

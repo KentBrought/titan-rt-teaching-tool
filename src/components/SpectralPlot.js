@@ -328,10 +328,11 @@ const SpectralPlot = ({
       <div style={{ 
         marginTop: '15px', 
         padding: '10px', 
-        backgroundColor: '#e9ecef', 
+        backgroundColor: '#2a2a2a', 
         borderRadius: '4px',
+        border: '1px solid #4a9d4a',
         fontSize: '14px',
-        color: '#495057',
+        color: '#e0e0e0',
         width: '100%',
         maxWidth: '100%',
         boxSizing: 'border-box'
@@ -373,7 +374,7 @@ const SpectralPlot = ({
                 )
               }
               {!hasSelectedCases && (
-                <span style={{ color: '#dc3545', marginLeft: '10px' }}>
+                <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
                   ⚠️ Please select at least one case to display
                 </span>
               )}
