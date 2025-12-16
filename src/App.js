@@ -136,7 +136,7 @@ function App() {
 
   const [transmissionToggles, setTransmissionToggles] = useState({
     ch4: false,
-    h2: false,
+    haze: false,
     co: false,
     c2h6: false,
     c2h2: false,
@@ -195,7 +195,7 @@ function App() {
           // Unselect all transmission gasses
           setTransmissionToggles({
             ch4: false,
-            h2: false,
+            haze: false,
             co: false,
             c2h6: false,
             c2h2: false,
@@ -1208,7 +1208,7 @@ function App() {
                     {Object.entries(transmissionToggles).map(([key, value]) => {
                       const labelMap = {
                         ch4: 'CH₄',
-                        h2: 'H₂',
+                        haze: 'Haze',
                         co: 'CO',
                         c2h6: 'C₂H₆',
                         c2h2: 'C₂H₂',

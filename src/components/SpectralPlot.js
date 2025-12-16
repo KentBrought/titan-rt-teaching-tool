@@ -20,7 +20,7 @@ const SpectralPlot = ({
   plotMultiple, 
   multiplePositions, 
   geoValues,
-  transmissionToggles = {}  // { ch4: bool, h2: bool, co: bool, c2h6: bool, c2h2: bool }
+  transmissionToggles = {}
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
@@ -33,7 +33,6 @@ const SpectralPlot = ({
         if (response.ok) {
           const data = await response.json();
           setGasTransmissionData(data);
-          console.log('Gas transmission data loaded:', Object.keys(data.gases));
         }
       } catch (err) {
         console.error('Error loading gas transmission data:', err);
@@ -49,30 +48,15 @@ const SpectralPlot = ({
   }, [spectralData]);
 
   // Check if any gas transmission is selected
-  const hasGasTransmission = useMemo(() => {
-    return !plotMultiple && Object.values(transmissionToggles).some(v => v);
-  }, [plotMultiple, transmissionToggles]);
+  const hasGasTransmission = !plotMultiple && Object.values(transmissionToggles).some(v => v);
 
-  // Update actual angles separately via useEffect to avoid re-render loop
-  useEffect(() => {
-    if (!processedData) return;
-    
-    if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
-      const geoValue = geoValues[0];
-      const pointIncidence = geoValue.incidence ?? 0;
-      const pointEmission = geoValue.emis ?? 0;
-      const pointAzimuth = geoValue.azimuth ?? 0;
-      const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
-      setActualAngles(actual);
-    } else if (!plotMultiple && geoValues && !Array.isArray(geoValues)) {
-      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
-      setActualAngles(actual);
-    }
-  }, [processedData, geoValues, plotMultiple, incidenceAngle, emissionAngle, azimuthAngle]);
-
-  // Memoize plot data generation for performance
+  // Memoize plot data generation for performance - use useMemo to prevent blocking
+  // Use useMemo with async-friendly approach
   const plotData = useMemo(() => {
     if (!processedData) return [];
+    
+    // Use requestIdleCallback or setTimeout to yield to browser if processing is heavy
+    // For now, process synchronously but efficiently
     
     const traces = [];
     const colors = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
@@ -109,8 +93,8 @@ const SpectralPlot = ({
             const intensities = data.intensities;
             
             const nameMap = {
-              standard: 'CH₄ + Haze',
-              no_ch4: 'No CH₄',
+              standard: 'Methane + haze',
+              no_ch4: 'No methane',
               no_haze: 'No haze'
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -147,7 +131,6 @@ const SpectralPlot = ({
               type: 'scattergl',
               mode: 'lines',
               name: traceName,
-              yaxis: 'y',
               line: {
                 color: lineColor,
                 width: 2,
@@ -175,8 +158,8 @@ const SpectralPlot = ({
             const intensities = data.intensities;
             
             const nameMap = {
-              standard: 'CH₄ + Haze',
-              no_ch4: 'No CH₄',
+              standard: 'Methane + haze',
+              no_ch4: 'No methane',
               no_haze: 'No haze'
             };
             traces.push({
@@ -185,7 +168,6 @@ const SpectralPlot = ({
               type: 'scattergl',
               mode: 'lines',
               name: nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
-              yaxis: 'y',
               line: {
                 color: caseType === 'standard' ? '#1f77b4' : 
                        caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
@@ -199,17 +181,16 @@ const SpectralPlot = ({
 
     // Add gas transmission traces if enabled and not in multiple mode
     if (!plotMultiple && gasTransmissionData) {
-      // Map from toggle keys to the JSON gas names
       const toggleToGasMap = {
         'ch4': 'CH4',
+        'haze': 'Haze',
         'co': 'CO',
-        'c2h2': 'C2H2',
         'c2h6': 'C2H6',
-        'h2': 'Haze',  // H2 maps to Haze in the data
+        'c2h2': 'C2H2',
       };
 
       const gasColors = {
-        'CH4': '#00bcd4',
+        'CH4': '#ff6b6b',
         'CO': '#e91e63', 
         'C2H2': '#9c27b0',
         'C2H6': '#4caf50',
@@ -233,7 +214,7 @@ const SpectralPlot = ({
             y: gasData.transmission,
             type: 'scattergl',
             mode: 'lines',
-            name: `${gasLabels[gasName] || gasName} Trans.`,
+            name: `${gasLabels[gasName] || gasName}`,
             yaxis: 'y2',
             line: {
               color: gasColors[gasName] || '#888888',
@@ -248,7 +229,21 @@ const SpectralPlot = ({
     return traces;
   }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData]);
 
-  const plotLayout = useMemo(() => ({
+  // Update actualAngles in a separate effect to avoid infinite loop
+  useEffect(() => {
+    if (!processedData || !geoValues) return;
+    
+    if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
+      const geoValue = geoValues[0];
+      const actual = getActualAngles(processedData, geoValue.incidence ?? 0, geoValue.emis ?? 0, geoValue.azimuth ?? 0);
+      setActualAngles(actual);
+    } else if (!plotMultiple && !Array.isArray(geoValues)) {
+      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+      setActualAngles(actual);
+    }
+  }, [processedData, geoValues, plotMultiple, incidenceAngle, emissionAngle, azimuthAngle]);
+
+  const plotLayout = {
     xaxis: {
       title: {
         text: 'Wavelength (μm)',
@@ -268,7 +263,6 @@ const SpectralPlot = ({
       gridcolor: 'rgba(255,255,255,0.1)',
       tickfont: { size: 11, color: '#999' }
     },
-    // Secondary y-axis for transmission (only shown when gas transmission is active)
     ...(hasGasTransmission && {
       yaxis2: {
         title: {
@@ -296,7 +290,7 @@ const SpectralPlot = ({
     },
     paper_bgcolor: 'rgba(0,0,0,0)',
     plot_bgcolor: 'rgba(26,26,26,1)'
-  }), [hasGasTransmission]);
+  };
 
   if (!spectralData) {
     return (
@@ -328,11 +322,10 @@ const SpectralPlot = ({
       <div style={{ 
         marginTop: '15px', 
         padding: '10px', 
-        backgroundColor: '#2a2a2a', 
+        backgroundColor: '#e9ecef', 
         borderRadius: '4px',
-        border: '1px solid #4a9d4a',
         fontSize: '14px',
-        color: '#e0e0e0',
+        color: '#495057',
         width: '100%',
         maxWidth: '100%',
         boxSizing: 'border-box'
@@ -374,7 +367,7 @@ const SpectralPlot = ({
                 )
               }
               {!hasSelectedCases && (
-                <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
+                <span style={{ color: '#dc3545', marginLeft: '10px' }}>
                   ⚠️ Please select at least one case to display
                 </span>
               )}
