@@ -56,8 +56,6 @@ body {
   color: #e0e0e0;
   margin: 0;
   cursor: default;
-  padding: 5px 10px;
-  display: inline-block;
 }
 
 .rt-container {
@@ -105,7 +103,7 @@ body {
 .teaching-tool-text {
   display: inline-block;
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-left: 4px;
+  margin-left: 0px;
 }
 
 /* Decrease spacing between "transfer" and "teaching" during animation */
