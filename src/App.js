@@ -1298,11 +1298,20 @@ function App() {
                       const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
                       const colorValue = colorValues[pointIndex] || '#ff0000';
                       const pointCases = selectedCasesByPoint[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
+                      const geoValue = geoValues[pointIndex];
+                      // Format angles briefly for display
+                      const formatAngles = (incidence, emission, phase) => {
+                        const i = incidence != null ? incidence.toFixed(0) : '?';
+                        const e = emission != null ? emission.toFixed(0) : '?';
+                        const p = phase != null ? phase.toFixed(0) : '?';
+                        return `i:${i}° e:${e}° p:${p}°`;
+                      };
+                      const angleStr = geoValue ? formatAngles(geoValue.incidence, geoValue.emis, geoValue.phase) : '';
                       
                       return (
                         <div key={pointIndex} className="point-atmospheric-options">
                           <h4 className="point-atmospheric-header">
-                            Point {pointIndex + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
+                            Point {pointIndex + 1} (<span style={{ color: colorValue }}>{angleStr}</span>)
                           </h4>
                           <div className="case-toggle-options">
                             {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {

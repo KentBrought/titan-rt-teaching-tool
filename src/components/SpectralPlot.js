@@ -11,6 +11,14 @@ const adjustColorBrightness = (hex, percent) => {
   return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1);
 };
 
+// Helper function to format angles briefly for legend labels
+const formatAngles = (incidence, emission, phase) => {
+  const i = incidence != null ? incidence.toFixed(0) : '?';
+  const e = emission != null ? emission.toFixed(0) : '?';
+  const p = phase != null ? phase.toFixed(0) : '?';
+  return `i:${i}° e:${e}° p:${p}°`;
+};
+
 const SpectralPlot = ({ 
   spectralData, 
   incidenceAngle, 
@@ -178,7 +186,10 @@ const SpectralPlot = ({
               no_haze: 'No haze'
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
-            const traceName = `${caseName} (${pointColor})`;
+            // Get actual angles for this point
+            const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
+            const phase = geoValue.phase ?? (actual.incidence + actual.emission);
+            const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             
             // Use different shades of the same color for multiple components
             let lineColor = baseColor;
@@ -251,12 +262,17 @@ const SpectralPlot = ({
               no_ch4: 'No CH₄',
               no_haze: 'No haze'
             };
+            const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
+            // Get actual angles for single mode
+            const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+            const phase = geoValues.phase ?? (actual.incidence + actual.emission);
+            const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             traces.push({
               x: wavelengths,
               y: intensities,
               type: 'scattergl',
               mode: 'lines',
-              name: nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase()),
+              name: traceName,
               line: {
                 color: caseType === 'standard' ? '#1f77b4' : 
                        caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
