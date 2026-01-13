@@ -4,11 +4,11 @@ import dragonflyLogo from '../assets/dragonfly_mission.png';
 import nasaLogo from '../assets/nasa.png';
 import './SplashOverlay.css';
 
-// DEBUG: Always show for 3 seconds
+const SESSION_STORAGE_KEY = 'titan_rt_splash_shown';
 const DEBUG_DISPLAY_TIME = 3000; // 3 seconds for debugging
 const FADE_OUT_DURATION = 3000; // 3 seconds for fade animation
 
-function SplashOverlay() {
+function SplashOverlay({ onReady }) {
   const [isVisible, setIsVisible] = useState(false);
   const [isFading, setIsFading] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
@@ -17,6 +17,7 @@ function SplashOverlay() {
   const fadeTimeoutRef = React.useRef(null);
   const dismissTimeoutRef = React.useRef(null);
   const overlayRef = React.useRef(null);
+  const readyCallbackRef = React.useRef(onReady);
 
   // Handle dismiss logic
   const handleDismiss = useCallback(() => {
@@ -25,6 +26,9 @@ function SplashOverlay() {
       clearTimeout(dismissTimeoutRef.current);
       dismissTimeoutRef.current = null;
     }
+
+    // Mark as shown in sessionStorage
+    sessionStorage.setItem(SESSION_STORAGE_KEY, 'true');
 
     // Use setTimeout to ensure the base state is rendered first
     setTimeout(() => {
@@ -46,8 +50,19 @@ function SplashOverlay() {
     }, 10);
   }, []);
 
-  // Preload all images before showing splash
+  // Check if splash has been shown in this session
   useEffect(() => {
+    const hasBeenShown = sessionStorage.getItem(SESSION_STORAGE_KEY) === 'true';
+    
+    if (hasBeenShown) {
+      // Already shown, notify parent immediately that we're ready
+      if (readyCallbackRef.current) {
+        readyCallbackRef.current();
+      }
+      return;
+    }
+
+    // Preload all images before showing splash
     const preloadImages = () => {
       const imageUrls = [soderblomLogo, dragonflyLogo, nasaLogo];
       const imagePromises = imageUrls.map((url) => {
@@ -73,13 +88,29 @@ function SplashOverlay() {
     preloadImages();
   }, []);
 
-  // Show splash once images are loaded
+  // Update callback ref when onReady changes
   useEffect(() => {
-    if (!imagesLoaded) return;
+    readyCallbackRef.current = onReady;
+  }, [onReady]);
+
+  // Show splash once images are loaded (only if not shown before)
+  useEffect(() => {
+    const hasBeenShown = sessionStorage.getItem(SESSION_STORAGE_KEY) === 'true';
+    if (hasBeenShown || !imagesLoaded) return;
 
     setShouldRender(true);
     setIsVisible(true);
     startTimeRef.current = Date.now();
+    
+    // Notify parent that splash is ready (rendered and visible)
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (readyCallbackRef.current) {
+          readyCallbackRef.current();
+        }
+      });
+    });
     
     // Auto-dismiss after 3 seconds
     dismissTimeoutRef.current = setTimeout(() => {

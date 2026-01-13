@@ -1,15 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import SplashOverlay from './components/SplashOverlay';
 import reportWebVitals from './reportWebVitals';
 
+function AppWrapper() {
+  const [splashReady, setSplashReady] = useState(false);
+
+  return (
+    <>
+      <SplashOverlay onReady={() => setSplashReady(true)} />
+      {splashReady && <App />}
+    </>
+  );
+}
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <SplashOverlay />
-    <App />
+    <AppWrapper />
   </React.StrictMode>
 );
 
