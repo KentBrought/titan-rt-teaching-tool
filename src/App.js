@@ -7,6 +7,7 @@ import GasAbundancePlot from './components/GasAbundancePlot';
 import ErrorBoundary from './components/ErrorBoundary';
 import UserGuide from './components/UserGuide';
 import Header from './components/Header';
+import ScrollToTop from './components/ScrollToTop';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
@@ -890,6 +891,7 @@ function App() {
 
   return (
     <Router>
+      <ScrollToTop />
       <div className="App">
         <Header />
         <Routes>
