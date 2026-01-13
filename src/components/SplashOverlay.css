@@ -1,0 +1,193 @@
+.splash-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background-color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 3s ease-out;
+  pointer-events: auto;
+  will-change: opacity;
+  visibility: visible;
+}
+
+.splash-overlay.splash-overlay-fading {
+  opacity: 0;
+  pointer-events: none;
+  visibility: visible;
+  transition: opacity 3s ease-out;
+}
+
+.splash-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 30px;
+  padding: 40px;
+  text-align: center;
+  max-width: 100vw;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.splash-logos {
+  position: relative;
+  width: 100vw;
+  max-width: 100vw;
+  height: auto;
+  min-height: 200px;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: visible;
+  margin: 0;
+  /* Calculate max safe width based on centered middle logo constraint */
+  /* To keep middle at 50vw, we need: left logo (1.7×) + gap + middle (1×) ≤ 50vw */
+  /* And: middle (1×) + gap + right logo (1×) ≤ 50vw */
+  /* More restrictive constraint: left side = (50vw - gap) / 2.7 */
+  --gap: 60px;
+  --gap-left-middle: 135px; /* Larger gap between left and middle logos */
+  --base-size: min(calc((50vw - var(--gap-left-middle)) / 2.7), calc((50vw - var(--gap)) / 2));
+  --left-logo-size: calc(var(--base-size) * 1.7);
+  --right-logo-size: var(--base-size);
+}
+
+.splash-logo {
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  object-position: center;
+  filter: brightness(0.95);
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* First logo (left) is 1.7× taller than the others */
+.splash-logo-left {
+  position: absolute;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  max-width: var(--left-logo-size);
+  max-height: var(--left-logo-size);
+  width: var(--left-logo-size);
+  height: auto;
+  /* Position to the left of center, accounting for larger gap between left and middle */
+  right: calc(50vw + var(--base-size) / 2 + var(--gap-left-middle) / 2);
+  top: 50%;
+  transform: translateY(-50%);
+  /* Ensure logo isn't clipped */
+  overflow: visible;
+}
+
+/* Second logo (middle) - centered at exactly 50vw */
+.splash-logo-middle {
+  position: absolute;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  max-width: var(--base-size, 150px);
+  max-height: var(--base-size, 150px);
+  width: var(--base-size, 150px);
+  height: auto;
+  min-width: 50px;
+  min-height: 50px;
+  /* Center at 50vw using absolute positioning relative to viewport */
+  left: 50vw;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  /* Ensure logo isn't clipped */
+  overflow: visible;
+}
+
+/* Third logo (right) - same size as middle */
+.splash-logo-right {
+  position: absolute;
+  aspect-ratio: 1 / 1 !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  max-width: var(--base-size);
+  max-height: var(--base-size);
+  width: var(--base-size);
+  height: auto;
+  /* Position to the right of center, accounting for gap */
+  left: calc(50vw + var(--base-size) / 2 + var(--gap) / 2);
+  top: 50%;
+  transform: translateY(-50%);
+  /* Ensure logo isn't clipped */
+  overflow: visible;
+}
+
+.splash-loading-label {
+  font-size: 18px;
+  color: #e0e0e0;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.splash-clarifier {
+  font-size: 14px;
+  color: #999;
+  line-height: 1.5;
+  margin-top: 50px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.splash-skip-hint {
+  position: absolute;
+  bottom: 30px;
+  right: 30px;
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 768px) {
+  .splash-logos {
+    gap: 20px;
+  }
+
+  .splash-logo {
+    height: 120px !important;
+    width: 120px !important;
+  }
+  
+  .splash-logos img {
+    height: 120px !important;
+    width: 120px !important;
+    max-height: 120px !important;
+  }
+
+  .splash-content {
+    gap: 20px;
+    padding: 20px;
+  }
+
+  .splash-loading-label {
+    font-size: 16px;
+  }
+
+  .splash-clarifier {
+    font-size: 12px;
+    max-width: 90%;
+  }
+
+  .splash-skip-hint {
+    bottom: 20px;
+    right: 20px;
+    font-size: 11px;
+  }
+}
+
