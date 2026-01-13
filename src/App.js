@@ -189,6 +189,8 @@ function App() {
   const [hoverGeoValues, setHoverGeoValues] = useState(null); // Geo values for hover position
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
   const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
+  const [isDraggingPhaseAngle, setIsDraggingPhaseAngle] = useState(false); // Track if phase angle slider is being dragged
+  const [committedPhaseAngle, setCommittedPhaseAngle] = useState(0); // Committed phase angle for geo value fetching (initialized to match initial phaseAngle)
   const geoValuesBoxRef = useRef(null);
   const geoValuesContainerRef = useRef(null);
   const atmosphericComponentsSectionRef = useRef(null);
@@ -196,12 +198,36 @@ function App() {
   const togglesBoxRef = useRef(null);
   const irColorImageRef = useRef(null);
   const prevGeoValuesRef = useRef(null);
+  const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
+  };
+
+  // Handle phase angle slider drag start
+  const handlePhaseAngleDragStart = () => {
+    setIsDraggingPhaseAngle(true);
+    // Invalidate any in-flight geo value fetches by incrementing the request ID
+    geoValuesRequestIdRef.current += 1;
+  };
+
+  // Handle phase angle slider drag end
+  const handlePhaseAngleDragEnd = () => {
+    setIsDraggingPhaseAngle(false);
+    // Update committed phase angle, which will trigger geo value fetch
+    setCommittedPhaseAngle(sliders.phaseAngle);
+  };
+
+  // Handle phase angle slider blur (for keyboard input)
+  const handlePhaseAngleBlur = () => {
+    if (isDraggingPhaseAngle) {
+      // If we were dragging, commit the value
+      setIsDraggingPhaseAngle(false);
+      setCommittedPhaseAngle(sliders.phaseAngle);
+    }
   };
 
   const handleToggleChange = (name) => {
@@ -251,15 +277,29 @@ function App() {
   };
 
   // Fetch geo values for a given position
-  const fetchGeoValues = useCallback(async (x, y) => {
+  const fetchGeoValues = useCallback(async (x, y, phaseAngleOverride = null) => {
+    // Increment request ID to invalidate any in-flight requests
+    geoValuesRequestIdRef.current += 1;
+    const currentRequestId = geoValuesRequestIdRef.current;
+    
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true); // Also set spectral loading state
-      const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
+      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (committedPhaseAngle * 5); // Convert slider value to degrees
       const values = await extractGeoValues(phaseAngle, x, y);
+      
+      // Check if this request is still valid (not superseded by a newer request)
+      if (currentRequestId !== geoValuesRequestIdRef.current) {
+        return; // This request is stale, ignore the result
+      }
+      
       setGeoValues(values);
       console.log('Extracted geo values:', values);
     } catch (error) {
+      // Check if this request is still valid
+      if (currentRequestId !== geoValuesRequestIdRef.current) {
+        return; // This request is stale, ignore the error
+      }
       console.error('Error extracting geo values:', error);
       setGeoValues({
         error: error.message,
@@ -267,21 +307,34 @@ function App() {
         y
       });
     } finally {
-      setLoadingGeo(false);
-      // Delay clearing spectral loading to allow plot to update
-      setTimeout(() => setLoadingSpectral(false), 100);
+      // Only update loading state if this request is still valid
+      if (currentRequestId === geoValuesRequestIdRef.current) {
+        setLoadingGeo(false);
+        // Delay clearing spectral loading to allow plot to update
+        setTimeout(() => setLoadingSpectral(false), 100);
+      }
     }
-  }, [sliders.phaseAngle]);
+  }, [committedPhaseAngle]);
 
   // Fetch geo values for multiple positions
-  const fetchMultipleGeoValues = useCallback(async (positions) => {
+  const fetchMultipleGeoValues = useCallback(async (positions, phaseAngleOverride = null) => {
+    // Increment request ID to invalidate any in-flight requests
+    geoValuesRequestIdRef.current += 1;
+    const currentRequestId = geoValuesRequestIdRef.current;
+    
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true); // Also set spectral loading state
-      const phaseAngle = sliders.phaseAngle * 5;
+      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (committedPhaseAngle * 5);
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
           const values = await extractGeoValues(phaseAngle, pos.x, pos.y);
+          
+          // Check if this request is still valid (not superseded by a newer request)
+          if (currentRequestId !== geoValuesRequestIdRef.current) {
+            return null; // This request is stale, ignore the result
+          }
+          
           return {
             ...values,
             x: pos.x,
@@ -290,6 +343,10 @@ function App() {
             color: ['red', 'orange', 'yellow', 'green', 'blue', 'purple'][index]
           };
         } catch (error) {
+          // Check if this request is still valid
+          if (currentRequestId !== geoValuesRequestIdRef.current) {
+            return null; // This request is stale, ignore the error
+          }
           return {
             error: error.message,
             x: pos.x,
@@ -300,16 +357,31 @@ function App() {
         }
       });
       const allGeoValues = await Promise.all(geoValuesPromises);
-      setGeoValues(allGeoValues);
+      
+      // Check if this request is still valid
+      if (currentRequestId !== geoValuesRequestIdRef.current) {
+        return; // This request is stale, ignore the result
+      }
+      
+      // Filter out null values (from stale requests)
+      const validGeoValues = allGeoValues.filter(v => v !== null);
+      setGeoValues(validGeoValues.length > 0 ? validGeoValues : null);
     } catch (error) {
+      // Check if this request is still valid
+      if (currentRequestId !== geoValuesRequestIdRef.current) {
+        return; // This request is stale, ignore the error
+      }
       console.error('Error extracting geo values:', error);
       setGeoValues(null);
     } finally {
-      setLoadingGeo(false);
-      // Delay clearing spectral loading to allow plot to update
-      setTimeout(() => setLoadingSpectral(false), 100);
+      // Only update loading state if this request is still valid
+      if (currentRequestId === geoValuesRequestIdRef.current) {
+        setLoadingGeo(false);
+        // Delay clearing spectral loading to allow plot to update
+        setTimeout(() => setLoadingSpectral(false), 100);
+      }
     }
-  }, [sliders.phaseAngle]);
+  }, [committedPhaseAngle]);
 
   // Cache for geo cube data (by phase angle)
   const geoCubeDataRef = useRef(null);
@@ -529,14 +601,15 @@ function App() {
     };
   }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
 
-  // Update geo values when phase angle changes (if position is marked)
+  // Update geo values when committed phase angle changes (if position is marked)
+  // This only runs when the phase angle slider is released, not during dragging
   useEffect(() => {
     if (toggles.plotMultiple && multiplePositions.length > 0) {
       fetchMultipleGeoValues(multiplePositions);
     } else if (!toggles.plotMultiple && clickedPosition) {
       fetchGeoValues(clickedPosition.x, clickedPosition.y);
     }
-  }, [sliders.phaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
+  }, [committedPhaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
 
   // Set fixed height on geo-values-box to prevent it from changing
   useEffect(() => {
@@ -1078,6 +1151,11 @@ function App() {
                     step="1"
                     value={sliders.phaseAngle}
                     onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
+                    onMouseDown={handlePhaseAngleDragStart}
+                    onMouseUp={handlePhaseAngleDragEnd}
+                    onTouchStart={handlePhaseAngleDragStart}
+                    onTouchEnd={handlePhaseAngleDragEnd}
+                    onBlur={handlePhaseAngleBlur}
                   />
                   <span>{sliders.phaseAngle * 5}°</span>
                 </label>
