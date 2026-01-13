@@ -13,12 +13,53 @@
 
 .user-guide h1 {
   font-size: 32px;
-  margin-bottom: 20px;
+  margin-bottom: 30px;
   color: #e0e0e0;
+}
+
+.user-guide section {
+  margin-bottom: 40px;
+}
+
+.user-guide h2 {
+  font-size: 24px;
+  margin-bottom: 15px;
+  margin-top: 30px;
+  color: #e0e0e0;
+  border-bottom: 2px solid #444;
+  padding-bottom: 10px;
 }
 
 .user-guide p {
   font-size: 16px;
   color: #ccc;
+  line-height: 1.6;
+  margin-bottom: 15px;
+}
+
+.user-guide ul {
+  font-size: 16px;
+  color: #ccc;
+  line-height: 1.8;
+  margin-left: 20px;
+  margin-bottom: 15px;
+}
+
+.user-guide ul ul {
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.user-guide li {
+  margin-bottom: 8px;
+}
+
+.user-guide a {
+  color: #4a9eff;
+  text-decoration: underline;
+}
+
+.user-guide a:hover {
+  color: #6bb0ff;
 }
 

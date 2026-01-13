@@ -402,7 +402,8 @@ const SpectralPlot = ({
             displayModeBar: true,
             displaylogo: false,
             modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
-            showTips: false
+            showTips: false,
+            notifications: false
           }}
         />
       </div>
