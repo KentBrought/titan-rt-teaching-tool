@@ -170,6 +170,16 @@ export const createSpectralPlotData = (processedData, incidenceAngle, emissionAn
     const foundEmi = getValue(emi, angleIndex);
     const foundDaz = getValue(daz, angleIndex);
     console.log(`Found spectrum at index ${angleIndex} with angles: ${foundInc}°, ${foundEmi}°, ${foundDaz}° (max: ${(standard?.length || 0) - 1})`);
+    
+    // Check if any angle difference is greater than 10 degrees
+    const incDiff = Math.abs(foundInc - incidenceAngle);
+    const emiDiff = Math.abs(foundEmi - emissionAngle);
+    const dazDiff = Math.abs(foundDaz - azimuthAngle);
+    
+    if (incDiff > 10 || emiDiff > 10 || dazDiff > 10) {
+      console.log(`Angle differences too large: incidence ${incDiff.toFixed(2)}°, emission ${emiDiff.toFixed(2)}°, azimuth ${dazDiff.toFixed(2)}° - returning empty data`);
+      return { wavelengths: [], intensities: [] };
+    }
   } else {
     console.log(`No matching spectrum found (max: ${(standard?.length || 0) - 1})`);
   }

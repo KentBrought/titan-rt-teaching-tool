@@ -436,30 +436,45 @@ const SpectralPlot = ({
             }
           }
           
+          // Check if there's any spectral data to plot (non-empty traces, excluding gas transmission)
+          // This is recalculated on every render, so it will update when phase angle changes and data becomes available
+          const hasDataToPlot = plotData && plotData.some(trace => 
+            !trace.yaxis && // Exclude gas transmission traces (they use yaxis: 'y2')
+            trace.x && trace.x.length > 0 && trace.y && trace.y.length > 0
+          );
+          
           // Show angle values only if a point is selected AND cases are selected
           const showAngles = geoValues && hasSelectedCases;
           
           return (
             <>
-              <strong>Current Selection:</strong> {
-                !geoValues ? (
-                  // No point selected - show nothing for angles
-                  null
-                ) : showAngles ? (
-                  plotMultiple && Array.isArray(geoValues) && geoValues.length > 1 ? (
-                    'Multiple points selected'
-                  ) : (
-                    <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°</>
-                  )
-                ) : (
-                  // Point selected but no cases - show nothing for angles
-                  null
-                )
-              }
-              {!hasSelectedCases && (
-                <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
-                  ⚠️ Please select at least one case to display
+              {!hasDataToPlot && geoValues && hasSelectedCases ? (
+                <span style={{ color: '#ff6b6b' }}>
+                  ⚠️ No data available: The selected point is more than 10 degrees away from the nearest available data point. Please select a different location on the image.
                 </span>
+              ) : (
+                <>
+                  <strong>Current Selection:</strong> {
+                    !geoValues ? (
+                      // No point selected - show nothing for angles
+                      null
+                    ) : showAngles ? (
+                      plotMultiple && Array.isArray(geoValues) && geoValues.length > 1 ? (
+                        'Multiple points selected'
+                      ) : (
+                        <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°</>
+                      )
+                    ) : (
+                      // Point selected but no cases - show nothing for angles
+                      null
+                    )
+                  }
+                  {!hasSelectedCases && (
+                    <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
+                      ⚠️ Please select at least one case to display
+                    </span>
+                  )}
+                </>
               )}
             </>
           );
