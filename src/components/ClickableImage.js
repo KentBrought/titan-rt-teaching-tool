@@ -242,7 +242,9 @@ const ClickableImage = ({
             // Multiple markers with different colors
             multiplePositions.map((pos, index) => {
               const colors = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
-              const color = colors[index] || 'red';
+              // Use colorIndex from position if available, otherwise fall back to array index
+              const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : index;
+              const color = colors[colorIndex] || 'red';
               if (pos.position) {
                 return (
                   <div

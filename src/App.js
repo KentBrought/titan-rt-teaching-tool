@@ -28,8 +28,10 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
         {Array.isArray(geoValues) ? (
           // Multiple positions mode
           geoValues.map((values, index) => {
-            const colorNames = colors[index] || 'Red';
-            const colorValue = colorValues[index] || '#ff0000';
+            // Use colorIndex from geoValues if available, otherwise fall back to array index
+            const colorIndex = values.colorIndex !== undefined ? values.colorIndex : index;
+            const colorNames = colors[colorIndex] || 'Red';
+            const colorValue = colorValues[colorIndex] || '#ff0000';
             return (
               <div key={`${values.x}-${values.y}-${index}`}>
                 <div style={{ marginBottom: '10px' }}>
@@ -310,6 +312,7 @@ function App() {
       setLoadingGeo(true);
       setLoadingSpectral(true); // Also set spectral loading state
       const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (committedPhaseAngle * 5);
+      const colorNames = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
           const values = await extractGeoValues(phaseAngle, pos.x, pos.y);
@@ -319,24 +322,31 @@ function App() {
             return null; // This request is stale, ignore the result
           }
           
+          // Use stored colorIndex if available, otherwise fall back to array index
+          const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : index;
+          
           return {
             ...values,
             x: pos.x,
             y: pos.y,
             index,
-            color: ['red', 'orange', 'yellow', 'green', 'blue', 'purple'][index]
+            colorIndex,
+            color: colorNames[colorIndex] || 'red'
           };
         } catch (error) {
           // Check if this request is still valid
           if (currentRequestId !== geoValuesRequestIdRef.current) {
             return null; // This request is stale, ignore the error
           }
+          // Use stored colorIndex if available, otherwise fall back to array index
+          const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : index;
           return {
             error: error.message,
             x: pos.x,
             y: pos.y,
             index,
-            color: ['red', 'orange', 'yellow', 'green', 'blue', 'purple'][index]
+            colorIndex,
+            color: colorNames[colorIndex] || 'red'
           };
         }
       });
@@ -484,25 +494,25 @@ function App() {
         );
         
         if (existingIndex >= 0) {
-          // Remove existing position
+          // Remove existing position - keep color indices of remaining positions unchanged
+          const removedPosition = prev[existingIndex];
           const newPositions = prev.filter((_, idx) => idx !== existingIndex);
-          // Reindex case selections: indices after existingIndex shift down by 1
+          // Reindex case selections: map old array indices to new array indices
           setSelectedCasesByPoint(prevCases => {
             const newCases = {};
-            for (let i = 0; i < prev.length; i++) {
-              if (i < existingIndex) {
-                // Keep indices before the removed one
-                if (prevCases[i]) {
-                  newCases[i] = { ...prevCases[i] };
-                }
-              } else if (i > existingIndex) {
-                // Shift indices after the removed one down by 1
-                if (prevCases[i]) {
-                  newCases[i - 1] = { ...prevCases[i] };
-                }
+            // For each position in the new array, find its corresponding old array index
+            newPositions.forEach((newPos, newArrayIndex) => {
+              // Find the old array index by matching position coordinates
+              const oldArrayIndex = prev.findIndex(oldPos => 
+                oldPos.x === newPos.x && oldPos.y === newPos.y &&
+                oldPos.position && newPos.position &&
+                Math.abs(oldPos.position.displayX - newPos.position.displayX) < 1 &&
+                Math.abs(oldPos.position.displayY - newPos.position.displayY) < 1
+              );
+              if (oldArrayIndex >= 0 && prevCases[oldArrayIndex]) {
+                newCases[newArrayIndex] = { ...prevCases[oldArrayIndex] };
               }
-              // Skip the removed index (existingIndex)
-            }
+            });
             return newCases;
           });
           if (newPositions.length === 0) {
@@ -513,13 +523,18 @@ function App() {
           }
           return newPositions;
         } else if (prev.length < 6) {
-          // Add new position
-          const newPositions = [...prev, { x, y, position }];
-          const newIndex = newPositions.length - 1;
+          // Add new position - assign next available color index
+          const usedColorIndices = prev.map(pos => pos.colorIndex !== undefined ? pos.colorIndex : prev.indexOf(pos));
+          let nextColorIndex = 0;
+          while (usedColorIndices.includes(nextColorIndex) && nextColorIndex < 6) {
+            nextColorIndex++;
+          }
+          const newPositions = [...prev, { x, y, position, colorIndex: nextColorIndex }];
+          const newArrayIndex = newPositions.length - 1;
           // Initialize case selections for new point (default: methane + haze)
           setSelectedCasesByPoint(prevCases => ({
             ...prevCases,
-            [newIndex]: { standard: true, no_ch4: false, no_haze: false }
+            [newArrayIndex]: { standard: true, no_ch4: false, no_haze: false }
           }));
           fetchMultipleGeoValues(newPositions);
           return newPositions;
@@ -1296,11 +1311,14 @@ function App() {
                     // Multiple mode: show per-point options
                     multiplePositions.map((pos, pointIndex) => {
                       const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
-                      const colorNames = colors[pointIndex] || 'Red';
                       const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
-                      const colorValue = colorValues[pointIndex] || '#ff0000';
-                      const pointCases = selectedCasesByPoint[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
+                      // Use colorIndex from position or geoValue if available, otherwise fall back to array index
                       const geoValue = geoValues[pointIndex];
+                      const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : 
+                                       (geoValue && geoValue.colorIndex !== undefined ? geoValue.colorIndex : pointIndex);
+                      const colorNames = colors[colorIndex] || 'Red';
+                      const colorValue = colorValues[colorIndex] || '#ff0000';
+                      const pointCases = selectedCasesByPoint[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
                       // Format angles briefly for display
                       const formatAngles = (incidence, emission, phase) => {
                         const i = incidence != null ? incidence.toFixed(0) : '?';

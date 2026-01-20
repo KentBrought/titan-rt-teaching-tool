@@ -153,8 +153,10 @@ const SpectralPlot = ({
         const selectedCaseTypes = Object.entries(pointCases)
           .filter(([_, isSelected]) => isSelected)
           .map(([caseType, _]) => caseType);
-        const baseColor = colors[pointIndex] || '#ff0000';
-        const pointColor = colorNames[pointIndex] || 'Red';
+        // Use colorIndex from geoValue if available, otherwise fall back to array index
+        const colorIndex = geoValue.colorIndex !== undefined ? geoValue.colorIndex : pointIndex;
+        const baseColor = colors[colorIndex] || '#ff0000';
+        const pointColor = colorNames[colorIndex] || 'Red';
         
         // Create traces for each selected case with different shades
         selectedCaseTypes.forEach((caseType, caseIndex) => {
