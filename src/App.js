@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import UserGuide from './components/UserGuide';
 import Header from './components/Header';
 import ScrollToTop from './components/ScrollToTop';
+import Tooltip from './components/Tooltip';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
@@ -924,13 +925,37 @@ function App() {
           <div className="display-row">
             {/* Gas Abundance Plot (Methane vs Altitude) */}
             <div className="skinny-plot">
-              <h3>Gas Abundance </h3>
+              <h3>
+                <Tooltip content={
+                  <>
+                    <strong>Gas Abundance</strong>
+                    Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude. 
+                    CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale. 
+                    Adjusting the methane abundance slider scales the CH₄ profile, helping you understand how methane concentration 
+                    affects Titan's atmospheric composition and radiative transfer properties.
+                  </>
+                }>
+                  Gas Abundance
+                </Tooltip>
+              </h3>
               <div className="skinny-plot-content">
                 <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
               </div>
             </div>
             <div ref={irColorImageRef} className="display-box ir-color" style={{ position: 'relative' }}>
-              <h2>IR Color</h2>
+              <h2>
+                <Tooltip content={
+                  <>
+                    <strong>IR Color</strong>
+                    A false-color composite image of Titan created by combining three infrared wavelengths. 
+                    This visualization helps identify different surface and atmospheric features based on their spectral signatures. 
+                    Click on locations in this image to extract geophysical values (latitude, longitude, viewing angles) and 
+                    generate corresponding spectral plots that show how light interacts with Titan's atmosphere at that location.
+                  </>
+                }>
+                  IR Color
+                </Tooltip>
+              </h2>
               {currentImage ? (
                 <>
                   <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
@@ -980,7 +1005,19 @@ function App() {
             <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch', height: '100%' }}>
               {imageType === 'irColor' && (
                 <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
-                  <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>Composite Type</h3>
+                  <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
+                    <Tooltip content={
+                      <>
+                        <strong>Composite Type</strong>
+                        Selects which three infrared wavelengths are combined to create the false-color image. 
+                        "5, 2, 1.3 µm" uses longer wavelengths that penetrate deeper into the atmosphere, 
+                        while "2, 1.6, 1.3 µm" uses shorter wavelengths that are more sensitive to surface features. 
+                        Different composite types reveal different aspects of Titan's surface and atmospheric scattering properties.
+                      </>
+                    }>
+                      Composite Type
+                    </Tooltip>
+                  </h3>
                   <div className="radio-group">
                     <label className="radio-label">
                       <input
@@ -1017,11 +1054,35 @@ function App() {
             </div>
             {/* IR Image Options */}
             <div className="control-box sliders-box">
-              <h2>IR Image Options</h2>
+              <h2>
+                <Tooltip content={
+                  <>
+                    <strong>IR Image Options</strong>
+                    Controls that modify the infrared image display and atmospheric parameters. 
+                    These settings affect both the visible image and the underlying radiative transfer calculations 
+                    used to generate spectral plots. Adjusting these parameters helps you explore how different 
+                    atmospheric conditions and viewing geometries affect what we observe on Titan.
+                  </>
+                }>
+                  IR Image Options
+                </Tooltip>
+              </h2>
               <div className="slider-group">
                 {/* Haze Model Section */}
-                <div style={{ marginBottom: '0' }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Haze Model</h3>
+                <div style={{ marginBottom: '0', display: 'flex', flexDirection: 'column' }}>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal', textAlign: 'left', color: '#ccc', display: 'block', width: '100%' }}>
+                    <Tooltip content={
+                      <>
+                        <strong>Haze Model</strong>
+                        Selects the physical model used to describe Titan's atmospheric haze particles. 
+                        The Doose and Tomasko models use different assumptions about particle size, shape, and optical properties. 
+                        These differences affect how light scatters through Titan's atmosphere, influencing both the appearance 
+                        of images and the shape of spectral reflectance curves.
+                      </>
+                    }>
+                      Haze Model
+                    </Tooltip>
+                  </h3>
                   <div className="radio-group" style={{ flexDirection: 'row', gap: '20px' }}>
                     <label className="radio-label">
                       <input
@@ -1047,8 +1108,19 @@ function App() {
                 </div>
                 <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
 
-                <label>
-                  Haze abundance
+                <label style={{ color: '#ccc' }}>
+                  <Tooltip content={
+                    <>
+                      <strong>Haze Abundance</strong>
+                      Controls the amount of atmospheric haze particles in the radiative transfer model. 
+                      Values range from 0 (no haze) to 1 (maximum haze). Haze particles scatter and absorb light, 
+                      affecting both the brightness and color of Titan's surface as seen from space. 
+                      Higher haze abundance increases atmospheric scattering, making the surface appear brighter 
+                      and more uniform, while lower values reveal more surface detail.
+                    </>
+                  }>
+                    Haze abundance
+                  </Tooltip>
                   <input 
                     type="range" 
                     min="0" 
@@ -1064,8 +1136,20 @@ function App() {
                   <span>{hazeAbundanceSetting}</span>
                 </label>
                 
-                <label>
-                  Methane abundance
+                <label style={{ color: '#ccc' }}>
+                  <Tooltip content={
+                    <>
+                      <strong>Methane Abundance</strong>
+                      Adjusts the methane (CH₄) concentration in Titan's atmosphere, scaling the vertical profile 
+                      from 50% (slider at 0) to 150% (slider at 100) of the baseline value. Methane is a major 
+                      atmospheric constituent that affects both radiative transfer and spectral features. 
+                      Changing methane abundance modifies how light is absorbed at specific wavelengths, 
+                      particularly in the near-infrared, which directly impacts the spectral reflectance curves 
+                      shown in the spectral plot.
+                    </>
+                  }>
+                    Methane abundance
+                  </Tooltip>
                   <input 
                     type="range" 
                     min="0" 
@@ -1076,8 +1160,20 @@ function App() {
                   <span>{sliders.methaneAbundance}</span>
                 </label>
 
-                <label>
-                  Phase angle
+                <label style={{ color: '#ccc' }}>
+                  <Tooltip content={
+                    <>
+                      <strong>Phase Angle</strong>
+                      The angle between the Sun, Titan's surface, and the observer (0-355° in 5° steps). 
+                      Phase angle determines the geometry of illumination and viewing, affecting how light 
+                      scatters through the atmosphere and reflects off the surface. At low phase angles 
+                      (near 0°), you see Titan in a "full moon" configuration with maximum brightness. 
+                      Higher phase angles show more atmospheric scattering and surface shadows, revealing 
+                      different surface and atmospheric properties.
+                    </>
+                  }>
+                    Phase angle
+                  </Tooltip>
                   <input 
                     type="range" 
                     min="0" 
@@ -1102,13 +1198,39 @@ function App() {
                     checked={toggles.plotMultiple}
                     onChange={() => handleToggleChange('plotMultiple')}
                   />
-                  <span>Plot multiple</span>
+                  <span>
+                    <Tooltip content={
+                      <>
+                        <strong>Plot Multiple</strong>
+                        When enabled, allows you to select up to 6 different locations on the image and 
+                        compare their spectral properties simultaneously. Each point is color-coded, and you 
+                        can independently configure atmospheric components (methane + haze, no methane, no haze) 
+                        for each point. This mode is ideal for comparing how different surface locations or 
+                        viewing geometries affect spectral reflectance.
+                      </>
+                    }>
+                      Plot multiple
+                    </Tooltip>
+                  </span>
                 </label>
               </div>
               <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
               {/* Image Type Section */}
               <div style={{ marginTop: '0' }}>
-                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Image Type</h3>
+                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                  <Tooltip content={
+                    <>
+                      <strong>Image Type</strong>
+                      Switches between different visualization modes: IR Color (false-color composite), 
+                      Incidence (angle between surface normal and sunlight), Emission (angle between surface 
+                      normal and observer), and Phase (phase angle map). These different views reveal 
+                      different aspects of Titan's surface and atmospheric properties, helping you understand 
+                      how viewing geometry affects observations.
+                    </>
+                  }>
+                    Image Type
+                  </Tooltip>
+                </h3>
                 <div className="radio-group">
                   <label className="radio-label">
                     <input
@@ -1157,7 +1279,20 @@ function App() {
           
           <div className="spectral-row">
             <div className="spectral-plot" style={{ position: 'relative' }}>
-              <h2>Spectral Plot</h2>
+              <h2>
+                <Tooltip variant="green" content={
+                  <>
+                    <strong>Spectral Plot</strong>
+                    Displays the spectral reflectance (or radiance) as a function of wavelength for the selected 
+                    location(s) on Titan. This plot shows how different wavelengths of light interact with 
+                    Titan's atmosphere and surface. The spectral shape reveals information about atmospheric 
+                    composition (methane, haze, other gases), surface composition, and viewing geometry. 
+                    Click on the IR image to select a location and generate its spectral signature.
+                  </>
+                }>
+                  Spectral Plot
+                </Tooltip>
+              </h2>
               {loading ? (
                 <div style={{ 
                   padding: '40px', 
@@ -1259,7 +1394,20 @@ function App() {
             </div>
             {/* Spectral Plot Options */}
             <div ref={togglesBoxRef} className="control-box toggles-box">
-              <h2>Spectral Plot Options</h2>
+              <h2>
+                <Tooltip variant="green" content={
+                  <>
+                    <strong>Spectral Plot Options</strong>
+                    Controls that modify how the spectral data is displayed and calculated. These options 
+                    allow you to change units (reflectance vs. radiance), adjust spectral resolution, 
+                    overlay gas transmission curves, and configure atmospheric components for different 
+                    model scenarios. These settings help you explore how different parameters affect 
+                    the observed spectral signatures.
+                  </>
+                }>
+                  Spectral Plot Options
+                </Tooltip>
+              </h2>
               <div className="toggle-group">
                 {/* Existing non-functional toggles */}
                 {Object.entries(toggles)
@@ -1276,14 +1424,42 @@ function App() {
                           checked={value}
                           onChange={() => handleToggleChange(key)}
                         />
-                        <span>{label}</span>
+                        <span>
+                          {key === 'spectralUnits' ? (
+                            <Tooltip variant="green" content={
+                              <>
+                                <strong>Spectral Units</strong>
+                                Toggles between reflectance (normalized by solar flux) and radiance (absolute 
+                                energy units). Reflectance is useful for comparing spectral shapes and identifying 
+                                absorption features, while radiance shows the actual energy received at the detector. 
+                                This helps understand both the relative spectral features and the absolute brightness 
+                                of different wavelengths.
+                              </>
+                            }>
+                              {label}
+                            </Tooltip>
+                          ) : label}
+                        </span>
                       </label>
                     );
                   })}
               </div>
               {/* Resolution Selection */}
               <div style={{ marginTop: '20px', marginBottom: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
-                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Resolution</h3>
+                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                  <Tooltip variant="green" content={
+                    <>
+                      <strong>Resolution</strong>
+                      Controls the spectral resolution of the plot. High resolution shows more detailed 
+                      spectral features and absorption lines, while low resolution provides a smoother, 
+                      more general view of the spectral shape. Higher resolution is useful for identifying 
+                      specific gas absorption features, while lower resolution helps visualize overall trends 
+                      and reduces computational load.
+                    </>
+                  }>
+                    Resolution
+                  </Tooltip>
+                </h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <input
@@ -1309,7 +1485,20 @@ function App() {
               </div>
               {!toggles.plotMultiple && (
                 <div className="transmission-box" style={{ marginTop: '20px', marginBottom: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
-                  <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Transmission</h3>
+                  <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                    <Tooltip variant="green" content={
+                      <>
+                        <strong>Transmission</strong>
+                        Overlays gas transmission curves on the spectral plot, showing how much light passes 
+                        through the atmosphere at each wavelength for different atmospheric constituents 
+                        (CH₄, CO, C₂H₆, C₂H₂, Haze). These curves help identify which gases are responsible 
+                        for specific absorption features in the reflectance spectrum. Transmission values 
+                        near 1.0 indicate little absorption, while lower values show strong absorption bands.
+                      </>
+                    }>
+                      Transmission
+                    </Tooltip>
+                  </h3>
                   <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                     {Object.entries(transmissionToggles).map(([key, value]) => {
                       const labelMap = {
@@ -1337,7 +1526,20 @@ function App() {
               <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '0', marginBottom: '0' }}></div>
               {/* Atmospheric Components Section */}
               <div ref={atmosphericComponentsSectionRef} className="atmospheric-components-section">
-                <h3 className="atmospheric-components-header">Atmospheric Components</h3>
+                <h3 className="atmospheric-components-header">
+                  <Tooltip variant="green" content={
+                    <>
+                      <strong>Atmospheric Components</strong>
+                      Configures which atmospheric constituents are included in the radiative transfer calculation 
+                      for each selected point. Options include: "CH₄ + Haze" (standard case with both methane and 
+                      haze), "No CH₄" (removes methane absorption), and "No haze" (removes haze scattering). 
+                      Comparing these cases helps you understand the relative contributions of different atmospheric 
+                      components to the observed spectral signature.
+                    </>
+                  }>
+                    Atmospheric Components
+                  </Tooltip>
+                </h3>
                 <div ref={atmosphericComponentsContentRef} className="atmospheric-components-content">
                   {toggles.plotMultiple && Array.isArray(geoValues) && geoValues.length > 0 ? (
                     // Multiple mode: show per-point options
