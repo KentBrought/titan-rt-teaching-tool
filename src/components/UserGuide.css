@@ -9,6 +9,9 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 40px 20px;
+  background-color: #2a2a2a;
+  border: 2px solid #3a3a3a;
+  border-radius: 8px;
 }
 
 .user-guide h1 {

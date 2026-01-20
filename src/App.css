@@ -6,10 +6,12 @@
 
 html, body, #root {
   height: 100%;
+  overscroll-behavior: none;
 }
 
 body {
   background-color: #1a1a1a;
+  overscroll-behavior: none;
 }
 
 .App {
@@ -20,6 +22,7 @@ body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: none;
 }
 
 /* Header */
