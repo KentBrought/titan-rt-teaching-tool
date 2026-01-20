@@ -141,6 +141,8 @@ function App() {
     spectralUnits: false,
   });
 
+  const [spectralResolution, setSpectralResolution] = useState('high');
+
   const [transmissionToggles, setTransmissionToggles] = useState({
     ch4: false,
     haze: false,
@@ -158,6 +160,10 @@ function App() {
 
   const handleTransmissionToggleChange = (name) => {
     setTransmissionToggles(prev => ({ ...prev, [name]: !prev[name] }));
+  };
+
+  const handleResolutionChange = (resolution) => {
+    setSpectralResolution(resolution);
   };
 
   // Spectral data state
@@ -1274,6 +1280,32 @@ function App() {
                       </label>
                     );
                   })}
+              </div>
+              {/* Resolution Selection */}
+              <div style={{ marginTop: '20px', marginBottom: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
+                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Resolution</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="radio"
+                      name="spectralResolution"
+                      value="high"
+                      checked={spectralResolution === 'high'}
+                      onChange={() => handleResolutionChange('high')}
+                    />
+                    <span>High Resolution</span>
+                  </label>
+                  <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input
+                      type="radio"
+                      name="spectralResolution"
+                      value="low"
+                      checked={spectralResolution === 'low'}
+                      onChange={() => handleResolutionChange('low')}
+                    />
+                    <span>Low Resolution</span>
+                  </label>
+                </div>
               </div>
               {!toggles.plotMultiple && (
                 <div className="transmission-box" style={{ marginTop: '20px', marginBottom: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>
