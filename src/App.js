@@ -615,10 +615,31 @@ const tutorialPresets = {
 
 const applyTutorialMode = async (modeNumber) => {
   if (!modeNumber) {
+    // Reset to defaults
     setTutorialMode(null);
+    setSliders({
+      hazeAbundance: 50,
+      methaneAbundance: 50,
+      incidenceAngle: 45,
+      emissionAngle: 45,
+      phaseAngle: 0
+    });
+    setHazePropertiesModel('doose');
+    setToggles(prev => ({ ...prev, plotMultiple: false }));
+    setTransmissionToggles({
+      ch4: false,
+      haze: false,
+      co: false,
+      c2h6: false,
+      c2h2: false,
+    });
+    setSelectedCases({ standard: true, no_ch4: false, no_haze: false });
+    setClickedPosition(null);
+    setMultiplePositions([]);
+    setGeoValues(null);
+    setSelectedCasesByPoint({});
     return;
   }
-
   const preset = tutorialPresets[modeNumber];
   if (!preset) return;
 
@@ -1178,29 +1199,36 @@ const applyTutorialMode = async (modeNumber) => {
             {/* Quick Start */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '250px', maxWidth: '300px', alignSelf: 'stretch' }}>
               {/* Quick Start Presets */}
-              <div className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
-                <h2>Quick Start</h2>
-                <div className="radio-group">
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name="tutorialMode"
-                      checked={tutorialMode === 1}
-                      onChange={() => applyTutorialMode(tutorialMode === 1 ? null : 1)}
-                    />
-                    <span>Methane Explorer</span>
-                  </label>
-                  <label className="radio-label">
-                    <input
-                      type="radio"
-                      name="tutorialMode"
-                      checked={tutorialMode === 2}
-                      onChange={() => applyTutorialMode(tutorialMode === 2 ? null : 2)}
-                    />
-                    <span>Haze Comparison</span>
-                  </label>
-                </div>
-              </div>
+            <div className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
+              <h2>
+                <Tooltip content={
+                  <>
+                    <strong>Quick Start</strong>
+                    Pre-configured presets to help you explore Titan's atmosphere. 
+                  </>
+                }>
+                  Quick Start
+                </Tooltip>
+              </h2>
+              <select
+                value={tutorialMode || ''}
+                onChange={(e) => applyTutorialMode(e.target.value ? parseInt(e.target.value) : null)}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  backgroundColor: '#1a1a1a',
+                  color: '#e0e0e0',
+                  border: '1px solid #66ccff',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">Select a preset...</option>
+                <option value="1">Methane Explorer</option>
+                <option value="2">Haze Comparison</option>
+              </select>
+            </div>
             {/* IR Image Options */}
             <div className="control-box sliders-box" style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
               <h2>
