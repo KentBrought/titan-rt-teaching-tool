@@ -195,6 +195,7 @@ function App() {
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
+  const [tutorialMode, setTutorialMode] = useState(null);
 
   const handleSliderChange = (name, value) => {
     setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
@@ -559,6 +560,127 @@ function App() {
     }
   };
 
+  // Tutorial mode presets
+const tutorialPresets = {
+  1: {
+    name: "Methane Explorer",
+    description: "See how methane affects Titan's spectrum",
+    sliders: {
+      hazeAbundance: 50,
+      methaneAbundance: 75,
+      phaseAngle: 20
+    },
+    hazePropertiesModel: 'tomasko',
+    selectedCases: { standard: true, no_ch4: true, no_haze: false },
+    transmissionToggles: { ch4: true, haze: false, co: false, c2h6: false, c2h2: false },
+    clickPosition: { x: 32, y: 32 },
+    plotMultiple: false
+  },
+  2: {
+    name: "Haze Comparison",
+    description: "Compare spectra with and without haze",
+    sliders: {
+      hazeAbundance: 100,
+      methaneAbundance: 50,
+      phaseAngle: 40
+    },
+    hazePropertiesModel: 'doose',
+    selectedCases: { standard: true, no_ch4: false, no_haze: true },
+    transmissionToggles: { ch4: false, haze: true, co: false, c2h6: false, c2h2: false },
+    clickPosition: { x: 40, y: 25 },
+    plotMultiple: false
+  },
+  3: {
+    name: "Multi-Point Analysis",
+    description: "Compare multiple locations on Titan",
+    sliders: {
+      hazeAbundance: 50,
+      methaneAbundance: 50,
+      phaseAngle: 10
+    },
+    hazePropertiesModel: 'tomasko',
+    selectedCasesByPoint: {
+      0: { standard: true, no_ch4: false, no_haze: false },
+      1: { standard: true, no_ch4: false, no_haze: false },
+      2: { standard: true, no_ch4: false, no_haze: false }
+    },
+    multipleClickPositions: [
+      { x: 25, y: 30 },
+      { x: 35, y: 35 },
+      { x: 45, y: 25 }
+    ],
+    plotMultiple: true
+  }
+};
+
+const applyTutorialMode = async (modeNumber) => {
+  if (!modeNumber) {
+    setTutorialMode(null);
+    return;
+  }
+
+  const preset = tutorialPresets[modeNumber];
+  if (!preset) return;
+
+  setTutorialMode(modeNumber);
+
+  // Apply sliders
+  setSliders(prev => ({ ...prev, ...preset.sliders }));
+
+  // Apply haze model
+  if (preset.hazePropertiesModel) {
+    setHazePropertiesModel(preset.hazePropertiesModel);
+  }
+
+  // Apply plot multiple mode
+  setToggles(prev => ({ ...prev, plotMultiple: preset.plotMultiple }));
+
+  // Clear existing selections
+  setClickedPosition(null);
+  setMultiplePositions([]);
+  setGeoValues(null);
+
+  // Small delay to let state settle
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  if (preset.plotMultiple && preset.multipleClickPositions) {
+    // Multiple mode
+    setTransmissionToggles({ ch4: false, haze: false, co: false, c2h6: false, c2h2: false });
+    
+    const positions = preset.multipleClickPositions.map((pos, index) => ({
+      x: pos.x,
+      y: pos.y,
+      position: { displayX: pos.x * 5, displayY: pos.y * 5 }
+    }));
+    setMultiplePositions(positions);
+    
+    if (preset.selectedCasesByPoint) {
+      setSelectedCasesByPoint(preset.selectedCasesByPoint);
+    }
+    
+    // Fetch geo values for all positions
+    fetchMultipleGeoValues(positions);
+  } else if (preset.clickPosition) {
+    // Single mode
+    if (preset.transmissionToggles) {
+      setTransmissionToggles(preset.transmissionToggles);
+    }
+    if (preset.selectedCases) {
+      setSelectedCases(preset.selectedCases);
+    }
+    
+    const pos = preset.clickPosition;
+    setClickedPosition({ 
+      x: pos.x, 
+      y: pos.y, 
+      position: { displayX: pos.x * 5, displayY: pos.y * 5 } 
+    });
+    
+    // Fetch geo values
+    fetchGeoValues(pos.x, pos.y);
+  }
+};
+
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
 
@@ -921,7 +1043,7 @@ function App() {
           <Route path="/" element={
             <div className="main-container">
         {/* Left side - Display panels */}
-        <div className="left-panel">
+        <div className="left-panel">       
           <div className="display-row">
             {/* Gas Abundance Plot (Methane vs Altitude) */}
             <div className="skinny-plot">
@@ -1002,7 +1124,8 @@ function App() {
                 <div className="placeholder-circle"></div>
               )}
             </div>
-            <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch', height: '100%' }}>
+            <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
+              
               {imageType === 'irColor' && (
                 <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
                   <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
@@ -1052,8 +1175,34 @@ function App() {
                 </div>
               )}
             </div>
+            {/* Quick Start */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '250px', maxWidth: '300px', alignSelf: 'stretch' }}>
+              {/* Quick Start Presets */}
+              <div className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
+                <h2>Quick Start</h2>
+                <div className="radio-group">
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="tutorialMode"
+                      checked={tutorialMode === 1}
+                      onChange={() => applyTutorialMode(tutorialMode === 1 ? null : 1)}
+                    />
+                    <span>Methane Explorer</span>
+                  </label>
+                  <label className="radio-label">
+                    <input
+                      type="radio"
+                      name="tutorialMode"
+                      checked={tutorialMode === 2}
+                      onChange={() => applyTutorialMode(tutorialMode === 2 ? null : 2)}
+                    />
+                    <span>Haze Comparison</span>
+                  </label>
+                </div>
+              </div>
             {/* IR Image Options */}
-            <div className="control-box sliders-box">
+            <div className="control-box sliders-box" style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
               <h2>
                 <Tooltip content={
                   <>
@@ -1274,6 +1423,7 @@ function App() {
                   </label>
                 </div>
               </div>
+            </div>
             </div>
           </div>
           
@@ -1628,7 +1778,7 @@ function App() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
             } />
           </Routes>
         </div>

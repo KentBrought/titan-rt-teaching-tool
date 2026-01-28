@@ -278,6 +278,7 @@ body {
   max-width: 100%;
   min-width: 0;
   width: 100%;
+  align-items: stretch;
 }
 
 .skinny-plot {
