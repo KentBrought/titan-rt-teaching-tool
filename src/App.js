@@ -7,6 +7,7 @@ import GasAbundancePlot from './components/GasAbundancePlot';
 import ErrorBoundary from './components/ErrorBoundary';
 import UserGuide from './components/UserGuide';
 import Header from './components/Header';
+import Footer from './components/Footer';
 import ScrollToTop from './components/ScrollToTop';
 import Tooltip from './components/Tooltip';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
@@ -1059,6 +1060,7 @@ const applyTutorialMode = async (modeNumber) => {
       <ScrollToTop />
       <div className="App">
         <Header />
+        <main className="app-body">
         <Routes>
           <Route path="/user-guide" element={<UserGuide />} />
           <Route path="/" element={
@@ -1809,6 +1811,8 @@ const applyTutorialMode = async (modeNumber) => {
         </div>
             } />
           </Routes>
+        </main>
+        <Footer />
         </div>
       </Router>
     );

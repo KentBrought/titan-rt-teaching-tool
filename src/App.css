@@ -299,6 +299,13 @@ body {
   background-color: rgba(102, 204, 255, 0.1);
 }
 
+.app-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .main-container {
   display: flex;
   padding: 20px;
@@ -308,6 +315,39 @@ body {
   box-sizing: border-box;
   flex: 1;
   overflow-x: hidden;
+}
+
+/* Footer */
+.app-footer {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  background-color: #2a2a2a;
+  border-top: 1px solid #3a3a3a;
+}
+
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 8px;
+}
+
+.footer-link {
+  color: #999;
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.footer-link:hover {
+  color: #66ccff;
+}
+
+.footer-sep {
+  color: #5a5a5a;
+  font-size: 12px;
+  user-select: none;
 }
 
 .left-panel {

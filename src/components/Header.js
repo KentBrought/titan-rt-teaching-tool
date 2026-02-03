@@ -71,15 +71,6 @@ function Header() {
         <Link to="/user-guide" className="user-guide-link">
           User Guide
         </Link>
-        <a
-          href="https://accessibility.mit.edu/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="user-guide-link"
-          aria-label="MIT Accessibility"
-        >
-          Accessibility
-        </a>
         <div className="github-container">
           <a 
             href="https://github.com/KentBrought/titan-rt-teaching-tool" 
