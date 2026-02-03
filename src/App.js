@@ -13,6 +13,7 @@ import Tooltip from './components/Tooltip';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
+import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
 const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
@@ -705,6 +706,37 @@ const applyTutorialMode = async (modeNumber) => {
 
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
+
+  // Processed spectral data for checking if a point has spectral plot data
+  const processedSpectralData = useMemo(() => {
+    return spectralData ? processSpectralData(spectralData) : null;
+  }, [spectralData]);
+
+  // For each selected point, whether it has associated spectral plot data (so we show/hide atmospheric components per point)
+  const hasSpectralDataForSelection = useMemo(() => {
+    if (!processedSpectralData) {
+      return toggles.plotMultiple ? [] : false;
+    }
+    if (toggles.plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
+      return geoValues.map((gv) => {
+        if (gv && gv.error) return false;
+        const inc = gv?.incidence ?? 0;
+        const emi = gv?.emis ?? 0;
+        const az = gv?.azimuth ?? 0;
+        const result = createSpectralPlotData(processedSpectralData, inc, emi, az, 'standard');
+        return result && result.wavelengths && result.wavelengths.length > 0;
+      });
+    }
+    if (!toggles.plotMultiple && geoValues) {
+      if (geoValues.error) return false;
+      const inc = geoValues.incidence ?? 0;
+      const emi = geoValues.emis ?? 0;
+      const az = geoValues.azimuth ?? 0;
+      const result = createSpectralPlotData(processedSpectralData, inc, emi, az, 'standard');
+      return result && result.wavelengths && result.wavelengths.length > 0;
+    }
+    return toggles.plotMultiple ? [] : false;
+  }, [processedSpectralData, geoValues, toggles.plotMultiple]);
 
   // Load image when relevant parameters change (with debouncing for smoother slider interaction)
   useEffect(() => {
@@ -1704,7 +1736,11 @@ const applyTutorialMode = async (modeNumber) => {
                 </div>
               )}
               <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '0', marginBottom: '0' }}></div>
-              {/* Atmospheric Components Section */}
+              {/* Atmospheric Components Section - only show when selected point(s) have associated spectral plot data */}
+              {(toggles.plotMultiple
+                ? Array.isArray(hasSpectralDataForSelection) && hasSpectralDataForSelection.some(Boolean)
+                : hasSpectralDataForSelection === true
+              ) && (
               <div ref={atmosphericComponentsSectionRef} className="atmospheric-components-section">
                 <h3 className="atmospheric-components-header">
                   <Tooltip variant="green" content={
@@ -1722,8 +1758,9 @@ const applyTutorialMode = async (modeNumber) => {
                 </h3>
                 <div ref={atmosphericComponentsContentRef} className="atmospheric-components-content">
                   {toggles.plotMultiple && Array.isArray(geoValues) && geoValues.length > 0 ? (
-                    // Multiple mode: show per-point options
+                    // Multiple mode: show per-point options only for points that have spectral data
                     multiplePositions.map((pos, pointIndex) => {
+                      if (!hasSpectralDataForSelection[pointIndex]) return null;
                       const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
                       const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
                       // Use colorIndex from position or geoValue if available, otherwise fall back to array index
@@ -1771,7 +1808,7 @@ const applyTutorialMode = async (modeNumber) => {
                       );
                     })
                   ) : !toggles.plotMultiple ? (
-                    // Single mode: show single set of options
+                    // Single mode: show single set of options (only rendered when hasSpectralDataForSelection is true)
                     <div className="case-toggle-options">
                       {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                         const labelMap = {
@@ -1805,6 +1842,7 @@ const applyTutorialMode = async (modeNumber) => {
                   )}
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>
