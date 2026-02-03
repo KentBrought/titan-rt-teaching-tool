@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import soderblomLogo from '../assets/soderblom_lab.png';
 import '../App.css';
 
 function Header() {
@@ -9,24 +10,40 @@ function Header() {
   return (
     <header className="app-header">
       <div className="header-left">
-        <Link to="/" className="header-logo-link">
-          <img 
-            src="/assets/dt/tomasko_1.0/2012_A0.1_p000_5_2_1.3.png" 
-            alt="Logo" 
+        <a
+          href="https://soderblomlab.mit.edu/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="header-soderblom-link"
+          aria-label="Soderblom Lab at MIT"
+        >
+          <img
+            src={soderblomLogo}
+            alt="Soderblom Lab"
+            className="header-soderblom-logo"
+          />
+        </a>
+        <span className="header-slash" aria-hidden="true">
+          <svg viewBox="0 0 12 36" className="header-slash-svg" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <line x1="10" y1="2" x2="2" y2="34" />
+          </svg>
+        </span>
+        <Link
+          to="/"
+          className="header-pill"
+          aria-label="Titan RT Teaching Tool home"
+          onMouseEnter={() => {
+            setRtExpansionText({ left: 'Radiative', right: 'Transfer' });
+            setRtExpanded(true);
+          }}
+          onMouseLeave={() => setRtExpanded(false)}
+        >
+          <img
+            src="/assets/dt/tomasko_1.0/2012_A0.1_p000_5_2_1.3.png"
+            alt=""
             className="header-logo"
           />
-        </Link>
-        <Link to="/" className="app-title-link">
-          <h1 
-            className="app-title"
-            onMouseEnter={() => {
-              setRtExpansionText({ left: 'Radiative', right: 'Transfer' });
-              setRtExpanded(true);
-            }}
-            onMouseLeave={() => {
-              setRtExpanded(false);
-            }}
-          >
+          <h1 className="app-title">
             Titan <span className="rt-container">
               <span className="rt-letter-wrapper">
                 <span className="rt-letter r-letter">R</span>
@@ -54,6 +71,15 @@ function Header() {
         <Link to="/user-guide" className="user-guide-link">
           User Guide
         </Link>
+        <a
+          href="https://accessibility.mit.edu/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="user-guide-link"
+          aria-label="MIT Accessibility"
+        >
+          Accessibility
+        </a>
         <div className="github-container">
           <a 
             href="https://github.com/KentBrought/titan-rt-teaching-tool" 

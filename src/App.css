@@ -47,27 +47,72 @@ body {
   gap: 15px;
 }
 
-.header-logo-link {
-  display: inline-block;
+.header-soderblom-link {
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
   transition: opacity 0.2s ease;
   line-height: 0;
-  vertical-align: middle;
+  flex-shrink: 0;
 }
 
-.header-logo-link:hover {
-  opacity: 0.8;
+.header-soderblom-link:hover {
+  opacity: 0.85;
 }
 
-.header-logo {
-  height: 40px;
+.header-soderblom-logo {
+  height: 36px;
   width: auto;
   object-fit: contain;
 }
 
-.app-title-link {
+.header-slash {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  color: #5a5a5a;
+  user-select: none;
+  flex-shrink: 0;
+  margin: 0 6px;
+}
+
+.header-slash-svg {
+  height: 36px;
+  width: auto;
+}
+
+.header-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  height: 36px;
+  min-width: 200px;
+  padding: 0 8px 0 6px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  overflow: visible;
+  flex-shrink: 0;
   text-decoration: none;
   color: inherit;
+  transition: min-width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.header-pill:hover {
+  min-width: 395px;
+}
+
+.header-pill:hover .header-logo {
+  opacity: 0.85;
+}
+
+.header-logo {
+  height: 28px;
+  width: auto;
+  object-fit: contain;
+  transition: opacity 0.2s ease;
 }
 
 .app-title {
@@ -79,14 +124,24 @@ body {
   transition: opacity 0.2s ease;
 }
 
-.app-title-link:hover .app-title {
-  opacity: 0.8;
+.header-pill .app-title {
+  display: flex;
+  align-items: center;
+  font-size: 20px;
+  line-height: 36px;
+  margin: 0;
+  padding: 0;
+}
+
+.header-pill:hover .app-title {
+  opacity: 0.9;
 }
 
 .rt-container {
   display: inline-block;
   position: relative;
   vertical-align: bottom;
+  margin-left: 4px;
 }
 
 .rt-letter-wrapper {
@@ -121,20 +176,21 @@ body {
 }
 
 /* Add spacing between "radiative" and "transfer" during animation */
-.app-title:hover .rt-letter-wrapper:first-of-type {
-  margin-right: 12px;
+.header-pill:hover .rt-letter-wrapper:first-of-type {
+  margin-right: 10px;
 }
 
 .teaching-tool-text {
   display: inline-block;
+  letter-spacing: -0.03em;
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-  margin-left: 0px;
+  margin-left: 6px;
 }
 
-/* Decrease spacing between "transfer" and "teaching" during animation */
+/* Spacing between "transfer" and "teaching" when expanded */
 .teaching-tool-text.shifted {
-  transform: translateX(180px);
-  margin-left: -22px;
+  transform: translateX(155px);
+  margin-left: -14px;
 }
 
 .rt-letter-wrapper:last-child {
@@ -142,8 +198,8 @@ body {
   transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.app-title:hover .rt-letter-wrapper:last-child {
-  transform: translateX(80px);
+.header-pill:hover .rt-letter-wrapper:last-child {
+  transform: translateX(70px);
 }
 
 .header-right {
@@ -161,7 +217,7 @@ body {
   transition: opacity 0.3s ease;
 }
 
-.app-title-link:hover ~ .development-notice {
+.header-pill:hover ~ .development-notice {
   opacity: 0;
 }
 
