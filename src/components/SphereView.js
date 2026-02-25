@@ -93,16 +93,8 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
       controls.maxDistance = 5;
       controlsRef.current = controls;
 
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-      scene.add(ambientLight);
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-      dirLight.position.set(5, 5, 5);
-      scene.add(dirLight);
-
       geometry = new THREE.SphereGeometry(1, 64, 64);
-      material = new THREE.MeshStandardMaterial({
-        roughness: 0.9,
-        metalness: 0.05,
+      material = new THREE.MeshBasicMaterial({
         side: THREE.FrontSide,
       });
       const mesh = new THREE.Mesh(geometry, material);
