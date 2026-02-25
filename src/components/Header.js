@@ -68,6 +68,9 @@ function Header() {
         </div>
       </div>
       <div className="header-right">
+        <Link to="/sphere" className="user-guide-link" style={{ marginRight: '16px' }}>
+          3D Sphere
+        </Link>
         <Link to="/user-guide" className="user-guide-link">
           User Guide
         </Link>

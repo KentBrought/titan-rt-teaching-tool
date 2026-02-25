@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 import SpectralPlot from './components/SpectralPlot';
 import ClickableImage from './components/ClickableImage';
@@ -10,6 +10,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import ScrollToTop from './components/ScrollToTop';
 import Tooltip from './components/Tooltip';
+import SphereView from './components/SphereView';
 import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
@@ -1095,6 +1096,18 @@ const applyTutorialMode = async (modeNumber) => {
         <main className="app-body">
         <Routes>
           <Route path="/user-guide" element={<UserGuide />} />
+          <Route path="/sphere" element={
+            <div className="main-container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', flexDirection: 'column', width: '100%' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <Link to="/" style={{ color: '#66ccff', textDecoration: 'none', fontSize: '14px' }}>&larr; Back to main</Link>
+              </div>
+              <h2 style={{ marginBottom: '12px', color: '#e0e0e0' }}>Titan 3D sphere (phase 40&deg;, composite 5, 2, 1.3 µm)</h2>
+              <p style={{ marginBottom: '16px', color: '#999', fontSize: '14px' }}>Drag to rotate. The visible hemisphere is textured; the far side is placeholder.</p>
+              <div style={{ flex: 1, minHeight: '400px', width: '100%' }}>
+                <SphereView phaseAngle={40} compositeType="5_2_1.3" />
+              </div>
+            </div>
+          } />
           <Route path="/" element={
             <div className="main-container">
         {/* Left side - Display panels */}
