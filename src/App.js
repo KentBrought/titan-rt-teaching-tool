@@ -1102,7 +1102,6 @@ const applyTutorialMode = async (modeNumber) => {
                 <Link to="/" style={{ color: '#66ccff', textDecoration: 'none', fontSize: '14px' }}>&larr; Back to main</Link>
               </div>
               <h2 style={{ marginBottom: '12px', color: '#e0e0e0' }}>Titan 3D sphere (phase 40&deg;, composite 5, 2, 1.3 µm)</h2>
-              <p style={{ marginBottom: '16px', color: '#999', fontSize: '14px' }}>Drag to rotate. The visible hemisphere is textured; the far side is placeholder.</p>
               <div style={{ flex: 1, minHeight: '400px', width: '100%' }}>
                 <SphereView phaseAngle={40} compositeType="5_2_1.3" />
               </div>

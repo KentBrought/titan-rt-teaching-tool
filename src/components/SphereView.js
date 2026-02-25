@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getImageUrl } from '../utils/imageLoader';
-import { buildEquirectangularTextureCanvas } from '../utils/sphereTexture';
+import { buildEquirectangularTextureCanvasFromTwoHalves } from '../utils/sphereTexture';
+
+/** Phase angle 180° opposite for the far hemisphere (wrapped 0–360). */
+const oppositePhase = (phase) => ((phase + 180) % 360);
 
 /**
- * SphereView: renders a 3D sphere with the IR half-sphere image mapped
- * as equirectangular (front half textured, back half dark).
- * Uses raw Three.js (no R3F) to avoid React 19 / react-three-fiber incompatibility.
+ * SphereView: full 3D sphere with front hemisphere = current phase,
+ * back hemisphere = 180° opposite phase. Uses raw Three.js (no R3F).
  */
 function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
   const containerRef = useRef(null);
@@ -21,8 +23,12 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
   const cameraRef = useRef(null);
   const resizeCleanupRef = useRef(null);
 
-  const imageUrl = useMemo(
+  const frontImageUrl = useMemo(
     () => getImageUrl(phaseAngle, compositeType),
+    [phaseAngle, compositeType]
+  );
+  const backImageUrl = useMemo(
+    () => getImageUrl(oppositePhase(phaseAngle), compositeType),
     [phaseAngle, compositeType]
   );
 
@@ -112,7 +118,7 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
       window.addEventListener('resize', onResize);
       resizeCleanupRef.current = () => window.removeEventListener('resize', onResize);
 
-      buildEquirectangularTextureCanvas(imageUrl)
+      buildEquirectangularTextureCanvasFromTwoHalves(frontImageUrl, backImageUrl)
         .then((canvas) => {
           if (cancelled) return;
           if (textureRef.current) textureRef.current.dispose();
@@ -162,7 +168,7 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
       controlsRef.current = null;
       cameraRef.current = null;
     };
-  }, [imageUrl]);
+  }, [frontImageUrl, backImageUrl]);
 
   if (error) {
     return (
