@@ -129,6 +129,71 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
 
 GeoValuesDisplay.displayName = 'GeoValuesDisplay';
 
+function SpherePage() {
+  const [viewMode, setViewMode] = useState('default');
+  const [coverageReport, setCoverageReport] = useState(null);
+
+  const handleCoverage = useCallback((coverage) => {
+    setCoverageReport(coverage);
+  }, []);
+
+  return (
+    <div className="main-container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', flexDirection: 'column', width: '100%' }}>
+      <div style={{ marginBottom: '16px' }}>
+        <Link to="/" style={{ color: '#66ccff', textDecoration: 'none', fontSize: '14px' }}>&larr; Back to main</Link>
+      </div>
+      <h2 style={{ marginBottom: '12px', color: '#e0e0e0' }}>Titan 3D sphere (phase 40&deg;, composite 5, 2, 1.3 µm)</h2>
+      <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <span style={{ color: '#999', fontSize: '14px' }}>View:</span>
+        <button
+          type="button"
+          onClick={() => { setViewMode('default'); setCoverageReport(null); }}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: '1px solid #444',
+            background: viewMode === 'default' ? '#2a4a6a' : '#1a1a2e',
+            color: '#e0e0e0',
+            cursor: 'pointer',
+            fontSize: '14px',
+          }}
+        >
+          Default (front + back halves)
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('weightedPhase')}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: '1px solid #444',
+            background: viewMode === 'weightedPhase' ? '#2a4a6a' : '#1a1a2e',
+            color: '#e0e0e0',
+            cursor: 'pointer',
+            fontSize: '14px',
+          }}
+        >
+          Weighted phase (all phase angles)
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: '400px', width: '100%' }}>
+        <SphereView
+          phaseAngle={40}
+          compositeType="5_2_1.3"
+          viewMode={viewMode}
+          onCoverage={handleCoverage}
+        />
+      </div>
+      {viewMode === 'weightedPhase' && coverageReport && (
+        <div style={{ marginTop: '16px', padding: '12px', background: '#1a1a2e', borderRadius: '8px', fontSize: '14px', color: '#ccc' }}>
+          <strong style={{ color: '#e0e0e0' }}>Lat/Lon coverage:</strong>
+          <p style={{ margin: '8px 0 0 0' }}>{coverageReport.summary}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('tab1');
   const [sliders, setSliders] = useState({
@@ -1096,17 +1161,7 @@ const applyTutorialMode = async (modeNumber) => {
         <main className="app-body">
         <Routes>
           <Route path="/user-guide" element={<UserGuide />} />
-          <Route path="/sphere" element={
-            <div className="main-container" style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto', flexDirection: 'column', width: '100%' }}>
-              <div style={{ marginBottom: '16px' }}>
-                <Link to="/" style={{ color: '#66ccff', textDecoration: 'none', fontSize: '14px' }}>&larr; Back to main</Link>
-              </div>
-              <h2 style={{ marginBottom: '12px', color: '#e0e0e0' }}>Titan 3D sphere (phase 40&deg;, composite 5, 2, 1.3 µm)</h2>
-              <div style={{ flex: 1, minHeight: '400px', width: '100%' }}>
-                <SphereView phaseAngle={40} compositeType="5_2_1.3" />
-              </div>
-            </div>
-          } />
+          <Route path="/sphere" element={<SpherePage />} />
           <Route path="/" element={
             <div className="main-container">
         {/* Left side - Display panels */}

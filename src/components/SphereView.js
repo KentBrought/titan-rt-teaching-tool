@@ -3,18 +3,21 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getImageUrl } from '../utils/imageLoader';
 import { buildEquirectangularTextureCanvasFromTwoHalves } from '../utils/sphereTexture';
+import { buildWeightedPhaseGlobeTextureAllPhases } from '../utils/weightedGlobeTexture';
 
 /** Phase angle 180° opposite for the far hemisphere (wrapped 0–360). */
 const oppositePhase = (phase) => ((phase + 180) % 360);
 
 /**
  * SphereView: full 3D sphere with front hemisphere = current phase,
- * back hemisphere = 180° opposite phase. Uses raw Three.js (no R3F).
+ * back hemisphere = 180° opposite phase; or weighted phase view (lat/lon placement, limb downweight).
+ * Uses raw Three.js (no R3F).
  */
-function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
+function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'default', onCoverage, onProgress }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [buildProgress, setBuildProgress] = useState(null);
   const sceneRef = useRef(null);
   const rendererRef = useRef(null);
   const controlsRef = useRef(null);
@@ -118,7 +121,20 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
       window.addEventListener('resize', onResize);
       resizeCleanupRef.current = () => window.removeEventListener('resize', onResize);
 
-      buildEquirectangularTextureCanvasFromTwoHalves(frontImageUrl, backImageUrl)
+      const buildTexture =
+        viewMode === 'weightedPhase'
+          ? buildWeightedPhaseGlobeTextureAllPhases(compositeType, {
+              onProgress: (current, total, phaseAngleDeg) => {
+                setBuildProgress((p) => (p ? { ...p, current, total, phaseAngle: phaseAngleDeg } : { current, total, phaseAngle: phaseAngleDeg }));
+                if (typeof onProgress === 'function') onProgress({ current, total, phaseAngle: phaseAngleDeg });
+              },
+            }).then(({ canvas, coverage }) => {
+              if (typeof onCoverage === 'function') onCoverage(coverage);
+              return canvas;
+            })
+          : buildEquirectangularTextureCanvasFromTwoHalves(frontImageUrl, backImageUrl);
+
+      buildTexture
         .then((canvas) => {
           if (cancelled) return;
           if (textureRef.current) textureRef.current.dispose();
@@ -134,6 +150,7 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
         })
         .finally(() => {
           if (!cancelled) {
+            setBuildProgress(null);
             setLoading(false);
             requestAnimationFrame(doResize);
           }
@@ -168,7 +185,7 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
       controlsRef.current = null;
       cameraRef.current = null;
     };
-  }, [frontImageUrl, backImageUrl]);
+  }, [viewMode, phaseAngle, compositeType, frontImageUrl, backImageUrl, onCoverage, onProgress]);
 
   if (error) {
     return (
@@ -196,7 +213,11 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3' }) {
       {loading && (
         <div style={loadingOverlayStyle}>
           <div className="loading-spinner" />
-          <p>Loading texture...</p>
+          <p>
+            {viewMode === 'weightedPhase' && buildProgress
+              ? `Building from all phases: ${buildProgress.current}/${buildProgress.total} (${buildProgress.phaseAngle}°)`
+              : 'Loading texture...'}
+          </p>
         </div>
       )}
     </div>
