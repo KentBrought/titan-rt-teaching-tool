@@ -92,6 +92,8 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
         controls.enablePan = false;
         controls.minDistance = 1.5;
         controls.maxDistance = 5;
+        controls.minPolarAngle = Math.PI / 2;
+        controls.maxPolarAngle = Math.PI / 2;
         controlsRef.current = controls;
 
         geometry = new THREE.SphereGeometry(1, 256, 256);
