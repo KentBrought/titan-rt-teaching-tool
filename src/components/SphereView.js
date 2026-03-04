@@ -82,8 +82,6 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(w, h);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.domElement.style.display = 'block';
         renderer.domElement.style.width = '100%';
         renderer.domElement.style.height = '100%';
@@ -104,22 +102,14 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
           displacementScale: 0.08, // Exaggerated height map
         });
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
         scene.add(mesh);
 
         // Lighting — needed for MeshStandardMaterial
-        // Lower ambient light, higher directional light to make shadows visible
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
         scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
         dirLight.position.set(5, 3, 5);
-        dirLight.castShadow = true;
-        // Improve shadow resolution and prevent acne
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
-        dirLight.shadow.bias = -0.0005;
         scene.add(dirLight);
 
         function animate() {
