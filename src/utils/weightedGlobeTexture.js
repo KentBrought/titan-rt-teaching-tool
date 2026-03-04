@@ -15,6 +15,50 @@ const BACKGROUND_G = 0x1a;
 const BACKGROUND_B = 0x2e;
 
 const DEG2RAD = Math.PI / 180;
+const GAP_FILL_PASSES = 3; // number of dilation passes to fill gaps
+
+/**
+ * Multi-pass gap-fill: dilate filled pixels into unfilled neighbours.
+ * This eliminates thin lines/gaps caused by sparse source coverage
+ * (especially near the poles in equirectangular projection).
+ */
+function gapFill(sumR, sumG, sumB, sumW, w, h) {
+  for (let pass = 0; pass < GAP_FILL_PASSES; pass++) {
+    let filled = 0;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const idx = j * w + i;
+        if (sumW[idx] > 0) continue; // already has data
+
+        // Check 4-connected neighbours
+        let nR = 0, nG = 0, nB = 0, nW = 0, count = 0;
+        const offsets = [
+          i > 0 ? idx - 1 : -1,
+          i < w - 1 ? idx + 1 : -1,
+          j > 0 ? idx - w : -1,
+          j < h - 1 ? idx + w : -1,
+        ];
+        for (const nIdx of offsets) {
+          if (nIdx >= 0 && sumW[nIdx] > 0) {
+            nR += sumR[nIdx];
+            nG += sumG[nIdx];
+            nB += sumB[nIdx];
+            nW += sumW[nIdx];
+            count++;
+          }
+        }
+        if (count > 0) {
+          sumR[idx] = nR / count;
+          sumG[idx] = nG / count;
+          sumB[idx] = nB / count;
+          sumW[idx] = nW / count;
+          filled++;
+        }
+      }
+    }
+    if (filled === 0) break; // no more gaps to fill
+  }
+}
 
 function isValidLatLon(lat, lon) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
@@ -178,16 +222,32 @@ export async function buildWeightedPhaseGlobeTexture(phaseAngle, compositeType) 
 
       const u = (lon + 180) / 360;
       const v = (lat + 90) / 180; // lat negative = North; v=0 top = North pole
-      const i = Math.min(outW - 1, Math.max(0, Math.floor(u * outW)));
-      const j = Math.min(outH - 1, Math.max(0, Math.floor(v * outH)));
-      const outIdx = j * outW + i;
+      const fi = u * outW - 0.5;
+      const fj = v * outH - 0.5;
+      const i0 = Math.floor(fi);
+      const j0 = Math.floor(fj);
+      const fx = fi - i0;
+      const fy = fj - j0;
 
-      sumR[outIdx] += R * w;
-      sumG[outIdx] += G * w;
-      sumB[outIdx] += B * w;
-      sumW[outIdx] += w;
+      // Bilinear splat to 4 neighbouring output pixels
+      for (let dj = 0; dj <= 1; dj++) {
+        for (let di = 0; di <= 1; di++) {
+          const ci = i0 + di;
+          const cj = j0 + dj;
+          if (ci < 0 || ci >= outW || cj < 0 || cj >= outH) continue;
+          const bw = (di === 0 ? 1 - fx : fx) * (dj === 0 ? 1 - fy : fy);
+          const wb = w * bw;
+          const outIdx = cj * outW + ci;
+          sumR[outIdx] += R * wb;
+          sumG[outIdx] += G * wb;
+          sumB[outIdx] += B * wb;
+          sumW[outIdx] += wb;
+        }
+      }
     }
   }
+
+  gapFill(sumR, sumG, sumB, sumW, outW, outH);
 
   const canvas = document.createElement('canvas');
   canvas.width = outW;
@@ -259,14 +319,28 @@ function accumulatePhaseIntoGrid(geoData, pixels, sumR, sumG, sumB, sumW, covera
 
       const u = (lon + 180) / 360;
       const v = (lat + 90) / 180;
-      const i = Math.min(outW - 1, Math.max(0, Math.floor(u * outW)));
-      const j = Math.min(outH - 1, Math.max(0, Math.floor(v * outH)));
-      const outIdx = j * outW + i;
+      const fi = u * outW - 0.5;
+      const fj = v * outH - 0.5;
+      const i0 = Math.floor(fi);
+      const j0 = Math.floor(fj);
+      const fx = fi - i0;
+      const fy = fj - j0;
 
-      sumR[outIdx] += R * w;
-      sumG[outIdx] += G * w;
-      sumB[outIdx] += B * w;
-      sumW[outIdx] += w;
+      // Bilinear splat to 4 neighbouring output pixels
+      for (let dj = 0; dj <= 1; dj++) {
+        for (let di = 0; di <= 1; di++) {
+          const ci = i0 + di;
+          const cj = j0 + dj;
+          if (ci < 0 || ci >= outW || cj < 0 || cj >= outH) continue;
+          const bw = (di === 0 ? 1 - fx : fx) * (dj === 0 ? 1 - fy : fy);
+          const wb = w * bw;
+          const outIdx = cj * outW + ci;
+          sumR[outIdx] += R * wb;
+          sumG[outIdx] += G * wb;
+          sumB[outIdx] += B * wb;
+          sumW[outIdx] += wb;
+        }
+      }
     }
   }
 }
@@ -277,6 +351,9 @@ function accumulatePhaseIntoGrid(geoData, pixels, sumR, sumG, sumB, sumW, covera
 function canvasFromAccumulation(sumR, sumG, sumB, sumW, coverageAgg) {
   const outW = OUT_WIDTH;
   const outH = OUT_HEIGHT;
+
+  gapFill(sumR, sumG, sumB, sumW, outW, outH);
+
   const canvas = document.createElement('canvas');
   canvas.width = outW;
   canvas.height = outH;

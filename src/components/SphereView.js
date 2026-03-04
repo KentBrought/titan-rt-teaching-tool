@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getImageUrl } from '../utils/imageLoader';
 import { buildEquirectangularTextureCanvasFromTwoHalves } from '../utils/sphereTexture';
 import { buildWeightedPhaseGlobeTextureAllPhases } from '../utils/weightedGlobeTexture';
+import { loadHeightMap } from '../utils/heightMapLoader';
 
 /** Phase angle 180° opposite for the far hemisphere (wrapped 0–360). */
 const oppositePhase = (phase) => ((phase + 180) % 360);
@@ -51,71 +52,92 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
       const cont = containerRef.current;
       if (!cont) return;
 
-    function doResize() {
-      if (!cont || !camera || !renderer) return;
-      const cw = cont.clientWidth;
-      const ch = cont.clientHeight;
-      if (cw > 0 && ch > 0) {
-        camera.aspect = cw / ch;
-        camera.updateProjectionMatrix();
-        renderer.setSize(cw, ch);
-      }
-    }
-
-    function onResize() {
-      doResize();
-    }
-
-    try {
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0a0a0f);
-      sceneRef.current = scene;
-
-      const w = Math.max(1, cont.clientWidth || 1);
-      const h = Math.max(1, cont.clientHeight || 1);
-      camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-      camera.position.set(0, 0, 2.5);
-      scene.add(camera);
-      cameraRef.current = camera;
-
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-      renderer.setSize(w, h);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.domElement.style.display = 'block';
-      renderer.domElement.style.width = '100%';
-      renderer.domElement.style.height = '100%';
-      cont.appendChild(renderer.domElement);
-      rendererRef.current = renderer;
-
-      controls = new OrbitControls(camera, renderer.domElement);
-      controls.enablePan = false;
-      controls.minDistance = 1.5;
-      controls.maxDistance = 5;
-      controlsRef.current = controls;
-
-      geometry = new THREE.SphereGeometry(1, 64, 64);
-      material = new THREE.MeshBasicMaterial({
-        side: THREE.FrontSide,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      scene.add(mesh);
-
-      function animate() {
-        if (cancelled) return;
-        animationIdRef.current = requestAnimationFrame(animate);
-        if (controls && renderer && scene && camera) {
-          controls.update();
-          renderer.render(scene, camera);
+      function doResize() {
+        if (!cont || !camera || !renderer) return;
+        const cw = cont.clientWidth;
+        const ch = cont.clientHeight;
+        if (cw > 0 && ch > 0) {
+          camera.aspect = cw / ch;
+          camera.updateProjectionMatrix();
+          renderer.setSize(cw, ch);
         }
       }
-      animate();
 
-      window.addEventListener('resize', onResize);
-      resizeCleanupRef.current = () => window.removeEventListener('resize', onResize);
+      function onResize() {
+        doResize();
+      }
 
-      const buildTexture =
-        viewMode === 'weightedPhase'
-          ? buildWeightedPhaseGlobeTextureAllPhases(compositeType, {
+      try {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0f);
+        sceneRef.current = scene;
+
+        const w = Math.max(1, cont.clientWidth || 1);
+        const h = Math.max(1, cont.clientHeight || 1);
+        camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+        camera.position.set(0, 0, 2.5);
+        scene.add(camera);
+        cameraRef.current = camera;
+
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.domElement.style.display = 'block';
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        cont.appendChild(renderer.domElement);
+        rendererRef.current = renderer;
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enablePan = false;
+        controls.minDistance = 1.5;
+        controls.maxDistance = 5;
+        controlsRef.current = controls;
+
+        geometry = new THREE.SphereGeometry(1, 256, 256);
+        material = new THREE.MeshStandardMaterial({
+          side: THREE.FrontSide,
+          roughness: 0.85,
+          metalness: 0.0,
+          displacementScale: 0.08, // Exaggerated height map
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        // Lighting — needed for MeshStandardMaterial
+        // Lower ambient light, higher directional light to make shadows visible
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(5, 3, 5);
+        dirLight.castShadow = true;
+        // Improve shadow resolution and prevent acne
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.bias = -0.0005;
+        scene.add(dirLight);
+
+        function animate() {
+          if (cancelled) return;
+          animationIdRef.current = requestAnimationFrame(animate);
+          if (controls && renderer && scene && camera) {
+            controls.update();
+            renderer.render(scene, camera);
+          }
+        }
+        animate();
+
+        window.addEventListener('resize', onResize);
+        resizeCleanupRef.current = () => window.removeEventListener('resize', onResize);
+
+        const buildTexture =
+          viewMode === 'weightedPhase'
+            ? buildWeightedPhaseGlobeTextureAllPhases(compositeType, {
               onProgress: (current, total, phaseAngleDeg) => {
                 setBuildProgress((p) => (p ? { ...p, current, total, phaseAngle: phaseAngleDeg } : { current, total, phaseAngle: phaseAngleDeg }));
                 if (typeof onProgress === 'function') onProgress({ current, total, phaseAngle: phaseAngleDeg });
@@ -124,33 +146,37 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
               if (typeof onCoverage === 'function') onCoverage(coverage);
               return canvas;
             })
-          : buildEquirectangularTextureCanvasFromTwoHalves(frontImageUrl, backImageUrl);
+            : buildEquirectangularTextureCanvasFromTwoHalves(frontImageUrl, backImageUrl);
 
-      buildTexture
-        .then((canvas) => {
-          if (cancelled) return;
-          if (textureRef.current) textureRef.current.dispose();
-          const tex = new THREE.CanvasTexture(canvas);
-          tex.wrapS = THREE.ClampToEdgeWrapping;
-          tex.wrapT = THREE.ClampToEdgeWrapping;
-          textureRef.current = tex;
-          material.map = tex;
-          material.needsUpdate = true;
-        })
-        .catch((err) => {
-          if (!cancelled) setError(err.message || 'Failed to load texture');
-        })
-        .finally(() => {
-          if (!cancelled) {
-            setBuildProgress(null);
-            setLoading(false);
-            requestAnimationFrame(doResize);
-          }
-        });
-    } catch (err) {
-      setError(err?.message || String(err) || 'Three.js init failed');
-      setLoading(false);
-    }
+        // Load color texture + heightmap in parallel
+        Promise.all([buildTexture, loadHeightMap().catch(() => null)])
+          .then(([canvas, heightTex]) => {
+            if (cancelled) return;
+            if (textureRef.current) textureRef.current.dispose();
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            textureRef.current = tex;
+            material.map = tex;
+            if (heightTex) {
+              material.displacementMap = heightTex;
+            }
+            material.needsUpdate = true;
+          })
+          .catch((err) => {
+            if (!cancelled) setError(err.message || 'Failed to load texture');
+          })
+          .finally(() => {
+            if (!cancelled) {
+              setBuildProgress(null);
+              setLoading(false);
+              requestAnimationFrame(doResize);
+            }
+          });
+      } catch (err) {
+        setError(err?.message || String(err) || 'Three.js init failed');
+        setLoading(false);
+      }
 
     }); // end requestAnimationFrame
 
