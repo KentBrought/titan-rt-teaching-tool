@@ -14,7 +14,7 @@ const oppositePhase = (phase) => ((phase + 180) % 360);
  * back hemisphere = 180° opposite phase; or weighted phase view (lat/lon placement, limb downweight).
  * Uses raw Three.js (no R3F).
  */
-function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'default', onCoverage, onProgress }) {
+function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'default', onCoverage, onProgress, minHeight = 400 }) {
   const containerRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -199,7 +199,7 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
 
   if (error) {
     return (
-      <div className="sphere-view-container" style={containerStyle}>
+      <div className="sphere-view-container" style={getContainerStyle(minHeight)}>
         <div style={errorStyle}>
           <p>Failed to load sphere texture</p>
           <p style={{ fontSize: '14px', color: '#999' }}>{error}</p>
@@ -209,7 +209,7 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
   }
 
   return (
-    <div className="sphere-view-container" style={containerStyle} data-sphere-view="root">
+    <div className="sphere-view-container" style={getContainerStyle(minHeight)} data-sphere-view="root">
       <div
         ref={containerRef}
         data-sphere-container="true"
@@ -234,15 +234,15 @@ function SphereView({ phaseAngle = 40, compositeType = '5_2_1.3', viewMode = 'de
   );
 }
 
-const containerStyle = {
+const getContainerStyle = (minHeight) => ({
   width: '100%',
   height: '100%',
-  minHeight: '400px',
+  minHeight: typeof minHeight === 'number' ? `${minHeight}px` : minHeight,
   position: 'relative',
   backgroundColor: '#0a0a0f',
   borderRadius: '8px',
   overflow: 'hidden',
-};
+});
 
 const loadingOverlayStyle = {
   position: 'absolute',

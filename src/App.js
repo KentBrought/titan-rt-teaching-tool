@@ -263,6 +263,7 @@ function App() {
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
+  const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [tutorialMode, setTutorialMode] = useState(null);
 
   const handleSliderChange = (name, value) => {
@@ -1187,6 +1188,25 @@ function App() {
                       </div>
                     </div>
                     <div ref={irColorImageRef} className="display-box ir-color" style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onClick={() => setIrDisplayMode(prev => prev === '2d' ? '3d' : '2d')}
+                        style={{
+                          position: 'absolute',
+                          top: '12px',
+                          right: '12px',
+                          zIndex: 5,
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid #66ccff',
+                          backgroundColor: '#1a1a1a',
+                          color: '#e0e0e0',
+                          cursor: 'pointer',
+                          fontSize: '13px'
+                        }}
+                      >
+                        {irDisplayMode === '2d' ? 'Show 3D' : 'Show 2D'}
+                      </button>
                       <h2>
                         <Tooltip content={
                           <>
@@ -1200,7 +1220,34 @@ function App() {
                           IR Color
                         </Tooltip>
                       </h2>
-                      {currentImage ? (
+                      {irDisplayMode === '3d' ? (
+                        <>
+                          <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: '4px', overflow: 'hidden' }}>
+                              <SphereView
+                                phaseAngle={40}
+                                compositeType="5_2_1.3"
+                                viewMode="weightedPhase"
+                                minHeight={0}
+                              />
+                            </div>
+                          </div>
+                          <div style={{
+                            marginTop: '15px',
+                            padding: '10px',
+                            backgroundColor: '#2a2a2a',
+                            borderRadius: '4px',
+                            border: '1px solid #66ccff',
+                            fontSize: '14px',
+                            color: '#e0e0e0',
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box'
+                          }}>
+                            <span>3D weighted phase sphere preview (IR image interactions are 2D-only for now).</span>
+                          </div>
+                        </>
+                      ) : currentImage ? (
                         <>
                           <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
                             <ClickableImage
