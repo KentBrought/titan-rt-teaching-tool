@@ -17,7 +17,7 @@ import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLo
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
-const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
+const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointCoordinates = true }) => {
   const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
   const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
 
@@ -71,9 +71,11 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
         ) : (
           // Single position mode
           <>
-            <h4 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
-              Point at (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{geoValues.x}, {geoValues.y}</span>)
-            </h4>
+            {showPointCoordinates && (
+              <h4 style={{ marginBottom: '10px', fontSize: '16px', color: '#e0e0e0' }}>
+                Point at (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{geoValues.x}, {geoValues.y}</span>)
+              </h4>
+            )}
             {geoValues.error ? (
               <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
             ) : (
@@ -97,6 +99,7 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo }) => {
   // Only re-render if geoValues, plotMultiple, or loadingGeo actually changed
   if (prevProps.plotMultiple !== nextProps.plotMultiple) return false;
   if (prevProps.loadingGeo !== nextProps.loadingGeo) return false;
+  if (prevProps.showPointCoordinates !== nextProps.showPointCoordinates) return false;
 
   // Deep comparison for geoValues
   const prev = prevProps.geoValues;
@@ -250,8 +253,6 @@ function App() {
   const [hoverGeoValues, setHoverGeoValues] = useState(null); // Geo values for hover position
   const [clickedPosition, setClickedPosition] = useState(null); // Store clicked position persistently
   const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
-  const [isDraggingPhaseAngle, setIsDraggingPhaseAngle] = useState(false); // Track if phase angle slider is being dragged
-  const [committedPhaseAngle, setCommittedPhaseAngle] = useState(0); // Committed phase angle for geo value fetching (initialized to match initial phaseAngle)
   const geoValuesBoxRef = useRef(null);
   const geoValuesContainerRef = useRef(null);
   const atmosphericComponentsSectionRef = useRef(null);
@@ -264,33 +265,12 @@ function App() {
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
+  const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [tutorialMode, setTutorialMode] = useState(null);
 
   const handleSliderChange = (name, value) => {
-    setSliders(prev => ({ ...prev, [name]: parseFloat(value) }));
-  };
-
-  // Handle phase angle slider drag start
-  const handlePhaseAngleDragStart = () => {
-    setIsDraggingPhaseAngle(true);
-    // Invalidate any in-flight geo value fetches by incrementing the request ID
-    geoValuesRequestIdRef.current += 1;
-  };
-
-  // Handle phase angle slider drag end
-  const handlePhaseAngleDragEnd = () => {
-    setIsDraggingPhaseAngle(false);
-    // Update committed phase angle, which will trigger geo value fetch
-    setCommittedPhaseAngle(sliders.phaseAngle);
-  };
-
-  // Handle phase angle slider blur (for keyboard input)
-  const handlePhaseAngleBlur = () => {
-    if (isDraggingPhaseAngle) {
-      // If we were dragging, commit the value
-      setIsDraggingPhaseAngle(false);
-      setCommittedPhaseAngle(sliders.phaseAngle);
-    }
+    const numericValue = parseFloat(value);
+    setSliders(prev => ({ ...prev, [name]: numericValue }));
   };
 
   const handleToggleChange = (name) => {
@@ -323,6 +303,38 @@ function App() {
     }
   };
 
+  const handleSelectionModeChange = (mode) => {
+    if (selectionMode === mode) return;
+
+    const isMultipleMode = mode === 'plotMultiplePoints';
+    setSelectionMode(mode);
+    setToggles(prev => ({ ...prev, plotMultiple: isMultipleMode }));
+
+    if (isMultipleMode) {
+      // Switching to multiple mode: clear single selection and transmission overlays.
+      setClickedPosition(null);
+      setGeoValues(null);
+      setSelectedCasesByPoint({});
+      setTransmissionToggles({
+        ch4: false,
+        haze: false,
+        co: false,
+        c2h6: false,
+        c2h2: false,
+      });
+      return;
+    }
+
+    // Leaving multiple mode: clear multi-point state.
+    setMultiplePositions([]);
+    setSelectedCasesByPoint({});
+    if (mode === 'vectorSelection') {
+      // Vector mode is purely 3D interaction.
+      setClickedPosition(null);
+      setGeoValues(null);
+    }
+  };
+
   // Handle case selection change for single mode
   const handleCaseChange = (caseKey) => {
     setSelectedCases(prev => ({ ...prev, [caseKey]: !prev[caseKey] }));
@@ -348,7 +360,7 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true); // Also set spectral loading state
-      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (committedPhaseAngle * 5); // Convert slider value to degrees
+      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (sliders.phaseAngle * 5); // Convert slider value to degrees
       const values = await extractGeoValues(phaseAngle, x, y);
 
       // Check if this request is still valid (not superseded by a newer request)
@@ -356,7 +368,7 @@ function App() {
         return; // This request is stale, ignore the result
       }
 
-      setGeoValues(values);
+      setGeoValues({ ...values, phase: phaseAngle });
       console.log('Extracted geo values:', values);
     } catch (error) {
       // Check if this request is still valid
@@ -377,7 +389,7 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [committedPhaseAngle]);
+  }, [sliders.phaseAngle]);
 
   // Fetch geo values for multiple positions
   const fetchMultipleGeoValues = useCallback(async (positions, phaseAngleOverride = null) => {
@@ -388,7 +400,7 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true); // Also set spectral loading state
-      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (committedPhaseAngle * 5);
+      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (sliders.phaseAngle * 5);
       const colorNames = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
@@ -404,6 +416,7 @@ function App() {
 
           return {
             ...values,
+            phase: phaseAngle,
             x: pos.x,
             y: pos.y,
             index,
@@ -452,7 +465,39 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [committedPhaseAngle]);
+  }, [sliders.phaseAngle]);
+
+  const findNearestGeoPixelByLatLon = useCallback(async (targetLat, targetLon, phaseAngleDeg) => {
+    const geoData = await getGeoCubeData(phaseAngleDeg);
+    const numSamples = 681;
+    const numLines = 681;
+    const bandSize = numSamples * numLines;
+    const latOffset = 0;
+    const lonOffset = bandSize;
+    let bestIndex = -1;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    for (let idx = 0; idx < bandSize; idx += 1) {
+      const lat = geoData[latOffset + idx];
+      const lon = geoData[lonOffset + idx];
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 360) continue;
+      const dLat = lat - targetLat;
+      const dLonRaw = Math.abs(lon - targetLon);
+      const dLon = Math.min(dLonRaw, 360 - dLonRaw);
+      const score = (dLat * dLat) + (dLon * dLon);
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = idx;
+      }
+    }
+
+    if (bestIndex < 0) return null;
+    return {
+      x: bestIndex % numSamples,
+      y: Math.floor(bestIndex / numSamples),
+    };
+  }, []);
 
   // Cache for geo cube data (by phase angle)
   const geoCubeDataRef = useRef(null);
@@ -629,6 +674,104 @@ function App() {
     }
   };
 
+  const handleSpherePlotPoint = useCallback(async (point) => {
+    if (!point) return;
+    const phaseAngle = sliders.phaseAngle * 5;
+    let targetX = point.x;
+    let targetY = point.y;
+
+    if (Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
+      const nearest = await findNearestGeoPixelByLatLon(point.lat, point.lon, phaseAngle);
+      if (nearest) {
+        targetX = nearest.x;
+        targetY = nearest.y;
+      }
+    }
+
+    if (targetX == null || targetY == null) return;
+
+    if (selectionMode === 'plotMultiplePoints') {
+      setMultiplePositions(prev => {
+        const existingIndex = prev.findIndex(pos =>
+          Math.abs((pos.x ?? -9999) - targetX) <= 3 &&
+          Math.abs((pos.y ?? -9999) - targetY) <= 3
+        );
+
+        if (existingIndex >= 0) {
+          const newPositions = prev.filter((_, idx) => idx !== existingIndex);
+          setSelectedCasesByPoint(prevCases => {
+            const newCases = {};
+            newPositions.forEach((newPos, newArrayIndex) => {
+              const oldArrayIndex = prev.findIndex(oldPos =>
+                Math.abs((oldPos.x ?? -9999) - (newPos.x ?? -9999)) <= 1 &&
+                Math.abs((oldPos.y ?? -9999) - (newPos.y ?? -9999)) <= 1
+              );
+              if (oldArrayIndex >= 0 && prevCases[oldArrayIndex]) {
+                newCases[newArrayIndex] = { ...prevCases[oldArrayIndex] };
+              }
+            });
+            return newCases;
+          });
+          if (newPositions.length === 0) {
+            setGeoValues(null);
+            setSelectedCasesByPoint({});
+          } else {
+            fetchMultipleGeoValues(newPositions, phaseAngle);
+          }
+          return newPositions;
+        }
+
+        if (prev.length >= 6) return prev;
+
+        const usedColorIndices = prev.map(pos => pos.colorIndex !== undefined ? pos.colorIndex : prev.indexOf(pos));
+        let nextColorIndex = 0;
+        while (usedColorIndices.includes(nextColorIndex) && nextColorIndex < 6) {
+          nextColorIndex++;
+        }
+
+        const newPositions = [...prev, {
+          x: targetX,
+          y: targetY,
+          lat: point.lat,
+          lon: point.lon,
+          position: {
+            naturalX: targetX,
+            naturalY: targetY,
+            displayX: targetX,
+            displayY: targetY,
+            is3d: true,
+          },
+          colorIndex: nextColorIndex,
+        }];
+        const newArrayIndex = newPositions.length - 1;
+        setSelectedCasesByPoint(prevCases => ({
+          ...prevCases,
+          [newArrayIndex]: { standard: true, no_ch4: false, no_haze: false }
+        }));
+        fetchMultipleGeoValues(newPositions, phaseAngle);
+        return newPositions;
+      });
+      setClickedPosition(null);
+      setToggles(prev => ({ ...prev, plotMultiple: true }));
+      return;
+    }
+
+    setToggles(prev => ({ ...prev, plotMultiple: false }));
+    setMultiplePositions([]);
+    setClickedPosition({
+      x: targetX,
+      y: targetY,
+      position: {
+        naturalX: targetX,
+        naturalY: targetY,
+        displayX: targetX,
+        displayY: targetY,
+        is3d: true,
+      }
+    });
+    await fetchGeoValues(targetX, targetY, phaseAngle);
+  }, [fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, sliders.phaseAngle]);
+
   // Tutorial mode presets
   const tutorialPresets = {
     1: {
@@ -694,7 +837,7 @@ function App() {
         phaseAngle: 0
       });
       setHazePropertiesModel('doose');
-      setToggles(prev => ({ ...prev, plotMultiple: false }));
+      handleSelectionModeChange('plotPoint');
       setTransmissionToggles({
         ch4: false,
         haze: false,
@@ -722,8 +865,8 @@ function App() {
       setHazePropertiesModel(preset.hazePropertiesModel);
     }
 
-    // Apply plot multiple mode
-    setToggles(prev => ({ ...prev, plotMultiple: preset.plotMultiple }));
+    // Apply selection mode
+    handleSelectionModeChange(preset.plotMultiple ? 'plotMultiplePoints' : 'plotPoint');
 
     // Clear existing selections
     setClickedPosition(null);
@@ -850,15 +993,14 @@ function App() {
     };
   }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
 
-  // Update geo values when committed phase angle changes (if position is marked)
-  // This only runs when the phase angle slider is released, not during dragging
+  // Update geo values live when phase angle changes and there is an active selection.
   useEffect(() => {
     if (toggles.plotMultiple && multiplePositions.length > 0) {
       fetchMultipleGeoValues(multiplePositions);
     } else if (!toggles.plotMultiple && clickedPosition) {
       fetchGeoValues(clickedPosition.x, clickedPosition.y);
     }
-  }, [committedPhaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
+  }, [sliders.phaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
 
   // Set fixed height on geo-values-box to prevent it from changing
   useEffect(() => {
@@ -1189,7 +1331,13 @@ function App() {
                     <div ref={irColorImageRef} className="display-box ir-color" style={{ position: 'relative' }}>
                       <button
                         type="button"
-                        onClick={() => setIrDisplayMode(prev => prev === '2d' ? '3d' : '2d')}
+                        onClick={() => {
+                          setIrDisplayMode(prev => {
+                            const next = prev === '2d' ? '3d' : '2d';
+                            if (next === '3d') setSelectionMode('vectorSelection');
+                            return next;
+                          });
+                        }}
                         style={{
                           position: 'absolute',
                           top: '12px',
@@ -1224,10 +1372,16 @@ function App() {
                           <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
                             <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: '4px', overflow: 'hidden' }}>
                               <SphereView
-                                phaseAngle={40}
-                                compositeType="5_2_1.3"
+                                phaseAngle={sliders.phaseAngle * 5}
+                                compositeType={compositeType}
                                 viewMode="weightedPhase"
                                 minHeight={0}
+                                incidenceDeg={sliders.incidenceAngle}
+                                emissionDeg={sliders.emissionAngle}
+                                phaseDeg={sliders.phaseAngle * 5}
+                                interactionMode={selectionMode === 'plotPoint' ? 'plotPoint' : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')}
+                                onSurfacePointSelect={handleSpherePlotPoint}
+                                multiplePoints={selectionMode === 'plotMultiplePoints' ? multiplePositions : []}
                               />
                             </div>
                           </div>
@@ -1325,6 +1479,7 @@ function App() {
                             geoValues={geoValues}
                             plotMultiple={toggles.plotMultiple}
                             loadingGeo={loadingGeo}
+                            showPointCoordinates={irDisplayMode !== '3d'}
                           />
                         </div>
                       )}
@@ -1491,41 +1646,61 @@ function App() {
                               step="1"
                               value={sliders.phaseAngle}
                               onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
-                              onMouseDown={handlePhaseAngleDragStart}
-                              onMouseUp={handlePhaseAngleDragEnd}
-                              onTouchStart={handlePhaseAngleDragStart}
-                              onTouchEnd={handlePhaseAngleDragEnd}
-                              onBlur={handlePhaseAngleBlur}
                             />
                             <span>{sliders.phaseAngle * 5}°</span>
                           </label>
                         </div>
                         <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
                         <div style={{ marginTop: '0' }}>
-                          <label className="toggle-label">
-                            <input
-                              type="checkbox"
-                              checked={toggles.plotMultiple}
-                              onChange={() => handleToggleChange('plotMultiple')}
-                            />
-                            <span>
-                              <Tooltip content={
-                                <>
-                                  <strong>Plot Multiple</strong>
-                                  When enabled, allows you to select up to 6 different locations on the image and
-                                  compare their spectral properties simultaneously. Each point is color-coded, and you
-                                  can independently configure atmospheric components (methane + haze, no methane, no haze)
-                                  for each point. This mode is ideal for comparing how different surface locations or
-                                  viewing geometries affect spectral reflectance.
-                                </>
-                              }>
-                                Plot multiple
-                              </Tooltip>
-                            </span>
-                          </label>
+                          <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                            <Tooltip content={
+                              <>
+                                <strong>Selection Mode</strong>
+                                Chooses how you interact with the image/sphere:
+                                plot a single point, compare multiple points, or use 3D vector selection.
+                              </>
+                            }>
+                              Selection Mode
+                            </Tooltip>
+                          </h3>
+                          <div className="radio-group">
+                            {irDisplayMode === '3d' && (
+                              <label className="radio-label">
+                                <input
+                                  type="radio"
+                                  name="selectionMode"
+                                  value="vectorSelection"
+                                  checked={selectionMode === 'vectorSelection'}
+                                  onChange={(e) => handleSelectionModeChange(e.target.value)}
+                                />
+                                <span>Vector Selection</span>
+                              </label>
+                            )}
+                            <label className="radio-label">
+                              <input
+                                type="radio"
+                                name="selectionMode"
+                                value="plotPoint"
+                                checked={selectionMode === 'plotPoint'}
+                                onChange={(e) => handleSelectionModeChange(e.target.value)}
+                              />
+                              <span>Plot Point</span>
+                            </label>
+                            <label className="radio-label">
+                              <input
+                                type="radio"
+                                name="selectionMode"
+                                value="plotMultiplePoints"
+                                checked={selectionMode === 'plotMultiplePoints'}
+                                onChange={(e) => handleSelectionModeChange(e.target.value)}
+                              />
+                              <span>Plot Multiple Points</span>
+                            </label>
+                          </div>
                         </div>
                         <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
                         {/* Image Type Section */}
+                        {irDisplayMode !== '3d' && (
                         <div style={{ marginTop: '0' }}>
                           <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
                             <Tooltip content={
@@ -1584,6 +1759,7 @@ function App() {
                             </label>
                           </div>
                         </div>
+                        )}
                       </div>
                     </div>
                   </div>
