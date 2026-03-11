@@ -1162,7 +1162,6 @@ function App() {
         <main className="app-body">
           <Routes>
             <Route path="/user-guide" element={<UserGuide />} />
-            <Route path="/sphere" element={<SpherePage />} />
             <Route path="/" element={
               <div className="main-container">
                 {/* Left side - Display panels */}
@@ -1231,20 +1230,6 @@ function App() {
                                 minHeight={0}
                               />
                             </div>
-                          </div>
-                          <div style={{
-                            marginTop: '15px',
-                            padding: '10px',
-                            backgroundColor: '#2a2a2a',
-                            borderRadius: '4px',
-                            border: '1px solid #66ccff',
-                            fontSize: '14px',
-                            color: '#e0e0e0',
-                            width: '100%',
-                            maxWidth: '100%',
-                            boxSizing: 'border-box'
-                          }}>
-                            <span>3D weighted phase sphere preview (IR image interactions are 2D-only for now).</span>
                           </div>
                         </>
                       ) : currentImage ? (
