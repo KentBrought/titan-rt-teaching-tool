@@ -5,8 +5,9 @@
  * generate_heightmap.py from the ISS basemap.
  */
 import * as THREE from 'three';
+import { getPublicAssetUrl } from './assetUrl';
 
-const HEIGHTMAP_URL = `${process.env.PUBLIC_URL}/assets/3d-assets/titan_heightmap.png`;
+const HEIGHTMAP_URL = getPublicAssetUrl('/assets/3d-assets/titan_heightmap.png');
 
 /**
  * Load the Titan heightmap and return a THREE.Texture.

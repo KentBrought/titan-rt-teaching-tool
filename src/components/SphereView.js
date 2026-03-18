@@ -7,6 +7,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { loadHeightMap } from '../utils/heightMapLoader';
+import { getPublicAssetUrl } from '../utils/assetUrl';
 
 function SphereView({
   minHeight = 400,
@@ -362,8 +363,9 @@ function SphereView({
         }
 
         const sunLoader = new USDZLoader();
+        const sunModelUrl = getPublicAssetUrl('/assets/3d-model/Sun.usdz');
         sunLoader.load(
-          `${process.env.PUBLIC_URL}/assets/3d-model/Sun.usdz`,
+          sunModelUrl,
           (sunModel) => {
             if (cancelled || !sunBody) return;
             const box = new THREE.Box3().setFromObject(sunModel);
@@ -420,8 +422,9 @@ function SphereView({
         );
 
         const gltfLoader = new GLTFLoader();
+        const cassiniModelUrl = getPublicAssetUrl('/assets/3d-model/Cassini.glb');
         gltfLoader.load(
-          `${process.env.PUBLIC_URL}/assets/3d-model/Cassini.glb`,
+          cassiniModelUrl,
           (gltf) => {
             if (cancelled || !satelliteBody) return;
             const cassiniModel = gltf.scene;
@@ -451,8 +454,10 @@ function SphereView({
             cassiniAnchor.add(cassiniModel);
           },
           undefined,
-          () => {
+          (err) => {
             if (cancelled || !satelliteBody) return;
+            // Keep fallback visible, but log the real error for production diagnostics.
+            console.error('Failed to load Cassini model', { url: cassiniModelUrl, error: err });
             const fallback = new THREE.Mesh(
               new THREE.SphereGeometry(0.09, 20, 20),
               new THREE.MeshStandardMaterial({
