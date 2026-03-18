@@ -14,14 +14,16 @@ const ClickableImage = ({
   style = {},
   initialPosition = null, // Allow external control of position
   multiplePositions = [], // Array of positions for multiple mode
-  plotMultiple = false // Whether in multiple mode
+  plotMultiple = false, // Whether in multiple mode
+  showLatLonGrid = false,
 }) => {
   const [clickPosition, setClickPosition] = useState(initialPosition);
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
-  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const imageRef = useRef(null);
   const containerRef = useRef(null);
   const imageContainerRef = useRef(null);
+  const dragStateRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, panStartX: 0, panStartY: 0 });
   const clickPositionRef = useRef(clickPosition);
   
   // Keep ref in sync with state
@@ -38,15 +40,6 @@ const ClickableImage = ({
           if (imageRef.current && containerRef.current && imageContainerRef.current) {
             const img = imageRef.current;
             
-            setImageSize({
-              width: img.offsetWidth,
-              height: img.offsetHeight
-            });
-            setNaturalSize({
-              width: img.naturalWidth,
-              height: img.naturalHeight
-            });
-
             // Recalculate display position if we have natural coordinates
             // Now using image-relative coordinates (relative to inner container)
             if (initialPosition && initialPosition.x !== undefined && initialPosition.y !== undefined) {
@@ -130,6 +123,11 @@ const ClickableImage = ({
     };
   }, [src, initialPosition]);
 
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [src]);
+
   // No longer need to position the inner container absolutely
   // It will stay in the normal flow and size to the image
 
@@ -142,12 +140,14 @@ const ClickableImage = ({
     
     // Get position relative to the inner image container
     const rect = imgContainer.getBoundingClientRect();
-    const relativeX = e.clientX - rect.left;
-    const relativeY = e.clientY - rect.top;
+    const transformedX = e.clientX - rect.left;
+    const transformedY = e.clientY - rect.top;
+    const relativeX = (transformedX - pan.x) / zoom;
+    const relativeY = (transformedY - pan.y) / zoom;
     
     // Check if position is within image container bounds
-    if (relativeX >= 0 && relativeX <= rect.width && 
-        relativeY >= 0 && relativeY <= rect.height) {
+    if (relativeX >= 0 && relativeX <= img.offsetWidth && 
+        relativeY >= 0 && relativeY <= img.offsetHeight) {
       
       // Calculate position in natural image coordinates
       const scaleX = img.naturalWidth / img.offsetWidth;
@@ -171,6 +171,7 @@ const ClickableImage = ({
   };
 
   const handleImageClick = (e) => {
+    if (dragStateRef.current.moved) return;
     const newPosition = calculateCoordinates(e);
     if (!newPosition) return;
 
@@ -216,6 +217,58 @@ const ClickableImage = ({
     }
   };
 
+  const clampPan = (nextPan, nextZoom = zoom) => {
+    if (!imageRef.current) return nextPan;
+    const img = imageRef.current;
+    const maxX = Math.max(0, ((img.offsetWidth * nextZoom) - img.offsetWidth) / 2);
+    const maxY = Math.max(0, ((img.offsetHeight * nextZoom) - img.offsetHeight) / 2);
+    return {
+      x: Math.max(-maxX, Math.min(maxX, nextPan.x)),
+      y: Math.max(-maxY, Math.min(maxY, nextPan.y)),
+    };
+  };
+
+  const setZoomLevel = (nextZoom) => {
+    const clamped = Math.max(1, Math.min(5, nextZoom));
+    setZoom(clamped);
+    setPan((prev) => clampPan(prev, clamped));
+  };
+
+  const handlePointerDown = (e) => {
+    dragStateRef.current = {
+      dragging: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      panStartX: pan.x,
+      panStartY: pan.y,
+    };
+  };
+
+  const handlePointerMove = (e) => {
+    if (!dragStateRef.current.dragging) return;
+    const dx = e.clientX - dragStateRef.current.startX;
+    const dy = e.clientY - dragStateRef.current.startY;
+    if ((dx * dx) + (dy * dy) > 16) dragStateRef.current.moved = true;
+    const next = clampPan({
+      x: dragStateRef.current.panStartX + dx,
+      y: dragStateRef.current.panStartY + dy,
+    });
+    setPan(next);
+  };
+
+  const handlePointerUp = () => {
+    dragStateRef.current.dragging = false;
+    setTimeout(() => {
+      dragStateRef.current.moved = false;
+    }, 0);
+  };
+
+  const latLines = [-60, -30, 0, 30, 60];
+  const lonLines = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+  const getLatY = (lat, h) => ((90 - lat) / 180) * h;
+  const getLonX = (lon, w) => ((lon + 180) / 360) * w;
+
   return (
     <div 
       ref={containerRef}
@@ -224,12 +277,40 @@ const ClickableImage = ({
       onClick={handleImageClick}
       onMouseMove={handleImageHover}
       onMouseLeave={handleImageLeave}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
+      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 40, display: 'flex', gap: '6px', pointerEvents: 'auto' }}>
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setZoomLevel(zoom + 0.2); }}
+          style={zoomButtonStyle}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setZoomLevel(zoom - 0.2); }}
+          style={zoomButtonStyle}
+        >
+          -
+        </button>
+      </div>
       {src && (
         <div
           ref={imageContainerRef}
           className="image-marker-container"
-          style={{ position: 'relative', pointerEvents: 'none' }}
+          style={{
+            position: 'relative',
+            pointerEvents: 'none',
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: 'center center',
+            marginTop: '40px',
+          }}
         >
           <img
             ref={imageRef}
@@ -281,12 +362,43 @@ const ClickableImage = ({
               </div>
             )
           )}
+          {showLatLonGrid && imageRef.current && (
+            <svg
+              width={imageRef.current.offsetWidth}
+              height={imageRef.current.offsetHeight}
+              style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 12 }}
+            >
+              {latLines.map((lat) => (
+                <g key={`lat-${lat}`}>
+                  <line x1="0" y1={getLatY(lat, imageRef.current.offsetHeight)} x2={imageRef.current.offsetWidth} y2={getLatY(lat, imageRef.current.offsetHeight)} stroke="rgba(120,220,255,0.45)" strokeWidth="1" />
+                  <text x="6" y={getLatY(lat, imageRef.current.offsetHeight) - 4} fill="#9de7ff" fontSize="11">{`${lat}°`}</text>
+                </g>
+              ))}
+              {lonLines.map((lon) => (
+                <g key={`lon-${lon}`}>
+                  <line x1={getLonX(lon, imageRef.current.offsetWidth)} y1="0" x2={getLonX(lon, imageRef.current.offsetWidth)} y2={imageRef.current.offsetHeight} stroke="rgba(120,220,255,0.45)" strokeWidth="1" />
+                  <text x={getLonX(lon, imageRef.current.offsetWidth) + 3} y={14} fill="#9de7ff" fontSize="11">{`${lon}°`}</text>
+                </g>
+              ))}
+            </svg>
+          )}
         </div>
       )}
     </div>
   );
 };
 
+const zoomButtonStyle = {
+  width: '28px',
+  height: '28px',
+  borderRadius: '4px',
+  border: '1px solid #66ccff',
+  background: '#101820',
+  color: '#e9f8ff',
+  fontSize: '18px',
+  lineHeight: '24px',
+  cursor: 'pointer',
+  pointerEvents: 'auto',
+};
+
 export default ClickableImage;
-
-

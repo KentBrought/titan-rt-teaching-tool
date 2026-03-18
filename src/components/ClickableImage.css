@@ -1,10 +1,13 @@
 .clickable-image-container {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
   width: 100%;
   cursor: crosshair;
+  overflow: hidden;
+  background: #000;
 }
 
 .clickable-image {
@@ -21,7 +24,5 @@
   z-index: 10;
   filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.8));
 }
-
-
 
 

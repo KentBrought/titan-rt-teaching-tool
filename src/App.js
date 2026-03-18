@@ -266,6 +266,11 @@ function App() {
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'plotPoint' | 'plotMultiplePoints'
+  const [cameraPreset3d, setCameraPreset3d] = useState(''); // '' | 'cassini' | 'sun'
+  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft'
+  const [irGridEnabled2d, setIrGridEnabled2d] = useState(false);
+  const [sphereGridEnabled3d, setSphereGridEnabled3d] = useState(false);
+  const [rotationAxisEnabled3d, setRotationAxisEnabled3d] = useState(false);
   const [tutorialMode, setTutorialMode] = useState(null);
 
   const handleSliderChange = (name, value) => {
@@ -915,6 +920,11 @@ function App() {
   };
 
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
+  const activeGridEnabled = irDisplayMode === '3d' ? sphereGridEnabled3d : irGridEnabled2d;
+  const handleActiveGridToggle = (enabled) => {
+    if (irDisplayMode === '3d') setSphereGridEnabled3d(enabled);
+    else setIrGridEnabled2d(enabled);
+  };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
 
   // Processed spectral data for checking if a point has spectral plot data
@@ -1379,6 +1389,11 @@ function App() {
                                 incidenceDeg={sliders.incidenceAngle}
                                 emissionDeg={sliders.emissionAngle}
                                 phaseDeg={sliders.phaseAngle * 5}
+                                cameraPreset={cameraPreset3d || 'none'}
+                                cameraCenter={cameraCenter3d}
+                                introAnimation={true}
+                                showLatLonGrid={sphereGridEnabled3d}
+                                showRotationAxis={rotationAxisEnabled3d}
                                 interactionMode={selectionMode === 'plotPoint' ? 'plotPoint' : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')}
                                 onSurfacePointSelect={handleSpherePlotPoint}
                                 multiplePoints={selectionMode === 'plotMultiplePoints' ? multiplePositions : []}
@@ -1399,6 +1414,7 @@ function App() {
                               initialPosition={toggles.plotMultiple ? null : clickedPosition}
                               multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                               plotMultiple={toggles.plotMultiple}
+                              showLatLonGrid={irGridEnabled2d}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -1650,6 +1666,115 @@ function App() {
                             <span>{sliders.phaseAngle * 5}°</span>
                           </label>
                         </div>
+                        <div style={{ marginTop: '10px' }}>
+                          <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <input
+                              type="checkbox"
+                              checked={activeGridEnabled}
+                              onChange={(e) => handleActiveGridToggle(e.target.checked)}
+                            />
+                            <span>Lat/Lon Grid + Labels</span>
+                          </label>
+                        </div>
+                        {irDisplayMode === '3d' && (
+                          <>
+                            <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                            <div style={{ marginTop: '0' }}>
+                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                                <Tooltip content={
+                                  <>
+                                    <strong>3D Camera Presets</strong>
+                                    Switches the camera to Cassini or Sun viewpoints that stay synced as the slider geometry changes.
+                                  </>
+                                }>
+                                  3D Camera Presets
+                                </Tooltip>
+                              </h3>
+                              <div className="radio-group">
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="cameraPreset3d"
+                                    value="cassini"
+                                    checked={cameraPreset3d === 'cassini'}
+                                    onChange={(e) => setCameraPreset3d(e.target.value)}
+                                  />
+                                  <span>Cassini View</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="cameraPreset3d"
+                                    value="sun"
+                                    checked={cameraPreset3d === 'sun'}
+                                    onChange={(e) => setCameraPreset3d(e.target.value)}
+                                  />
+                                  <span>Sun View</span>
+                                </label>
+                              </div>
+                              {cameraPreset3d !== '' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCameraPreset3d('')}
+                                  style={{
+                                    marginTop: '10px',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #666',
+                                    backgroundColor: '#1a1a1a',
+                                    color: '#e0e0e0',
+                                    cursor: 'pointer',
+                                    fontSize: '12px'
+                                  }}
+                                >
+                                  Clear Preset (Manual Camera)
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ marginTop: '12px' }}>
+                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                                <Tooltip content={
+                                  <>
+                                    <strong>Camera Center</strong>
+                                    Sets the orbit/look target to Titan's center or the spacecraft location.
+                                  </>
+                                }>
+                                  Camera Center
+                                </Tooltip>
+                              </h3>
+                              <div className="radio-group" style={{ flexDirection: 'row', gap: '20px' }}>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="cameraCenter3d"
+                                    value="titan"
+                                    checked={cameraCenter3d === 'titan'}
+                                    onChange={(e) => setCameraCenter3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Titan Center</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="cameraCenter3d"
+                                    value="spacecraft"
+                                    checked={cameraCenter3d === 'spacecraft'}
+                                    onChange={(e) => setCameraCenter3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Spacecraft</span>
+                                </label>
+                              </div>
+                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={rotationAxisEnabled3d}
+                                  onChange={(e) => setRotationAxisEnabled3d(e.target.checked)}
+                                />
+                                <span>Show Rotation Axis</span>
+                              </label>
+                            </div>
+                          </>
+                        )}
                         <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
                         <div style={{ marginTop: '0' }}>
                           <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>

@@ -1,23 +1,23 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { getImageUrl } from '../utils/imageLoader';
-import { buildEquirectangularTextureCanvasFromTwoHalves } from '../utils/sphereTexture';
-import { buildWeightedPhaseGlobeTextureAllPhases } from '../utils/weightedGlobeTexture';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { USDZLoader } from 'three/examples/jsm/loaders/USDZLoader.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { loadHeightMap } from '../utils/heightMapLoader';
 
-const oppositePhase = (phase) => ((phase + 180) % 360);
-
 function SphereView({
-  phaseAngle = 40,
-  compositeType = '5_2_1.3',
-  viewMode = 'default',
-  onCoverage,
-  onProgress,
   minHeight = 400,
   incidenceDeg = 45,
   emissionDeg = 45,
   phaseDeg = 0,
+  cameraPreset = 'none', // 'none' | 'cassini' | 'sun'
+  cameraCenter = 'titan', // 'titan' | 'spacecraft'
+  introAnimation = true,
+  showLatLonGrid = false,
+  showRotationAxis = false,
   interactionMode = 'vector', // 'vector' | 'plotPoint'
   onSurfacePointSelect,
   multiplePoints = [],
@@ -34,7 +34,6 @@ function SphereView({
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [buildProgress, setBuildProgress] = useState(null);
   const sceneRef = useRef(null);
   const rendererRef = useRef(null);
   const controlsRef = useRef(null);
@@ -44,41 +43,16 @@ function SphereView({
   const meshRef = useRef(null);
   const multiPointGroupRef = useRef(null);
   const resizeCleanupRef = useRef(null);
-
-  const frontImageUrl = useMemo(
-    () => getImageUrl(phaseAngle, compositeType),
-    [phaseAngle, compositeType]
-  );
-  const backImageUrl = useMemo(
-    () => getImageUrl(oppositePhase(phaseAngle), compositeType),
-    [phaseAngle, compositeType]
-  );
-  const textureBuildKey = useMemo(
-    () => (viewMode === 'weightedPhase'
-      ? `weighted:${compositeType}`
-      : `default:${frontImageUrl}|${backImageUrl}`),
-    [viewMode, compositeType, frontImageUrl, backImageUrl]
-  );
-  const buildTexturePromiseFactory = useMemo(() => {
-    if (textureBuildKey.startsWith('weighted:')) {
-      const compositeFromKey = textureBuildKey.slice('weighted:'.length);
-      return () => buildWeightedPhaseGlobeTextureAllPhases(compositeFromKey, {
-        onProgress: (current, total, phaseAngleDeg) => {
-          setBuildProgress((p) => (p ? { ...p, current, total, phaseAngle: phaseAngleDeg } : { current, total, phaseAngle: phaseAngleDeg }));
-          if (typeof onProgress === 'function') onProgress({ current, total, phaseAngle: phaseAngleDeg });
-        },
-      }).then(({ canvas, coverage }) => {
-        if (typeof onCoverage === 'function') onCoverage(coverage);
-        return canvas;
-      });
-    }
-
-    const urls = textureBuildKey.slice('default:'.length);
-    const splitAt = urls.indexOf('|');
-    const frontUrl = urls.slice(0, splitAt);
-    const backUrl = urls.slice(splitAt + 1);
-    return () => buildEquirectangularTextureCanvasFromTwoHalves(frontUrl, backUrl);
-  }, [textureBuildKey, onCoverage, onProgress]);
+  const cameraModeRef = useRef({ preset: 'none', center: 'titan' });
+  const introStateRef = useRef({ active: true, startMs: 0, durationMs: 3400 });
+  const introEnabledRef = useRef(!!introAnimation);
+  const prevCameraCenterRef = useRef('titan');
+  const pendingSpacecraftAutoZoomRef = useRef(false);
+  const latLonGridRef = useRef(null);
+  const latLonLabelsRef = useRef(null);
+  const latLonGridEnabledRef = useRef(!!showLatLonGrid);
+  const rotationAxisRef = useRef(null);
+  const rotationAxisEnabledRef = useRef(!!showRotationAxis);
 
   useEffect(() => {
     angleRef.current = {
@@ -101,6 +75,31 @@ function SphereView({
   }, [interactionMode, onSurfacePointSelect]);
 
   useEffect(() => {
+    const preset = cameraPreset === 'cassini' || cameraPreset === 'sun' ? cameraPreset : 'none';
+    const center = cameraCenter === 'spacecraft' ? 'spacecraft' : 'titan';
+    cameraModeRef.current = { preset, center };
+    if (prevCameraCenterRef.current !== center && center === 'spacecraft') {
+      pendingSpacecraftAutoZoomRef.current = true;
+    }
+    prevCameraCenterRef.current = center;
+  }, [cameraPreset, cameraCenter]);
+
+  useEffect(() => {
+    introEnabledRef.current = !!introAnimation;
+  }, [introAnimation]);
+
+  useEffect(() => {
+    latLonGridEnabledRef.current = !!showLatLonGrid;
+    if (latLonGridRef.current) latLonGridRef.current.visible = !!showLatLonGrid;
+    if (latLonLabelsRef.current) latLonLabelsRef.current.visible = !!showLatLonGrid;
+  }, [showLatLonGrid]);
+
+  useEffect(() => {
+    rotationAxisEnabledRef.current = !!showRotationAxis;
+    if (rotationAxisRef.current) rotationAxisRef.current.visible = !!showRotationAxis;
+  }, [showRotationAxis]);
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) {
       setError('Container ref not set');
@@ -109,15 +108,23 @@ function SphereView({
 
     let cancelled = false;
     let scene, camera, renderer, controls, geometry, material, mesh;
+    let composer = null;
     let starsNear = null;
     let starsFar = null;
     let sunBody = null;
     let satelliteBody = null;
+    let cassiniAnchor = null;
     let sunPointLight = null;
+    let sunGlow = null;
+    let sunGlowTexture = null;
+    let sunVisualRadius = 0.22;
+    let cassiniVisualRadius = 0.16;
     let clickHandler = null;
     let pointerDownHandler = null;
     let pointerMoveHandler = null;
     let pointerUpHandler = null;
+    const satTargetPos = new THREE.Vector3();
+    const sunTargetPos = new THREE.Vector3();
 
     const rafId = requestAnimationFrame(function initThree() {
       if (cancelled) return;
@@ -132,6 +139,7 @@ function SphereView({
           camera.aspect = cw / ch;
           camera.updateProjectionMatrix();
           renderer.setSize(cw, ch);
+          if (composer) composer.setSize(cw, ch);
         }
       }
 
@@ -146,19 +154,27 @@ function SphereView({
 
         const w = Math.max(1, cont.clientWidth || 1);
         const h = Math.max(1, cont.clientHeight || 1);
-        camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-        camera.position.set(0, 0, 3.5);
+        camera = new THREE.PerspectiveCamera(45, w / h, 0.01, 100);
+        const defaultCameraOffset = new THREE.Vector3(0, 0, 5)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(120));
+        camera.position.copy(defaultCameraOffset);
         scene.add(camera);
         cameraRef.current = camera;
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(w, h);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.domElement.style.display = 'block';
         renderer.domElement.style.width = '100%';
         renderer.domElement.style.height = '100%';
         cont.appendChild(renderer.domElement);
         rendererRef.current = renderer;
+        composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.9, 0.35, 0.1);
+        composer.addPass(bloomPass);
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enablePan = false;
@@ -169,43 +185,291 @@ function SphereView({
         controls.enableDamping = true;
         controls.dampingFactor = 0.06;
         controls.rotateSpeed = 0.85;
+        controls.target.set(0, 0, 0);
         controlsRef.current = controls;
 
         geometry = new THREE.SphereGeometry(1, 256, 256);
         material = new THREE.MeshStandardMaterial({
-          side: THREE.FrontSide,
-          roughness: 0.85,
+          side: THREE.DoubleSide,
+          roughness: 0.95,
           metalness: 0.0,
-          displacementScale: 0.08,
+          transparent: true,
+          opacity: 1,
         });
         mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
         // Rotate Titan to the requested yaw.
-        mesh.rotation.y = THREE.MathUtils.degToRad(215);
+        const baseTitanYaw = THREE.MathUtils.degToRad(-90);
+        mesh.rotation.y = baseTitanYaw;
         meshRef.current = mesh;
         scene.add(mesh);
+
+        const createTextSprite = (text, color = '#8fe7ff') => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 256;
+          canvas.height = 64;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return null;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.font = '24px Arial';
+          ctx.fillStyle = color;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+          const texture = new THREE.CanvasTexture(canvas);
+          const materialSprite = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            depthWrite: false,
+          });
+          const sprite = new THREE.Sprite(materialSprite);
+          sprite.scale.set(0.25, 0.0625, 1);
+          return sprite;
+        };
+
+        const gridGroup = new THREE.Group();
+        const labelGroup = new THREE.Group();
+        const lonLineMaterial = new THREE.LineBasicMaterial({
+          color: 0xffb56a,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const latLineMaterial = new THREE.LineBasicMaterial({
+          color: 0x8fe7ff,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const lonSteps = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+        const latSteps = [-60, -30, 0, 30, 60];
+        const r = 1.002;
+        const labelR = 1.03;
+        lonSteps.forEach((lonDeg) => {
+          const lon = THREE.MathUtils.degToRad(lonDeg);
+          const pts = [];
+          for (let latDeg = -90; latDeg <= 90; latDeg += 3) {
+            const lat = THREE.MathUtils.degToRad(latDeg);
+            pts.push(new THREE.Vector3(
+              Math.sin(lon) * Math.cos(lat) * r,
+              Math.sin(lat) * r,
+              Math.cos(lon) * Math.cos(lat) * r
+            ));
+          }
+          gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lonLineMaterial.clone()));
+          const label = createTextSprite(`${lonDeg}°`, '#ffb56a');
+          if (label) {
+            label.position.set(
+              Math.sin(lon) * labelR,
+              0,
+              Math.cos(lon) * labelR
+            );
+            labelGroup.add(label);
+          }
+        });
+        latSteps.forEach((latDeg) => {
+          const lat = THREE.MathUtils.degToRad(latDeg);
+          const pts = [];
+          for (let lonDeg = -180; lonDeg <= 180; lonDeg += 3) {
+            const lon = THREE.MathUtils.degToRad(lonDeg);
+            pts.push(new THREE.Vector3(
+              Math.sin(lon) * Math.cos(lat) * r,
+              Math.sin(lat) * r,
+              Math.cos(lon) * Math.cos(lat) * r
+            ));
+          }
+          gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latLineMaterial.clone()));
+          const label = createTextSprite(`${latDeg}°`, '#8fe7ff');
+          if (label) {
+            label.position.set(
+              0,
+              Math.sin(lat) * labelR,
+              Math.cos(lat) * labelR
+            );
+            labelGroup.add(label);
+          }
+        });
+        gridGroup.visible = latLonGridEnabledRef.current;
+        labelGroup.visible = latLonGridEnabledRef.current;
+        latLonGridRef.current = gridGroup;
+        latLonLabelsRef.current = labelGroup;
+        mesh.add(gridGroup);
+        mesh.add(labelGroup);
+
+        const axisGroup = new THREE.Group();
+        const axisMat = new THREE.LineBasicMaterial({ color: 0xf66d6d, transparent: true, opacity: 0.9 });
+        const axisPts = [new THREE.Vector3(0, -1.45, 0), new THREE.Vector3(0, 1.45, 0)];
+        axisGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(axisPts), axisMat));
+        const topCone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.03, 0.1, 10),
+          new THREE.MeshBasicMaterial({ color: 0xf66d6d, transparent: true, opacity: 0.9 })
+        );
+        topCone.position.set(0, 1.5, 0);
+        axisGroup.add(topCone);
+        axisGroup.visible = rotationAxisEnabledRef.current;
+        rotationAxisRef.current = axisGroup;
+        scene.add(axisGroup);
 
         const multiPointGroup = new THREE.Group();
         multiPointGroupRef.current = multiPointGroup;
         scene.add(multiPointGroup);
 
-        const sunGeometry = new THREE.SphereGeometry(0.16, 24, 24);
-        const satelliteGeometry = new THREE.SphereGeometry(0.09, 20, 20);
-        const sunMaterial = new THREE.MeshStandardMaterial({
-          color: 0xffd95c,
-          emissive: 0x8f5f00,
-          emissiveIntensity: 0.9,
-          roughness: 0.45,
-          metalness: 0.1,
-        });
-        const satelliteMaterial = new THREE.MeshStandardMaterial({
-          color: 0xa8a8a8,
-          roughness: 0.85,
-          metalness: 0.2,
-        });
-        sunBody = new THREE.Mesh(sunGeometry, sunMaterial);
-        satelliteBody = new THREE.Mesh(satelliteGeometry, satelliteMaterial);
+        sunBody = new THREE.Group();
+        satelliteBody = new THREE.Group();
+        cassiniAnchor = new THREE.Group();
+        satelliteBody.add(cassiniAnchor);
         scene.add(sunBody);
         scene.add(satelliteBody);
+
+        const makeObjectSemiTransparent = (object, opacity) => {
+          object.traverse((node) => {
+            if (!node.material) return;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach((m) => {
+              m.transparent = true;
+              m.opacity = opacity;
+              m.side = THREE.DoubleSide;
+              m.needsUpdate = true;
+            });
+          });
+        };
+
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = 256;
+        glowCanvas.height = 256;
+        const glowCtx = glowCanvas.getContext('2d');
+        if (glowCtx) {
+          const center = glowCanvas.width / 2;
+          const gradient = glowCtx.createRadialGradient(center, center, 0, center, center, center);
+          gradient.addColorStop(0, 'rgba(255, 255, 220, 1)');
+          gradient.addColorStop(0.15, 'rgba(255, 225, 140, 0.9)');
+          gradient.addColorStop(0.45, 'rgba(255, 180, 70, 0.45)');
+          gradient.addColorStop(1, 'rgba(255, 120, 30, 0)');
+          glowCtx.fillStyle = gradient;
+          glowCtx.fillRect(0, 0, glowCanvas.width, glowCanvas.height);
+          sunGlowTexture = new THREE.CanvasTexture(glowCanvas);
+          const glowMaterial = new THREE.SpriteMaterial({
+            map: sunGlowTexture,
+            color: 0xffe0a0,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          });
+          sunGlow = new THREE.Sprite(glowMaterial);
+          sunGlow.scale.set(1.25, 1.25, 1);
+          sunGlow.renderOrder = 10;
+          scene.add(sunGlow);
+        }
+
+        const sunLoader = new USDZLoader();
+        sunLoader.load(
+          `${process.env.PUBLIC_URL}/assets/3d-model/Sun.usdz`,
+          (sunModel) => {
+            if (cancelled || !sunBody) return;
+            const box = new THREE.Box3().setFromObject(sunModel);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
+            const targetSize = 0.32;
+            const scale = targetSize / maxDim;
+            sunModel.scale.setScalar(scale);
+            sunModel.updateMatrixWorld(true);
+            box.setFromObject(sunModel);
+            const center = box.getCenter(new THREE.Vector3());
+            sunModel.position.sub(center);
+
+            sunModel.traverse((node) => {
+              if (node.isMesh && node.material) {
+                const mats = Array.isArray(node.material) ? node.material : [node.material];
+                mats.forEach((m) => {
+                  m.emissive = new THREE.Color(0xffcc66);
+                  m.emissiveIntensity = 2.1;
+                  m.color = new THREE.Color(0xffe6a6);
+                  m.side = THREE.DoubleSide;
+                  m.transparent = true;
+                  m.opacity = 1;
+                  m.needsUpdate = true;
+                });
+                node.castShadow = false;
+                node.receiveShadow = false;
+              }
+            });
+
+            sunVisualRadius = targetSize * 0.5;
+            sunBody.add(sunModel);
+          },
+          undefined,
+          () => {
+            if (cancelled || !sunBody) return;
+            const fallback = new THREE.Mesh(
+              new THREE.SphereGeometry(0.16, 24, 24),
+              new THREE.MeshStandardMaterial({
+                color: 0xffd95c,
+                emissive: 0xffaa44,
+                emissiveIntensity: 2.1,
+                roughness: 0.4,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 1,
+                side: THREE.DoubleSide,
+              })
+            );
+            sunBody.add(fallback);
+            sunVisualRadius = 0.16;
+          }
+        );
+
+        const gltfLoader = new GLTFLoader();
+        gltfLoader.load(
+          `${process.env.PUBLIC_URL}/assets/3d-model/Cassini.glb`,
+          (gltf) => {
+            if (cancelled || !satelliteBody) return;
+            const cassiniModel = gltf.scene;
+            cassiniModel.updateMatrixWorld(true);
+
+            const box = new THREE.Box3().setFromObject(cassiniModel);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
+            const targetSize = 0.22;
+            const scale = targetSize / maxDim;
+            cassiniModel.scale.setScalar(scale);
+            cassiniModel.updateMatrixWorld(true);
+
+            box.setFromObject(cassiniModel);
+            const center = box.getCenter(new THREE.Vector3());
+            cassiniModel.position.sub(center);
+
+            cassiniModel.rotation.y = THREE.MathUtils.degToRad(90);
+            cassiniModel.traverse((node) => {
+              if (node.isMesh) {
+                node.castShadow = false;
+                node.receiveShadow = false;
+              }
+            });
+            cassiniVisualRadius = targetSize * 0.55;
+            cassiniAnchor.add(cassiniModel);
+          },
+          undefined,
+          () => {
+            if (cancelled || !satelliteBody) return;
+            const fallback = new THREE.Mesh(
+              new THREE.SphereGeometry(0.09, 20, 20),
+              new THREE.MeshStandardMaterial({
+                color: 0xa8a8a8,
+                roughness: 0.85,
+                metalness: 0.2,
+                transparent: true,
+                opacity: 1,
+                side: THREE.DoubleSide,
+              })
+            );
+            fallback.castShadow = false;
+            fallback.receiveShadow = false;
+            cassiniAnchor.add(fallback);
+            cassiniVisualRadius = 0.09;
+          }
+        );
 
         const createStarField = (count, radius, size, opacity) => {
           const positions = new Float32Array(count * 3);
@@ -357,10 +621,19 @@ function SphereView({
           const sunArrow = new THREE.ArrowHelper(getCenterAxisDirection(sunBody.position), origin, arrowLength, 0xffc94a, 0.12, 0.06);
           const satArrow = new THREE.ArrowHelper(getCenterAxisDirection(satelliteBody.position), origin, arrowLength, 0x66ccff, 0.12, 0.06);
           [sunArrow, satArrow].forEach((arrow) => {
+            arrow.frustumCulled = false;
+            arrow.line.frustumCulled = false;
+            arrow.cone.frustumCulled = false;
             arrow.line.material.depthTest = false;
             arrow.line.material.depthWrite = false;
             arrow.cone.material.depthTest = false;
             arrow.cone.material.depthWrite = false;
+            arrow.line.material.transparent = true;
+            arrow.line.material.opacity = 1;
+            arrow.cone.material.transparent = true;
+            arrow.cone.material.opacity = 1;
+            arrow.line.material.toneMapped = false;
+            arrow.cone.material.toneMapped = false;
             arrow.line.renderOrder = 998;
             arrow.cone.renderOrder = 998;
           });
@@ -370,12 +643,12 @@ function SphereView({
         };
         renderer.domElement.addEventListener('click', clickHandler);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-        scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        dirLight.position.set(5, 3, 5);
-        scene.add(dirLight);
-        sunPointLight = new THREE.PointLight(0xffd47a, 0.85, 35);
+        sunPointLight = new THREE.PointLight(0xfff0cc, 20.7, 65);
+        sunPointLight.castShadow = true;
+        sunPointLight.shadow.mapSize.width = 1024;
+        sunPointLight.shadow.mapSize.height = 1024;
+        sunPointLight.shadow.bias = -0.0002;
+        sunPointLight.shadow.normalBias = 0.015;
         scene.add(sunPointLight);
 
         const updateSunSatelliteWorldPositions = () => {
@@ -389,26 +662,171 @@ function SphereView({
           const sunDirection = new THREE.Vector3(Math.sin(incidenceRad), 0, -Math.cos(incidenceRad)).normalize();
           const satDirection = sunDirection.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), phaseRad).normalize();
           const satDistance = 2.9 + (emissionNorm * 1.1);
-          const sunDistance = 3.6 + (incidenceNorm * 1.4);
+          const sunDistance = (3.6 + (incidenceNorm * 1.4)) * 2.0;
 
-          satelliteBody.position.copy(satDirection.multiplyScalar(satDistance));
-          sunBody.position.copy(sunDirection.multiplyScalar(sunDistance));
-          if (sunPointLight) sunPointLight.position.copy(sunBody.position);
+          satTargetPos.copy(satDirection.multiplyScalar(satDistance));
+          sunTargetPos.copy(sunDirection.multiplyScalar(sunDistance));
         };
         updateSunSatelliteWorldPositions();
+
+        const getDefaultCameraTarget = () => {
+          if (cameraModeRef.current.center === 'spacecraft' && satelliteBody) {
+            return satelliteBody.position.clone();
+          }
+          return new THREE.Vector3(0, 0, 0);
+        };
+
+        const getPresetCameraPose = () => {
+          if (!sunBody || !satelliteBody) return null;
+          const origin = new THREE.Vector3(0, 0, 0);
+          const preset = cameraModeRef.current.preset;
+          if (preset === 'none') return null;
+
+          if (preset === 'cassini') {
+            const satPos = satelliteBody.position.clone();
+            const toTitan = origin.clone().sub(satPos).normalize();
+            let side = new THREE.Vector3(0, 1, 0).cross(toTitan);
+            if (side.lengthSq() < 1e-8) side = new THREE.Vector3(1, 0, 0);
+            side.normalize();
+            const position = satPos.clone()
+              .addScaledVector(side, 0.07)
+              .addScaledVector(toTitan, -0.05);
+            const target = origin;
+            return { position, target, hideSpacecraft: true, hideSun: false };
+          }
+
+          if (preset === 'sun') {
+            const sunPos = sunBody.position.clone();
+            const toTitan = origin.clone().sub(sunPos).normalize();
+            const position = sunPos.clone().addScaledVector(toTitan, -0.35);
+            const target = origin;
+            return { position, target, hideSpacecraft: false, hideSun: true };
+          }
+
+          return null;
+        };
+
+        introStateRef.current = {
+          active: introEnabledRef.current,
+          startMs: performance.now(),
+          durationMs: 4800,
+        };
 
         function animate() {
           if (cancelled) return;
           animationIdRef.current = requestAnimationFrame(animate);
           if (controls && renderer && scene && camera) {
-            controls.update();
             if (starsNear) starsNear.rotation.y += 0.00006;
             if (starsFar) {
               starsFar.rotation.y -= 0.00003;
               starsFar.rotation.x += 0.000015;
             }
             updateSunSatelliteWorldPositions();
-            renderer.render(scene, camera);
+            satelliteBody.position.lerp(satTargetPos, 0.12);
+            satelliteBody.lookAt(0, 0, 0);
+            sunBody.position.lerp(sunTargetPos, 0.1);
+            if (sunPointLight) sunPointLight.position.copy(sunBody.position);
+            if (sunGlow) sunGlow.position.copy(sunBody.position);
+            const presetPose = getPresetCameraPose();
+            const introState = introStateRef.current;
+            const now = performance.now();
+            const introElapsed = now - introState.startMs;
+            const introT = introState.durationMs > 0
+              ? THREE.MathUtils.clamp(introElapsed / introState.durationMs, 0, 1)
+              : 1;
+            const introEase = 1 - ((1 - introT) ** 3);
+            const introActive = introState.active && introT < 1;
+
+            if (satelliteBody) {
+              satelliteBody.visible = !(presetPose?.hideSpacecraft && !introActive);
+            }
+            if (sunBody) {
+              sunBody.visible = !(presetPose?.hideSun && !introActive);
+            }
+            if (sunGlow) {
+              sunGlow.visible = sunBody ? sunBody.visible : true;
+            }
+
+            const insideFadeOpacity = 0.22;
+            const normalOpacity = 1.0;
+            const cameraPos = camera.position;
+            const titanInside = cameraPos.length() < 1.02;
+            material.opacity = titanInside ? insideFadeOpacity : normalOpacity;
+            material.transparent = true;
+            if (sunBody) {
+              const sunInside = cameraPos.distanceTo(sunBody.position) < (sunVisualRadius * 1.05);
+              makeObjectSemiTransparent(sunBody, sunInside ? insideFadeOpacity : normalOpacity);
+            }
+            if (satelliteBody) {
+              const satInside = cameraPos.distanceTo(satelliteBody.position) < (cassiniVisualRadius * 1.1);
+              makeObjectSemiTransparent(satelliteBody, satInside ? insideFadeOpacity : normalOpacity);
+            }
+
+            if (introActive) {
+              const finalPose = presetPose || {
+                position: defaultCameraOffset.clone(),
+                target: getDefaultCameraTarget(),
+              };
+              const introOffset = new THREE.Vector3(0, 3.2, 17.5).multiplyScalar(1 - introEase);
+              introOffset.applyAxisAngle(
+                new THREE.Vector3(0, 1, 0),
+                (1 - introEase) * THREE.MathUtils.degToRad(220)
+              );
+              camera.position.copy(finalPose.position.clone().add(introOffset));
+              controls.target.set(0, 0, 0).lerp(finalPose.target, introEase);
+              camera.lookAt(controls.target);
+              controls.enableRotate = false;
+
+              const spin = (1 - introEase) * (Math.PI * 2.2);
+              mesh.rotation.y = baseTitanYaw + spin;
+              if (sunBody) sunBody.rotation.y = spin * 0.5;
+              if (satelliteBody) satelliteBody.rotation.y = spin * 0.35;
+            } else {
+              if (introState.active) {
+                introState.active = false;
+              }
+              mesh.rotation.y = baseTitanYaw;
+              if (sunBody) sunBody.rotation.y = 0;
+              if (satelliteBody) satelliteBody.rotation.y = 0;
+
+              if (presetPose) {
+                controls.enableRotate = false;
+                controls.minDistance = 0.03;
+                controls.maxDistance = 12;
+                camera.position.lerp(presetPose.position, 0.18);
+                controls.target.lerp(presetPose.target, 0.22);
+                camera.lookAt(controls.target);
+              } else {
+                controls.enableRotate = true;
+                if (cameraModeRef.current.center === 'spacecraft' && satelliteBody) {
+                  controls.minDistance = 0.02;
+                  controls.maxDistance = 12.0;
+                  controls.target.lerp(satelliteBody.position, 0.12);
+                  if (pendingSpacecraftAutoZoomRef.current) {
+                    const camDir = camera.position.clone().sub(controls.target);
+                    if (camDir.lengthSq() < 1e-8) camDir.set(0, 0, 1);
+                    camDir.normalize();
+                    const desiredPos = controls.target.clone().addScaledVector(camDir, 0.7);
+                    camera.position.lerp(desiredPos, 0.14);
+                    if (camera.position.distanceTo(desiredPos) < 0.035) {
+                      pendingSpacecraftAutoZoomRef.current = false;
+                    }
+                  }
+                } else {
+                  pendingSpacecraftAutoZoomRef.current = false;
+                  controls.minDistance = 0.25;
+                  controls.maxDistance = 7;
+                  controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.18);
+                }
+              }
+            }
+
+            controls.update();
+            if (sunGlow) {
+              sunGlow.scale.set(1.25, 1.25, 1);
+            }
+            if (composer) composer.render();
+            else renderer.render(scene, camera);
           }
         }
         animate();
@@ -416,18 +834,12 @@ function SphereView({
         window.addEventListener('resize', onResize);
         resizeCleanupRef.current = () => window.removeEventListener('resize', onResize);
 
-        const buildTexturePromise = buildTexturePromiseFactory();
-
-        Promise.all([buildTexturePromise, loadHeightMap().catch(() => null)])
-          .then(([canvas, heightTex]) => {
+        loadHeightMap()
+          .then((heightTex) => {
             if (cancelled) return;
             if (textureRef.current) textureRef.current.dispose();
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.wrapS = THREE.ClampToEdgeWrapping;
-            tex.wrapT = THREE.ClampToEdgeWrapping;
-            textureRef.current = tex;
-            material.map = tex;
-            if (heightTex) material.displacementMap = heightTex;
+            textureRef.current = heightTex;
+            material.map = heightTex;
             material.needsUpdate = true;
           })
           .catch((err) => {
@@ -435,7 +847,6 @@ function SphereView({
           })
           .finally(() => {
             if (!cancelled) {
-              setBuildProgress(null);
               setLoading(false);
               requestAnimationFrame(doResize);
             }
@@ -467,23 +878,55 @@ function SphereView({
         starsFar.material.dispose();
       }
       if (sunBody) {
-        sunBody.geometry.dispose();
-        sunBody.material.dispose();
+        sunBody.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+        });
       }
       if (satelliteBody) {
-        satelliteBody.geometry.dispose();
-        satelliteBody.material.dispose();
+        satelliteBody.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+        });
       }
       if (sunPointLight && scene) {
         scene.remove(sunPointLight);
       }
+      if (sunGlow && scene) {
+        scene.remove(sunGlow);
+      }
+      if (sunGlow) {
+        if (sunGlow.material) sunGlow.material.dispose();
+      }
+      if (sunGlowTexture) {
+        sunGlowTexture.dispose();
+      }
       if (multiPointGroupRef.current && scene) {
         scene.remove(multiPointGroupRef.current);
+      }
+      if (rotationAxisRef.current && scene) {
+        scene.remove(rotationAxisRef.current);
       }
       if (renderer) {
         renderer.dispose();
         const parent = renderer.domElement && renderer.domElement.parentNode;
         if (parent) parent.removeChild(renderer.domElement);
+      }
+      if (composer && composer.dispose) composer.dispose();
+      if (mesh) {
+        mesh.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+        });
       }
       if (geometry) geometry.dispose();
       if (material) material.dispose();
@@ -498,7 +941,7 @@ function SphereView({
       meshRef.current = null;
       multiPointGroupRef.current = null;
     };
-  }, [buildTexturePromiseFactory]);
+  }, []);
 
   useEffect(() => {
     const scene = sceneRef.current;
@@ -576,6 +1019,30 @@ function SphereView({
     });
   }, [multiplePoints]);
 
+  const handleZoomIn = () => {
+    const controls = controlsRef.current;
+    const camera = cameraRef.current;
+    if (!controls || !camera) return;
+    const dir = camera.position.clone().sub(controls.target);
+    const dist = Math.max(0.02, dir.length() / 1.22);
+    if (dir.lengthSq() < 1e-8) dir.set(0, 0, 1);
+    dir.normalize();
+    camera.position.copy(controls.target.clone().addScaledVector(dir, dist));
+    controls.update();
+  };
+
+  const handleZoomOut = () => {
+    const controls = controlsRef.current;
+    const camera = cameraRef.current;
+    if (!controls || !camera) return;
+    const dir = camera.position.clone().sub(controls.target);
+    const dist = Math.min(25, dir.length() * 1.22);
+    if (dir.lengthSq() < 1e-8) dir.set(0, 0, 1);
+    dir.normalize();
+    camera.position.copy(controls.target.clone().addScaledVector(dir, dist));
+    controls.update();
+  };
+
   if (error) {
     return (
       <div className="sphere-view-container" style={getContainerStyle(minHeight)}>
@@ -589,6 +1056,10 @@ function SphereView({
 
   return (
     <div className="sphere-view-container" style={getContainerStyle(minHeight)} data-sphere-view="root">
+      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 5, display: 'flex', gap: 6 }}>
+        <button type="button" onClick={handleZoomIn} style={zoomButtonStyle3d}>+</button>
+        <button type="button" onClick={handleZoomOut} style={zoomButtonStyle3d}>-</button>
+      </div>
       <div
         ref={containerRef}
         data-sphere-container="true"
@@ -602,11 +1073,7 @@ function SphereView({
       {loading && (
         <div style={loadingOverlayStyle}>
           <div className="loading-spinner" />
-          <p>
-            {textureBuildKey.startsWith('weighted:') && buildProgress
-              ? `Building from all phases: ${buildProgress.current}/${buildProgress.total} (${buildProgress.phaseAngle}°)`
-              : 'Loading texture...'}
-          </p>
+          <p>Loading surface...</p>
         </div>
       )}
     </div>
@@ -655,6 +1122,18 @@ const errorStyle = {
   padding: '2rem',
   textAlign: 'center',
   color: '#ff6b6b',
+};
+
+const zoomButtonStyle3d = {
+  width: '28px',
+  height: '28px',
+  borderRadius: '4px',
+  border: '1px solid #66ccff',
+  background: '#101820',
+  color: '#e9f8ff',
+  fontSize: '18px',
+  lineHeight: '24px',
+  cursor: 'pointer',
 };
 
 export default SphereView;
