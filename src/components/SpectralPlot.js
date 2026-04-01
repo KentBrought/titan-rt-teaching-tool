@@ -23,7 +23,6 @@ const SpectralPlot = ({
   spectralData, 
   incidenceAngle, 
   emissionAngle, 
-  azimuthAngle, 
   selectedCases, 
   plotMultiple, 
   multiplePositions, 
@@ -31,7 +30,7 @@ const SpectralPlot = ({
   transmissionToggles = {},
   spectralUnits = false
 }) => {
-  const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
+  const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
   const [solarSpectrum, setSolarSpectrum] = useState(null);
 
@@ -147,7 +146,7 @@ const SpectralPlot = ({
         const pointCases = selectedCases[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
         const pointIncidence = geoValue.incidence ?? 0;
         const pointEmission = geoValue.emis ?? 0;
-        const pointAzimuth = geoValue.azimuth ?? 0;
+        const pointThirdAngle = 0;
         
         // Count how many cases are selected for this point to determine shade variations
         const selectedCaseTypes = Object.entries(pointCases)
@@ -164,7 +163,7 @@ const SpectralPlot = ({
             processedData, 
             pointIncidence, 
             pointEmission, 
-            pointAzimuth, 
+            pointThirdAngle, 
             caseType
           );
           
@@ -189,7 +188,7 @@ const SpectralPlot = ({
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
             // Get actual angles for this point
-            const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
+            const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointThirdAngle);
             const phase = geoValue.phase ?? (actual.incidence + actual.emission);
             const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             
@@ -241,7 +240,7 @@ const SpectralPlot = ({
             processedData, 
             incidenceAngle, 
             emissionAngle, 
-            azimuthAngle, 
+            0,
             caseType
           );
           
@@ -266,7 +265,7 @@ const SpectralPlot = ({
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
             // Get actual angles for single mode
-            const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+            const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, 0);
             const phase = geoValues.phase ?? (actual.incidence + actual.emission);
             const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             traces.push({
@@ -334,7 +333,7 @@ const SpectralPlot = ({
     }
     
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux]);
+  }, [processedData, incidenceAngle, emissionAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux]);
 
   // Update actualAngles in a separate effect to avoid infinite loop
   useEffect(() => {
@@ -342,13 +341,13 @@ const SpectralPlot = ({
     
     if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
       const geoValue = geoValues[0];
-      const actual = getActualAngles(processedData, geoValue.incidence ?? 0, geoValue.emis ?? 0, geoValue.azimuth ?? 0);
+      const actual = getActualAngles(processedData, geoValue.incidence ?? 0, geoValue.emis ?? 0, 0);
       setActualAngles(actual);
     } else if (!plotMultiple && !Array.isArray(geoValues)) {
-      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
+      const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, 0);
       setActualAngles(actual);
     }
-  }, [processedData, geoValues, plotMultiple, incidenceAngle, emissionAngle, azimuthAngle]);
+  }, [processedData, geoValues, plotMultiple, incidenceAngle, emissionAngle]);
 
   const plotLayout = useMemo(() => ({
     xaxis: {
@@ -481,7 +480,7 @@ const SpectralPlot = ({
                       plotMultiple && Array.isArray(geoValues) && geoValues.length > 1 ? (
                         'Multiple points selected'
                       ) : (
-                        <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°</>
+                        <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°</>
                       )
                     ) : (
                       // Point selected but no cases - show nothing for angles

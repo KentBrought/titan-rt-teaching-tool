@@ -55,7 +55,6 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
                     <p><strong>Phase:</strong> {values.phase != null ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
                     <p><strong>Incidence:</strong> {values.incidence != null ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
                     <p><strong>Emis:</strong> {values.emis != null ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
-                    <p><strong>Azimuth:</strong> {values.azimuth != null ? `${values.azimuth.toFixed(2)}°` : 'N/A'}</p>
                   </div>
                 )}
                 {index < geoValues.length - 1 && (
@@ -85,7 +84,6 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
                 <p><strong>Phase:</strong> {geoValues.phase != null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
                 <p><strong>Incidence:</strong> {geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
                 <p><strong>Emis:</strong> {geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
-                <p><strong>Azimuth:</strong> {geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}</p>
               </div>
             )}
           </>
@@ -116,7 +114,7 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
       const n = next[i];
       return p.x === n.x && p.y === n.y &&
         p.lat === n.lat && p.lon === n.lon &&
-        p.incidence === n.incidence && p.emis === n.emis && p.azimuth === n.azimuth;
+        p.incidence === n.incidence && p.emis === n.emis;
     });
   }
 
@@ -124,7 +122,7 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
   if (!Array.isArray(prev) && !Array.isArray(next)) {
     return prev.x === next.x && prev.y === next.y &&
       prev.lat === next.lat && prev.lon === next.lon &&
-      prev.incidence === next.incidence && prev.emis === next.emis && prev.azimuth === next.azimuth;
+      prev.incidence === next.incidence && prev.emis === next.emis;
   }
 
   return false; // Different types
@@ -267,7 +265,7 @@ function App() {
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [cameraPreset3d, setCameraPreset3d] = useState(''); // '' | 'cassini' | 'sun'
-  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft'
+  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft' | 'vector'
   const [irGridEnabled2d, setIrGridEnabled2d] = useState(false);
   const [sphereGridEnabled3d, setSphereGridEnabled3d] = useState(false);
   const [rotationAxisEnabled3d, setRotationAxisEnabled3d] = useState(false);
@@ -565,7 +563,6 @@ function App() {
         const phase = getGeoValue(geoData, x, y, 4);
         const incidence = getGeoValue(geoData, x, y, 5);
         const emis = getGeoValue(geoData, x, y, 6);
-        const azimuth = getGeoValue(geoData, x, y, 7);
 
         setHoverGeoValues({
           lat: lat !== null ? lat : null,
@@ -573,7 +570,6 @@ function App() {
           phase: phase !== null ? phase : null,
           incidence: incidence !== null ? incidence : null,
           emis: emis !== null ? emis : null,
-          azimuth: azimuth !== null ? azimuth : null,
           x,
           y
         });
@@ -942,8 +938,7 @@ function App() {
         if (gv && gv.error) return false;
         const inc = gv?.incidence ?? 0;
         const emi = gv?.emis ?? 0;
-        const az = gv?.azimuth ?? 0;
-        const result = createSpectralPlotData(processedSpectralData, inc, emi, az, 'standard');
+        const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard');
         return result && result.wavelengths && result.wavelengths.length > 0;
       });
     }
@@ -951,8 +946,7 @@ function App() {
       if (geoValues.error) return false;
       const inc = geoValues.incidence ?? 0;
       const emi = geoValues.emis ?? 0;
-      const az = geoValues.azimuth ?? 0;
-      const result = createSpectralPlotData(processedSpectralData, inc, emi, az, 'standard');
+      const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard');
       return result && result.wavelengths && result.wavelengths.length > 0;
     }
     return toggles.plotMultiple ? [] : false;
@@ -1338,7 +1332,11 @@ function App() {
                         <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
                       </div>
                     </div>
-                    <div ref={irColorImageRef} className="display-box ir-color" style={{ position: 'relative' }}>
+                    <div
+                      ref={irColorImageRef}
+                      className="display-box ir-color"
+                      style={{ position: 'relative', alignSelf: irDisplayMode === '3d' ? 'flex-start' : 'stretch' }}
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -1366,21 +1364,30 @@ function App() {
                       </button>
                       <h2>
                         <Tooltip content={
-                          <>
-                            <strong>IR Color</strong>
-                            A false-color composite image of Titan created by combining three infrared wavelengths.
-                            This visualization helps identify different surface and atmospheric features based on their spectral signatures.
-                            Click on locations in this image to extract geophysical values (latitude, longitude, viewing angles) and
-                            generate corresponding spectral plots that show how light interacts with Titan's atmosphere at that location.
-                          </>
+                          irDisplayMode === '3d' ? (
+                            <>
+                              <strong>Observeing Geomtery</strong>
+                              Interactive 3D observing geometry view showing Titan, Cassini, and Sun positions.
+                              Click on Titan to visualize vectors from your selected surface location to the Sun and spacecraft,
+                              plus the local surface normal vector.
+                            </>
+                          ) : (
+                            <>
+                              <strong>IR Color</strong>
+                              A false-color composite image of Titan created by combining three infrared wavelengths.
+                              This visualization helps identify different surface and atmospheric features based on their spectral signatures.
+                              Click on locations in this image to extract geophysical values (latitude, longitude, viewing angles) and
+                              generate corresponding spectral plots that show how light interacts with Titan's atmosphere at that location.
+                            </>
+                          )
                         }>
-                          IR Color
+                          {irDisplayMode === '3d' ? 'Observeing Geomtery' : 'IR Color'}
                         </Tooltip>
                       </h2>
                       {irDisplayMode === '3d' ? (
                         <>
-                          <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                            <div style={{ width: '100%', maxWidth: '760px', aspectRatio: '1 / 1', borderRadius: '4px', overflow: 'hidden' }}>
                               <SphereView
                                 phaseAngle={sliders.phaseAngle * 5}
                                 compositeType={compositeType}
@@ -1391,6 +1398,11 @@ function App() {
                                 phaseDeg={sliders.phaseAngle * 5}
                                 cameraPreset={cameraPreset3d || 'none'}
                                 cameraCenter={cameraCenter3d}
+                                onCameraPresetRelease={() => setCameraPreset3d('')}
+                                onVectorPlaced={() => {
+                                  setCameraCenter3d('vector');
+                                  setCameraPreset3d('');
+                                }}
                                 introAnimation={true}
                                 showLatLonGrid={sphereGridEnabled3d}
                                 showRotationAxis={rotationAxisEnabled3d}
@@ -1415,6 +1427,7 @@ function App() {
                               multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
+                              phaseAngleDeg={sliders.phaseAngle * 5}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -1763,6 +1776,16 @@ function App() {
                                   />
                                   <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Spacecraft</span>
                                 </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="cameraCenter3d"
+                                    value="vector"
+                                    checked={cameraCenter3d === 'vector'}
+                                    onChange={(e) => setCameraCenter3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Vector</span>
+                                </label>
                               </div>
                               <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
                                 <input
@@ -1947,7 +1970,6 @@ function App() {
                                 spectralData={spectralData}
                                 incidenceAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0) : 0}
                                 emissionAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0) : 0}
-                                azimuthAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.azimuth ?? 0 : geoValues.azimuth ?? 0) : 0}
                                 selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
                                 plotMultiple={toggles.plotMultiple}
                                 multiplePositions={toggles.plotMultiple ? multiplePositions : null}
@@ -1964,8 +1986,7 @@ function App() {
                                   <>
                                     Using geo-extracted angles:
                                     Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'},
-                                    Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'},
-                                    Az={geoValues.azimuth != null ? `${geoValues.azimuth.toFixed(2)}°` : 'N/A'}
+                                    Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}
                                   </>
                                 )}
                               </div>

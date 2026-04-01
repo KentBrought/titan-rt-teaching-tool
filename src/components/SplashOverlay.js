@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import soderblomLogo from '../assets/soderblom_lab.png';
 import dragonflyLogo from '../assets/dragonfly_mission.png';
 import nasaLogo from '../assets/nasa.png';
+import ssiLogo from '../assets/SSI_Logo.png';
 import './SplashOverlay.css';
 
 const SESSION_STORAGE_KEY = 'titan_rt_splash_shown';
-const DEBUG_DISPLAY_TIME = 3000; // 3 seconds for debugging
+const DEBUG_DISPLAY_TIME = 5000; // 5 seconds for debugging
 const FADE_OUT_DURATION = 3000; // 3 seconds for fade animation
 
 function SplashOverlay({ onReady }) {
@@ -13,6 +14,7 @@ function SplashOverlay({ onReady }) {
   const [isFading, setIsFading] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
   const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [loadingDots, setLoadingDots] = useState('.');
   const startTimeRef = React.useRef(null);
   const fadeTimeoutRef = React.useRef(null);
   const dismissTimeoutRef = React.useRef(null);
@@ -20,7 +22,7 @@ function SplashOverlay({ onReady }) {
   const readyCallbackRef = React.useRef(onReady);
 
   // Handle dismiss logic
-  const handleDismiss = useCallback(() => {
+  const handleDismiss = useCallback((immediate = false) => {
     // Clear any pending dismiss timeout
     if (dismissTimeoutRef.current) {
       clearTimeout(dismissTimeoutRef.current);
@@ -30,11 +32,17 @@ function SplashOverlay({ onReady }) {
     // Mark as shown in sessionStorage
     sessionStorage.setItem(SESSION_STORAGE_KEY, 'true');
 
+    if (immediate) {
+      setIsFading(false);
+      setShouldRender(false);
+      return;
+    }
+
     // Use setTimeout to ensure the base state is rendered first
     setTimeout(() => {
       // Start fade out - set the fading state
       setIsFading(true);
-      
+
       // Also directly manipulate the DOM to ensure transition triggers
       if (overlayRef.current) {
         // Force a reflow
@@ -42,7 +50,7 @@ function SplashOverlay({ onReady }) {
         // Add the class
         overlayRef.current.classList.add('splash-overlay-fading');
       }
-      
+
       // After fade animation completes, remove from DOM
       fadeTimeoutRef.current = setTimeout(() => {
         setShouldRender(false);
@@ -64,7 +72,7 @@ function SplashOverlay({ onReady }) {
 
     // Preload all images before showing splash
     const preloadImages = () => {
-      const imageUrls = [soderblomLogo, dragonflyLogo, nasaLogo];
+      const imageUrls = [soderblomLogo, dragonflyLogo, nasaLogo, ssiLogo];
       const imagePromises = imageUrls.map((url) => {
         return new Promise((resolve, reject) => {
           const img = new Image();
@@ -153,7 +161,7 @@ function SplashOverlay({ onReady }) {
   const handleClick = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
-    handleDismiss();
+    handleDismiss(true);
   }, [handleDismiss]);
 
   // Handle keyboard dismiss (Enter, Escape, Space)
@@ -163,7 +171,7 @@ function SplashOverlay({ onReady }) {
     const handleKeyDown = (e) => {
       if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') {
         e.preventDefault();
-        handleDismiss();
+        handleDismiss(true);
       }
     };
 
@@ -181,6 +189,18 @@ function SplashOverlay({ onReady }) {
         document.body.style.overflow = '';
       };
     }
+  }, [shouldRender, isVisible]);
+
+  // Animated loading label: Loading... -> Loading.. -> Loading.
+  useEffect(() => {
+    if (!shouldRender || !isVisible) return undefined;
+    const dots = ['.', '..', '...', '..'];
+    let idx = 0;
+    const tick = setInterval(() => {
+      idx = (idx + 1) % dots.length;
+      setLoadingDots(dots[idx]);
+    }, 520);
+    return () => clearInterval(tick);
   }, [shouldRender, isVisible]);
 
   if (!shouldRender) {
@@ -213,9 +233,21 @@ function SplashOverlay({ onReady }) {
             alt="NASA"
             className="splash-logo splash-logo-right"
           />
+          <img
+            src={ssiLogo}
+            alt="Spectral Sciences, Inc."
+            className="splash-logo splash-logo-far-right"
+          />
+        </div>
+        <div className="splash-loading-wrap" aria-label="Loading progress">
+          <div className="splash-loading-text">{`Loading${loadingDots}`}</div>
+          <div className="splash-progress-track">
+            <div className="splash-progress-fill" />
+          </div>
         </div>
         <div className="splash-clarifier">
-          Developed by the Soderblom Lab at MIT for education and outreach for NASA's Dragonfly mission.
+          <span>Developed by the Soderblom Lab at MIT for education and outreach.</span>
+          <span>Built to support NASA's Dragonfly mission.</span>
         </div>
         <div className="splash-skip-hint">
           Click anywhere or press Enter/Escape/Space to skip

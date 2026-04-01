@@ -16,6 +16,7 @@ const ClickableImage = ({
   multiplePositions = [], // Array of positions for multiple mode
   plotMultiple = false, // Whether in multiple mode
   showLatLonGrid = false,
+  phaseAngleDeg = 0,
 }) => {
   const [clickPosition, setClickPosition] = useState(initialPosition);
   const [zoom, setZoom] = useState(1);
@@ -265,9 +266,38 @@ const ClickableImage = ({
   };
 
   const latLines = [-60, -30, 0, 30, 60];
-  const lonLines = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
-  const getLatY = (lat, h) => ((90 - lat) / 180) * h;
-  const getLonX = (lon, w) => ((lon + 180) / 360) * w;
+  const lonLines = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
+  const getProjectedPoint = (latDeg, lonDeg, radius, cx, cy) => {
+    const lat = (latDeg * Math.PI) / 180;
+    const phaseWrapped = ((((phaseAngleDeg % 360) + 360) % 360));
+    const lonShifted = ((((lonDeg + 180 - phaseWrapped) + 540) % 360) - 180);
+    const lon = (lonShifted * Math.PI) / 180;
+    const visible = (Math.cos(lat) * Math.cos(lon)) >= 0;
+    if (!visible) return null;
+    const x = cx + (radius * Math.cos(lat) * Math.sin(lon));
+    const y = cy - (radius * Math.sin(lat));
+    return { x, y };
+  };
+  const buildPath = (points) => {
+    if (!points || points.length === 0) return '';
+    return points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
+  };
+  const buildLatPath = (latDeg, radius, cx, cy) => {
+    const points = [];
+    for (let lon = -180; lon <= 180; lon += 3) {
+      const p = getProjectedPoint(latDeg, lon, radius, cx, cy);
+      if (p) points.push(p);
+    }
+    return buildPath(points);
+  };
+  const buildLonPath = (lonDeg, radius, cx, cy) => {
+    const points = [];
+    for (let lat = -90; lat <= 90; lat += 2) {
+      const p = getProjectedPoint(lat, lonDeg, radius, cx, cy);
+      if (p) points.push(p);
+    }
+    return buildPath(points);
+  };
 
   return (
     <div 
@@ -368,18 +398,71 @@ const ClickableImage = ({
               height={imageRef.current.offsetHeight}
               style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 12 }}
             >
-              {latLines.map((lat) => (
-                <g key={`lat-${lat}`}>
-                  <line x1="0" y1={getLatY(lat, imageRef.current.offsetHeight)} x2={imageRef.current.offsetWidth} y2={getLatY(lat, imageRef.current.offsetHeight)} stroke="rgba(120,220,255,0.45)" strokeWidth="1" />
-                  <text x="6" y={getLatY(lat, imageRef.current.offsetHeight) - 4} fill="#9de7ff" fontSize="11">{`${lat}°`}</text>
-                </g>
-              ))}
-              {lonLines.map((lon) => (
-                <g key={`lon-${lon}`}>
-                  <line x1={getLonX(lon, imageRef.current.offsetWidth)} y1="0" x2={getLonX(lon, imageRef.current.offsetWidth)} y2={imageRef.current.offsetHeight} stroke="rgba(120,220,255,0.45)" strokeWidth="1" />
-                  <text x={getLonX(lon, imageRef.current.offsetWidth) + 3} y={14} fill="#9de7ff" fontSize="11">{`${lon}°`}</text>
-                </g>
-              ))}
+              {(() => {
+                const w = imageRef.current.offsetWidth;
+                const h = imageRef.current.offsetHeight;
+                const r = Math.min(w, h) * 0.36;
+                const cx = w * 0.5;
+                const cy = h * 0.5;
+                return (
+                  <>
+                    {latLines.map((lat) => {
+                      const path = buildLatPath(lat, r, cx, cy);
+                      return (
+                        <g key={`lat-${lat}`}>
+                          {path && (
+                            <path
+                              d={path}
+                              fill="none"
+                              stroke="rgba(120,220,255,0.45)"
+                              strokeWidth="1"
+                              style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 5px rgba(0,0,0,1))' }}
+                            />
+                          )}
+                          <text
+                            x="6"
+                            y={cy - (r * Math.sin((lat * Math.PI) / 180)) - 4}
+                            fill="#9de7ff"
+                            fontSize="11"
+                            style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}
+                          >
+                            {`${lat}\u00B0`}
+                          </text>
+                        </g>
+                      );
+                    })}
+                    {lonLines.map((lon) => {
+                      const path = buildLonPath(lon, r, cx, cy);
+                      const topPoint = getProjectedPoint(70, lon, r, cx, cy);
+                      const lonLabel = lon === -180 ? 180 : lon;
+                      return (
+                        <g key={`lon-${lon}`}>
+                          {path && (
+                            <path
+                              d={path}
+                              fill="none"
+                              stroke="rgba(120,220,255,0.45)"
+                              strokeWidth="1"
+                              style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 5px rgba(0,0,0,1))' }}
+                            />
+                          )}
+                          {topPoint && (
+                            <text
+                              x={topPoint.x + 3}
+                              y={topPoint.y - 6}
+                              fill="#9de7ff"
+                              fontSize="11"
+                              style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}
+                            >
+                              {`${lonLabel}\u00B0`}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+                  </>
+                );
+              })()}
             </svg>
           )}
         </div>
@@ -402,3 +485,5 @@ const zoomButtonStyle = {
 };
 
 export default ClickableImage;
+
+

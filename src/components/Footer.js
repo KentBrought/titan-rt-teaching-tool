@@ -7,6 +7,7 @@ const FOOTER_LINKS = [
   { label: 'MIT', href: 'https://web.mit.edu', ariaLabel: 'MIT' },
   { label: 'GitHub', href: 'https://github.com/KentBrought/titan-rt-teaching-tool', ariaLabel: 'GitHub Repository' },
   { label: 'NASA Dragonfly', href: 'https://science.nasa.gov/mission/dragonfly/', ariaLabel: 'NASA Dragonfly mission' },
+  { label: 'Spectral Sciences, Inc.', href: 'https://www.spectral.com/', ariaLabel: 'Spectral Sciences, Inc. website' },
 ];
 
 function Footer() {
