@@ -401,7 +401,8 @@ const ClickableImage = ({
               {(() => {
                 const w = imageRef.current.offsetWidth;
                 const h = imageRef.current.offsetHeight;
-                const r = Math.min(w, h) * 0.36;
+                // Slightly larger so the overlay reaches the full dark disk.
+                const r = Math.min(w, h) * 0.38;
                 const cx = w * 0.5;
                 const cy = h * 0.5;
                 return (
