@@ -1976,6 +1976,7 @@ function App() {
                                 geoValues={geoValues}
                                 transmissionToggles={transmissionToggles}
                                 spectralUnits={toggles.spectralUnits}
+                                spectralResolution={spectralResolution}
                               />
                             </ErrorBoundary>
                             {geoValues && (

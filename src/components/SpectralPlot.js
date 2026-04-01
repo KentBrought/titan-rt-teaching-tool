@@ -19,16 +19,87 @@ const formatAngles = (incidence, emission, phase) => {
   return `i:${i}° e:${e}° p:${p}°`;
 };
 
-const SpectralPlot = ({ 
-  spectralData, 
-  incidenceAngle, 
-  emissionAngle, 
-  selectedCases, 
-  plotMultiple, 
-  multiplePositions, 
+/**
+ * Downsample spectral data by binning wavelengths and averaging intensities
+ * @param {Array} wavelengths - Original wavelength array
+ * @param {Array} intensities - Original intensity array
+ * @param {number} numBins - Number of bins to reduce to
+ * @returns {{ wavelengths: Array, intensities: Array }} Downsampled data
+ */
+const downsampleSpectrum = (wavelengths, intensities, numBins) => {
+  if (!wavelengths || !intensities || wavelengths.length === 0) {
+    return { wavelengths: [], intensities: [] };
+  }
+
+  // If already fewer points than bins, return as-is
+  if (wavelengths.length <= numBins) {
+    return { wavelengths: Array.from(wavelengths), intensities: Array.from(intensities) };
+  }
+
+  const minWave = wavelengths[0];
+  const maxWave = wavelengths[wavelengths.length - 1];
+  const binWidth = (maxWave - minWave) / numBins;
+
+  const binnedWavelengths = [];
+  const binnedIntensities = [];
+
+  for (let i = 0; i < numBins; i++) {
+    const binStart = minWave + i * binWidth;
+    const binEnd = binStart + binWidth;
+    const binCenter = (binStart + binEnd) / 2;
+
+    // Find all points in this bin and average them
+    let sum = 0;
+    let count = 0;
+
+    for (let j = 0; j < wavelengths.length; j++) {
+      const w = wavelengths[j];
+      if (w >= binStart && w < binEnd) {
+        sum += intensities[j];
+        count++;
+      }
+    }
+
+    // Include last point in final bin
+    if (i === numBins - 1) {
+      for (let j = 0; j < wavelengths.length; j++) {
+        const w = wavelengths[j];
+        if (w === binEnd) {
+          sum += intensities[j];
+          count++;
+        }
+      }
+    }
+
+    if (count > 0) {
+      binnedWavelengths.push(binCenter);
+      binnedIntensities.push(sum / count);
+    }
+  }
+
+  return { wavelengths: binnedWavelengths, intensities: binnedIntensities };
+};
+
+// number of spectral bins
+const RESOLUTION_BINS = {
+  'high': 256,    // Full VIMS resolution
+  'medium': 64,   // Reduced resolution
+  'low': 16,      // Low resolution 
+  'verylow': 8    // Very low 
+};
+
+const SpectralPlot = ({
+  spectralData,
+  incidenceAngle,
+  emissionAngle,
+  selectedCases,
+  plotMultiple,
+  multiplePositions,
   geoValues,
   transmissionToggles = {},
-  spectralUnits = false
+  spectralUnits = false,
+  albedo = 0.1,
+  spectralResolution = 'high'  // New prop for resolution control
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
@@ -58,13 +129,13 @@ const SpectralPlot = ({
         if (response.ok) {
           const text = await response.text();
           const lines = text.trim().split('\n');
-          
+
           // Skip header line and parse data
           const spectrumData = [];
           for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
+
             // Split by whitespace (can be space or tab)
             const parts = line.split(/\s+/);
             if (parts.length >= 2) {
@@ -75,10 +146,10 @@ const SpectralPlot = ({
               }
             }
           }
-          
+
           // Sort by wavelength to ensure proper ordering
           spectrumData.sort((a, b) => a.wavelength - b.wavelength);
-          
+
           setSolarSpectrum(spectrumData);
           console.log('Solar spectrum loaded:', spectrumData.length, 'points');
         }
@@ -98,48 +169,47 @@ const SpectralPlot = ({
   // Interpolation function to get solar flux for a given wavelength
   const getSolarFlux = useCallback((wavelength) => {
     if (!solarSpectrum || solarSpectrum.length === 0) return 1; // Return 1 if no spectrum loaded (no conversion)
-    
+
     // If exact match, return it
     const exactMatch = solarSpectrum.find(s => Math.abs(s.wavelength - wavelength) < 1e-10);
     if (exactMatch) return exactMatch.flux;
-    
+
     // If wavelength is outside range, return nearest edge value
     if (wavelength <= solarSpectrum[0].wavelength) return solarSpectrum[0].flux;
     if (wavelength >= solarSpectrum[solarSpectrum.length - 1].wavelength) {
       return solarSpectrum[solarSpectrum.length - 1].flux;
     }
-    
+
     // Linear interpolation
     for (let i = 0; i < solarSpectrum.length - 1; i++) {
       const w1 = solarSpectrum[i].wavelength;
       const w2 = solarSpectrum[i + 1].wavelength;
       const f1 = solarSpectrum[i].flux;
       const f2 = solarSpectrum[i + 1].flux;
-      
+
       if (wavelength >= w1 && wavelength <= w2) {
         const t = (wavelength - w1) / (w2 - w1);
         return f1 + t * (f2 - f1);
       }
     }
-    
+
     return 1; // Fallback
   }, [solarSpectrum]);
 
   // Check if any gas transmission is selected
   const hasGasTransmission = !plotMultiple && Object.values(transmissionToggles).some(v => v);
 
+  // Get the number of bins for current resolution
+  const numBins = RESOLUTION_BINS[spectralResolution] || RESOLUTION_BINS['high'];
+
   // Memoize plot data generation for performance - use useMemo to prevent blocking
-  // Use useMemo with async-friendly approach
   const plotData = useMemo(() => {
     if (!processedData) return [];
-    
-    // Use requestIdleCallback or setTimeout to yield to browser if processing is heavy
-    // For now, process synchronously but efficiently
-    
+
     const traces = [];
     const colors = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
     const colorNames = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
-    
+
     if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
       // Multiple mode: create traces for each point and each selected case
       geoValues.forEach((geoValue, pointIndex) => {
@@ -147,7 +217,7 @@ const SpectralPlot = ({
         const pointIncidence = geoValue.incidence ?? 0;
         const pointEmission = geoValue.emis ?? 0;
         const pointThirdAngle = 0;
-        
+
         // Count how many cases are selected for this point to determine shade variations
         const selectedCaseTypes = Object.entries(pointCases)
           .filter(([_, isSelected]) => isSelected)
@@ -156,23 +226,24 @@ const SpectralPlot = ({
         const colorIndex = geoValue.colorIndex !== undefined ? geoValue.colorIndex : pointIndex;
         const baseColor = colors[colorIndex] || '#ff0000';
         const pointColor = colorNames[colorIndex] || 'Red';
-        
+
         // Create traces for each selected case with different shades
         selectedCaseTypes.forEach((caseType, caseIndex) => {
           const data = createSpectralPlotData(
-            processedData, 
-            pointIncidence, 
-            pointEmission, 
-            pointThirdAngle, 
-            caseType
+            processedData,
+            pointIncidence,
+            pointEmission,
+            pointAzimuth,
+            caseType,
+            albedo
           );
-          
+
           if (data && data.wavelengths && data.wavelengths.length > 0) {
-            // Use arrays directly - no extraction needed
-            const wavelengths = data.wavelengths;
+            // Apply resolution downsampling
+            let wavelengths = data.wavelengths;
             let intensities = data.intensities;
-            
-            // Convert to flux units if spectralUnits is enabled
+
+            // Convert to flux units if spectralUnits is enabled (before downsampling)
             if (spectralUnits && solarSpectrum) {
               intensities = intensities.map((reflectance, idx) => {
                 const wavelength = wavelengths[idx];
@@ -180,7 +251,14 @@ const SpectralPlot = ({
                 return reflectance * solarFlux;
               });
             }
-            
+
+            // Downsample if not at full resolution
+            if (numBins < 256) {
+              const downsampled = downsampleSpectrum(wavelengths, intensities, numBins);
+              wavelengths = downsampled.wavelengths;
+              intensities = downsampled.intensities;
+            }
+
             const nameMap = {
               standard: 'CH₄ + haze',
               no_ch4: 'No CH₄',
@@ -191,12 +269,10 @@ const SpectralPlot = ({
             const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointThirdAngle);
             const phase = geoValue.phase ?? (actual.incidence + actual.emission);
             const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
-            
+
             // Use different shades of the same color for multiple components
             let lineColor = baseColor;
             if (selectedCaseTypes.length > 1) {
-              // If multiple cases selected, use different shades
-              // Standard: base color, No methane: darker, No haze: lighter
               if (caseType === 'standard') {
                 lineColor = baseColor;
               } else if (caseType === 'no_ch4') {
@@ -205,10 +281,9 @@ const SpectralPlot = ({
                 lineColor = adjustColorBrightness(baseColor, 80);
               }
             } else {
-              // Only one case selected, use base color
               lineColor = baseColor;
             }
-            
+
             // Set line style based on case type
             let dashStyle = 'solid';
             if (caseType === 'no_ch4') {
@@ -216,17 +291,21 @@ const SpectralPlot = ({
             } else if (caseType === 'no_haze') {
               dashStyle = 'dot';
             }
-            
+
             traces.push({
               x: wavelengths,
               y: intensities,
               type: 'scattergl',
-              mode: 'lines',
+              mode: 'lines+markers',
               name: traceName,
               line: {
                 color: lineColor,
                 width: 2,
                 dash: dashStyle
+              },
+              marker: {
+                size: numBins < 64 ? 6 : 0,
+                color: lineColor
               }
             });
           }
@@ -237,19 +316,19 @@ const SpectralPlot = ({
       Object.entries(selectedCases).forEach(([caseType, isSelected]) => {
         if (isSelected) {
           const data = createSpectralPlotData(
-            processedData, 
-            incidenceAngle, 
-            emissionAngle, 
-            0,
-            caseType
+            processedData,
+            incidenceAngle,
+            emissionAngle,
+            azimuthAngle,
+            caseType,
+            albedo
           );
-          
+
           if (data && data.wavelengths && data.wavelengths.length > 0) {
-            // Use arrays directly - no extraction needed
-            const wavelengths = data.wavelengths;
+            let wavelengths = data.wavelengths;
             let intensities = data.intensities;
-            
-            // Convert to flux units if spectralUnits is enabled
+
+            // Convert to flux units if spectralUnits is enabled (before downsampling)
             if (spectralUnits && solarSpectrum) {
               intensities = intensities.map((reflectance, idx) => {
                 const wavelength = wavelengths[idx];
@@ -257,27 +336,38 @@ const SpectralPlot = ({
                 return reflectance * solarFlux;
               });
             }
-            
+
+            // Downsample if not at full resolution
+            if (numBins < 256) {
+              const downsampled = downsampleSpectrum(wavelengths, intensities, numBins);
+              wavelengths = downsampled.wavelengths;
+              intensities = downsampled.intensities;
+            }
+
             const nameMap = {
               standard: 'CH₄ + haze',
               no_ch4: 'No CH₄',
               no_haze: 'No haze'
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
-            // Get actual angles for single mode
-            const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, 0);
+            const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
             const phase = geoValues.phase ?? (actual.incidence + actual.emission);
             const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             traces.push({
               x: wavelengths,
               y: intensities,
               type: 'scattergl',
-              mode: 'lines',
+              mode: 'lines+markers',
               name: traceName,
               line: {
-                color: caseType === 'standard' ? '#1f77b4' : 
-                       caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
+                color: caseType === 'standard' ? '#1f77b4' :
+                  caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c',
                 width: 2
+              },
+              marker: {
+                size: numBins < 64 ? 6 : 0,
+                color: caseType === 'standard' ? '#1f77b4' :
+                  caseType === 'no_ch4' ? '#ff7f0e' : '#2ca02c'
               }
             });
           }
@@ -297,7 +387,7 @@ const SpectralPlot = ({
 
       const gasColors = {
         'CH4': '#ff6b6b',
-        'CO': '#e91e63', 
+        'CO': '#e91e63',
         'C2H2': '#9c27b0',
         'C2H6': '#4caf50',
         'Haze': '#ff9800',
@@ -315,9 +405,20 @@ const SpectralPlot = ({
         const gasName = toggleToGasMap[toggleKey];
         if (isSelected && gasName && gasTransmissionData.gases[gasName]) {
           const gasData = gasTransmissionData.gases[gasName];
+
+          // Also downsample gas transmission if resolution is low
+          let gasWavelengths = gasTransmissionData.wavelength;
+          let gasTransmission = gasData.transmission;
+
+          if (numBins < 256) {
+            const downsampled = downsampleSpectrum(gasWavelengths, gasTransmission, numBins);
+            gasWavelengths = downsampled.wavelengths;
+            gasTransmission = downsampled.intensities;
+          }
+
           traces.push({
-            x: gasTransmissionData.wavelength,
-            y: gasData.transmission,
+            x: gasWavelengths,
+            y: gasTransmission,
             type: 'scattergl',
             mode: 'lines',
             name: `${gasLabels[gasName] || gasName}`,
@@ -331,14 +432,14 @@ const SpectralPlot = ({
         }
       });
     }
-    
+
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux]);
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins]);
 
   // Update actualAngles in a separate effect to avoid infinite loop
   useEffect(() => {
     if (!processedData || !geoValues) return;
-    
+
     if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
       const geoValue = geoValues[0];
       const actual = getActualAngles(processedData, geoValue.incidence ?? 0, geoValue.emis ?? 0, 0);
@@ -426,10 +527,10 @@ const SpectralPlot = ({
       </div>
 
       {/* Info */}
-      <div style={{ 
-        marginTop: '15px', 
-        padding: '10px', 
-        backgroundColor: '#2a2a2a', 
+      <div style={{
+        marginTop: '15px',
+        padding: '10px',
+        backgroundColor: '#2a2a2a',
         borderRadius: '4px',
         border: '1px solid #4a9d4a',
         fontSize: '14px',
@@ -443,27 +544,22 @@ const SpectralPlot = ({
           let hasSelectedCases = false;
           if (geoValues) {
             if (plotMultiple && Array.isArray(geoValues)) {
-              // Check if any point has any case selected
               hasSelectedCases = geoValues.some((_, idx) => {
                 const pointCases = selectedCases[idx] || {};
                 return Object.values(pointCases).some(v => v === true);
               });
             } else if (!plotMultiple) {
-              // Single mode: check selectedCases object
               hasSelectedCases = selectedCases && Object.values(selectedCases).some(v => v === true);
             }
           }
-          
-          // Check if there's any spectral data to plot (non-empty traces, excluding gas transmission)
-          // This is recalculated on every render, so it will update when phase angle changes and data becomes available
-          const hasDataToPlot = plotData && plotData.some(trace => 
-            !trace.yaxis && // Exclude gas transmission traces (they use yaxis: 'y2')
+
+          const hasDataToPlot = plotData && plotData.some(trace =>
+            !trace.yaxis &&
             trace.x && trace.x.length > 0 && trace.y && trace.y.length > 0
           );
-          
-          // Show angle values only if a point is selected AND cases are selected
+
           const showAngles = geoValues && hasSelectedCases;
-          
+
           return (
             <>
               {!hasDataToPlot && geoValues && hasSelectedCases ? (
@@ -474,22 +570,25 @@ const SpectralPlot = ({
                 <>
                   <strong>Current Selection:</strong> {
                     !geoValues ? (
-                      // No point selected - show nothing for angles
                       null
                     ) : showAngles ? (
                       plotMultiple && Array.isArray(geoValues) && geoValues.length > 1 ? (
                         'Multiple points selected'
                       ) : (
-                        <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°</>
+                        <>Incidence: {actualAngles.incidence.toFixed(2)}°, Emission: {actualAngles.emission.toFixed(2)}°, Azimuth: {actualAngles.azimuth.toFixed(2)}°, Albedo: {albedo}</>
                       )
                     ) : (
-                      // Point selected but no cases - show nothing for angles
                       null
                     )
                   }
                   {!hasSelectedCases && (
                     <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
                       ⚠️ Please select at least one case to display
+                    </span>
+                  )}
+                  {showAngles && numBins < 256 && (
+                    <span style={{ color: '#999', marginLeft: '10px' }}>
+                      | Resolution: {numBins} bins
                     </span>
                   )}
                 </>
