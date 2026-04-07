@@ -1,6 +1,5 @@
 // Utility functions for loading and processing PDS4 image files
-// This is a simplified version - in a real implementation, you'd need to use
-// a library like pds4-tools or implement PDS4 parsing
+// Updated to support albedo parameter
 
 // Image cache to track loaded images
 const imageCache = new Map();
@@ -18,61 +17,79 @@ export const formatPhaseAngle = (phaseAngle) => {
 /**
  * Generate the filename for a given phase angle
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {number} albedo - Albedo value (0.1 or 0.2)
  * @returns {string} Filename for the image
  */
-export const getImageFilename = (phaseAngle) => {
+export const getImageFilename = (phaseAngle, albedo = 0.1) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  return `2012_A0.1_p${paddedPhase}_colorCCD.img`;
+  return `2012_A${albedo}_p${paddedPhase}_colorCCD.img`;
 };
 
 /**
  * Generate the XML filename for a given phase angle
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {number} albedo - Albedo value (0.1 or 0.2)
  * @returns {string} Filename for the XML metadata
  */
-export const getXmlFilename = (phaseAngle) => {
+export const getXmlFilename = (phaseAngle, albedo = 0.1) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  return `2012_A0.1_p${paddedPhase}_colorCCD.xml`;
+  return `2012_A${albedo}_p${paddedPhase}_colorCCD.xml`;
 };
 
 /**
- * Get the public URL for an image file
- * @param {number} phaseAngle - Phase angle in degrees
- * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3'
- * @returns {string} Public URL to the image file
+ * Canonical `public/assets/dt/` folder names: dooseA0.1_haze1, dooseA0.2_haze1,
+ * dooseA0.2_haze0.52, dooseA0.2_haze2, tomasko_1.0.
+ * Maps legacy names from the UI (doose_1.0, doose_0.5, …) to those folders.
  */
-const getAssetBasePath = (hazeFolder) => {
-  // Always use tomasko_1.0 directory
-  return '/assets/dt/tomasko_1.0';
-};
+function canonicalDtFolder(hazeFolder, albedo, compositeType) {
+  const geo = compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase';
+  if (geo || !hazeFolder || !hazeFolder.startsWith('doose')) return hazeFolder;
+  if (hazeFolder === 'doose_0.5') return 'dooseA0.2_haze0.52';
+  if (hazeFolder === 'doose_2.0') return 'dooseA0.2_haze2';
+  if (hazeFolder === 'doose_1.0') {
+    if (albedo === 0.1) return 'dooseA0.1_haze1';
+    if (albedo === 0.2) return 'dooseA0.2_haze1';
+    return 'dooseA0.1_haze1';
+  }
+  return hazeFolder;
+}
 
 /**
- * Generate the image URL for a given phase angle and haze configuration
+ * @param {string} hazeFolder - dt subfolder (canonical or legacy doose_*)
+ */
+const getAssetBasePath = (hazeFolder) => `/assets/dt/${hazeFolder}`;
+
+/**
+ * Generate the image URL for a given phase angle, composite type, haze folder, and albedo
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3', or 'incidence', 'emission', 'phase'
  * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'doose_0.5')
+ * @param {number} albedo - Albedo value (0.1 or 0.2)
  * @returns {string} Public URL to the image file
  */
-export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
+export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder, albedo = 0.1) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  const basePath = getAssetBasePath(hazeFolder);
+  const folder = canonicalDtFolder(hazeFolder, albedo, compositeType);
+  const basePath = getAssetBasePath(folder);
   
   // Handle geo-based image types (incidence, emission, phase)
+  // These are only available with albedo 0.1 in tomasko_1.0
   if (compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase') {
-    return `${basePath}/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
+    return `/assets/dt/tomasko_1.0/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
   }
   
-  // Handle composite image types
-  return `${basePath}/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
+  // Handle composite image types with albedo
+  return `${basePath}/2012_A${albedo}_p${paddedPhase}_${compositeType}.png`;
 };
 
 /**
  * Get the public URL for an XML file
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {number} albedo - Albedo value (0.1 or 0.2)
  * @returns {string} Public URL to the XML file
  */
-export const getXmlUrl = (phaseAngle) => {
-  const filename = getXmlFilename(phaseAngle);
+export const getXmlUrl = (phaseAngle, albedo = 0.1) => {
+  const filename = getXmlFilename(phaseAngle, albedo);
   return `/assets/dt/tomasko_1.0/${filename}`;
 };
 
@@ -126,29 +143,49 @@ const preloadImage = (imageUrl) => {
 /**
  * Load image data from a converted PNG file
  * Uses native image preloading for better performance
+ * Has comprehensive fallback logic to always show an image
  * 
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3', or 'incidence', 'emission', 'phase'
  * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'doose_0.5')
- * @returns {Promise<string|null>} URL of the PNG image, or null if failed
+ * @param {number} albedo - Albedo value (0, 0.1, or 0.2)
+ * @returns {Promise<{url: string|null, fallbackUsed: boolean, actualAlbedo: number|null, actualFolder: string|null}>} Image URL and fallback info
  */
-export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeFolder) => {
+export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeFolder, albedo = 0.1) => {
   try {
-    const imageUrl = getImageUrl(phaseAngle, compositeType, hazeFolder);
-    
-    // Use native image preloading (much faster than fetch)
-    const loaded = await preloadImage(imageUrl);
-    
-    if (loaded) {
-      return imageUrl;
+    const primaryFolder = canonicalDtFolder(hazeFolder, albedo, compositeType);
+
+    // Build list of folder/albedo combinations to try
+    const albedosToTry = [albedo, 0.1, 0.2].filter((v, i, a) => a.indexOf(v) === i); // unique values, requested first
+
+    const isDoose = hazeFolder.startsWith('doose');
+    const fallbackFolders = isDoose
+      ? [primaryFolder, 'dooseA0.1_haze1', 'dooseA0.2_haze1', 'dooseA0.2_haze0.52', 'dooseA0.2_haze2', 'tomasko_1.0']
+      : [hazeFolder, 'tomasko_1.0', 'dooseA0.1_haze1', 'dooseA0.2_haze1'];
+
+    const foldersToTry = [...new Set(fallbackFolders)];
+
+    for (const folder of foldersToTry) {
+      for (const tryAlbedo of albedosToTry) {
+        const imageUrl = getImageUrl(phaseAngle, compositeType, folder, tryAlbedo);
+        const loaded = await preloadImage(imageUrl);
+        
+        if (loaded) {
+          const fallbackUsed = (folder !== primaryFolder || tryAlbedo !== albedo);
+          return {
+            url: imageUrl,
+            fallbackUsed,
+            actualAlbedo: tryAlbedo,
+            actualFolder: folder,
+          };
+        }
+      }
     }
 
-    // No fallback - only use tomasko_1.0 directory
-    console.warn(`Image not found for phase angle ${phaseAngle}° (${compositeType})`);
-    return null;
+    return { url: null, fallbackUsed: false, actualAlbedo: null, actualFolder: null };
   } catch (error) {
     console.error('Error loading image:', error);
-    return null;
+    return { url: null, fallbackUsed: false, actualAlbedo: null, actualFolder: null };
   }
 };
 
@@ -158,19 +195,21 @@ export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeF
  * @param {string} compositeType - Type of composite image
  * @param {string} hazeFolder - Folder name for haze configuration
  * @param {number} range - Number of adjacent angles to preload on each side (default: 2)
+ * @param {number} albedo - Albedo value (0.1 or 0.2)
  */
-export const preloadAdjacentImages = async (currentPhaseAngle, compositeType, hazeFolder, range = 2) => {
+export const preloadAdjacentImages = async (currentPhaseAngle, compositeType, hazeFolder, range = 2, albedo = 0.1) => {
   const availableAngles = getAvailablePhaseAngles();
   const currentIndex = availableAngles.indexOf(currentPhaseAngle);
-  
+
   if (currentIndex === -1) return;
-  
-  // Preload images in background (don't await)
+
+  const preloadFolder = canonicalDtFolder(hazeFolder, albedo, compositeType);
+
   for (let i = -range; i <= range; i++) {
     const targetIndex = currentIndex + i;
     if (targetIndex >= 0 && targetIndex < availableAngles.length && i !== 0) {
       const targetAngle = availableAngles[targetIndex];
-      const imageUrl = getImageUrl(targetAngle, compositeType, hazeFolder);
+      const imageUrl = getImageUrl(targetAngle, compositeType, preloadFolder, albedo);
       // Preload without blocking
       preloadImage(imageUrl).catch(() => {
         // Silently fail for preloads
@@ -184,9 +223,9 @@ export const preloadAdjacentImages = async (currentPhaseAngle, compositeType, ha
  * @returns {number[]} Array of available phase angles in degrees
  */
 export const getAvailablePhaseAngles = () => {
-  // Phase angles go from 0 to 215 in 5-degree increments
+  // Phase angles go from 0 to 355 in 5-degree increments
   const angles = [];
-  for (let i = 0; i <= 215; i += 5) {
+  for (let i = 0; i <= 355; i += 5) {
     angles.push(i);
   }
   return angles;

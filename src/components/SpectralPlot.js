@@ -570,7 +570,7 @@ const SpectralPlot = ({
             <>
               {!hasDataToPlot && geoValues && hasSelectedCases ? (
                 <span style={{ color: '#ff6b6b' }}>
-                  ⚠️ No data available: The selected point is more than 10 degrees away from the nearest available data point. Please select a different location on the image.
+                  No spectrum within 10° of this point — click closer on the image.
                 </span>
               ) : (
                 <>

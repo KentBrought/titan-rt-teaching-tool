@@ -11,7 +11,7 @@ import Footer from './components/Footer';
 import ScrollToTop from './components/ScrollToTop';
 import Tooltip from './components/Tooltip';
 import SphereView from './components/SphereView';
-import { loadJsonFile, clearDataCache, getMemoryInfo } from './utils/dataLoader';
+import { loadJsonFile, clearDataCache } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
@@ -130,6 +130,22 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
 
 GeoValuesDisplay.displayName = 'GeoValuesDisplay';
 
+const AVAILABLE_ALBEDOS = [0, 0.1, 0.2];
+
+function getAlbedoValueFromSlider(sliderValue) {
+  const continuousAlbedo = (sliderValue / 100) * 0.3;
+  let nearest = AVAILABLE_ALBEDOS[0];
+  let minDiff = Math.abs(continuousAlbedo - nearest);
+  for (const a of AVAILABLE_ALBEDOS) {
+    const diff = Math.abs(continuousAlbedo - a);
+    if (diff < minDiff) {
+      minDiff = diff;
+      nearest = a;
+    }
+  }
+  return nearest;
+}
+
 function SpherePage() {
   const [viewMode, setViewMode] = useState('default');
   const [coverageReport, setCoverageReport] = useState(null);
@@ -202,7 +218,9 @@ function App() {
     methaneAbundance: 50,
     incidenceAngle: 45,
     emissionAngle: 45,
-    phaseAngle: 0
+    phaseAngle: 0,
+    /** 0–100 continuous; nearest of {0, 0.1, 0.2} used for data/images (see getAlbedoValueFromSlider) */
+    albedo: 33,
   });
 
 
@@ -238,6 +256,8 @@ function App() {
 
   // Spectral data state
   const [spectralData, setSpectralData] = useState(null);
+  const [spectralDataOld, setSpectralDataOld] = useState(null);
+  const [spectralDataNew, setSpectralDataNew] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
@@ -835,7 +855,8 @@ function App() {
         methaneAbundance: 50,
         incidenceAngle: 45,
         emissionAngle: 45,
-        phaseAngle: 0
+        phaseAngle: 0,
+        albedo: 33,
       });
       setHazePropertiesModel('doose');
       handleSelectionModeChange('plotPoint');
@@ -930,6 +951,7 @@ function App() {
 
   // For each selected point, whether it has associated spectral plot data (so we show/hide atmospheric components per point)
   const hasSpectralDataForSelection = useMemo(() => {
+    const albedo = getAlbedoValueFromSlider(sliders.albedo);
     if (!processedSpectralData) {
       return toggles.plotMultiple ? [] : false;
     }
@@ -938,7 +960,7 @@ function App() {
         if (gv && gv.error) return false;
         const inc = gv?.incidence ?? 0;
         const emi = gv?.emis ?? 0;
-        const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard');
+        const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard', albedo);
         return result && result.wavelengths && result.wavelengths.length > 0;
       });
     }
@@ -946,11 +968,11 @@ function App() {
       if (geoValues.error) return false;
       const inc = geoValues.incidence ?? 0;
       const emi = geoValues.emis ?? 0;
-      const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard');
+      const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard', albedo);
       return result && result.wavelengths && result.wavelengths.length > 0;
     }
     return toggles.plotMultiple ? [] : false;
-  }, [processedSpectralData, geoValues, toggles.plotMultiple]);
+  }, [processedSpectralData, geoValues, toggles.plotMultiple, sliders.albedo]);
 
   // Load image when relevant parameters change (with debouncing for smoother slider interaction)
   useEffect(() => {
@@ -975,12 +997,11 @@ function App() {
           imageTypeToLoad = imageType;
         }
 
-        // Load the current image
-        const imageDataUrl = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName);
-        setCurrentImage(imageDataUrl);
+        const requestedAlbedo = getAlbedoValueFromSlider(sliders.albedo);
+        const result = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName, requestedAlbedo);
+        setCurrentImage(result.url);
 
-        // Preload adjacent images in the background for smoother transitions
-        preloadAdjacentImages(phaseAngle, imageTypeToLoad, hazeFolderName, 2);
+        preloadAdjacentImages(phaseAngle, imageTypeToLoad, hazeFolderName, 2, requestedAlbedo);
       } catch (error) {
         console.error('Error loading image:', error);
         setCurrentImage(null);
@@ -995,7 +1016,7 @@ function App() {
         clearTimeout(imageLoadTimerRef.current);
       }
     };
-  }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
+  }, [sliders.phaseAngle, sliders.albedo, compositeType, hazeFolderName, imageType]);
 
   // Update geo values live when phase angle changes and there is an active selection.
   useEffect(() => {
@@ -1240,7 +1261,7 @@ function App() {
     };
   }, []);
 
-  // Load spectral data when haze configuration changes
+  // Load both spectral libraries once on mount (albedo 0.1 fine grid + multi-albedo comp library)
   useEffect(() => {
     let isCancelled = false;
 
@@ -1248,35 +1269,36 @@ function App() {
       try {
         setLoading(true);
         setError(null);
-        const dataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
-        console.log(`Loading spectral data from ${dataPath}...`);
 
-        const spectralJson = await loadJsonFile(dataPath);
-        if (isCancelled) return;
-
-        console.log('Spectral data loaded successfully:', Object.keys(spectralJson));
-        console.log('Memory usage after loading:', getMemoryInfo());
-
-        if (!spectralJson || !spectralJson.wavelength || !spectralJson.standard) {
-          throw new Error('Invalid spectral data structure');
+        const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
+        try {
+          const oldSpectralJson = await loadJsonFile(oldDataPath);
+          if (isCancelled) return;
+          if (oldSpectralJson && oldSpectralJson.wavelength && oldSpectralJson.standard) {
+            setSpectralDataOld(oldSpectralJson);
+          }
+        } catch (oldErr) {
+          /* optional init_gui library missing or invalid */
         }
 
-        setSpectralData(spectralJson);
-        const inc = spectralJson.inc || [];
-        const emi = spectralJson.emi || [];
-        const daz = spectralJson.daz || [];
-        console.log('Angle arrays:', { inc: inc.length, emi: emi.length, daz: daz.length });
-        setAngleOptions({ inc, emi, daz });
+        const newDataPath = `/assets/dt/tomasko_1.0/init_comp_library.json`;
+        try {
+          const newSpectralJson = await loadJsonFile(newDataPath);
+          if (isCancelled) return;
+          if (newSpectralJson && newSpectralJson.wavelength && newSpectralJson.data) {
+            setSpectralDataNew(newSpectralJson);
+          }
+        } catch (newErr) {
+          /* optional init_comp library missing or invalid */
+        }
       } catch (err) {
         if (isCancelled) return;
         console.error('Error loading spectral data:', err);
-
-        // Check if it's a memory error
         const errorMessage = err.message || String(err);
         if (errorMessage.toLowerCase().includes('memory') || errorMessage.toLowerCase().includes('out of')) {
           setError('Out of memory error. The spectral dataset is too large for your browser. Please try refreshing the page or use a more powerful machine.');
         } else {
-          setError(`Unable to load spectral data from ${hazeFolderName}. ${err.message}`);
+          setError(`Unable to load spectral data. ${err.message}`);
         }
         setSpectralData(null);
       } finally {
@@ -1291,7 +1313,29 @@ function App() {
     return () => {
       isCancelled = true;
     };
-  }, [hazeFolderName]);
+  }, []);
+
+  useEffect(() => {
+    const albedo = getAlbedoValueFromSlider(sliders.albedo);
+
+    if (albedo === 0.1 && spectralDataOld) {
+      setSpectralData(spectralDataOld);
+    } else if (spectralDataNew) {
+      setSpectralData(spectralDataNew);
+    } else if (spectralDataOld) {
+      setSpectralData(spectralDataOld);
+    }
+
+    if (spectralDataOld || spectralDataNew) {
+      const activeData = (albedo === 0.1 && spectralDataOld) ? spectralDataOld : (spectralDataNew || spectralDataOld);
+      if (activeData) {
+        const inc = activeData.inc || [];
+        const emi = activeData.emi || [];
+        const daz = activeData.daz || [];
+        setAngleOptions({ inc, emi, daz });
+      }
+    }
+  }, [sliders.albedo, spectralDataOld, spectralDataNew]);
 
   // Cleanup effect
   useEffect(() => {
@@ -1678,6 +1722,21 @@ function App() {
                             />
                             <span>{sliders.phaseAngle * 5}°</span>
                           </label>
+
+                          <label style={{ color: '#ccc' }}>
+                            <Tooltip content="Continuous 0–100; nearest 0, 0.1, or 0.2 for IR and spectra.">
+                              Albedo slider
+                            </Tooltip>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="1"
+                              value={sliders.albedo}
+                              onChange={(e) => handleSliderChange('albedo', parseInt(e.target.value, 10))}
+                            />
+                            <span>{getAlbedoValueFromSlider(sliders.albedo)}</span>
+                          </label>
                         </div>
                         <div style={{ marginTop: '10px' }}>
                           <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1977,6 +2036,7 @@ function App() {
                                 transmissionToggles={transmissionToggles}
                                 spectralUnits={toggles.spectralUnits}
                                 spectralResolution={spectralResolution}
+                                albedo={getAlbedoValueFromSlider(sliders.albedo)}
                               />
                             </ErrorBoundary>
                             {geoValues && (
