@@ -15,6 +15,7 @@ import { loadJsonFile, clearDataCache } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
+import { loadMaterialAlbedoMap } from './utils/materialMapLoader';
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
 const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointCoordinates = true }) => {
@@ -132,6 +133,9 @@ GeoValuesDisplay.displayName = 'GeoValuesDisplay';
 
 const AVAILABLE_ALBEDOS = [0, 0.1, 0.2];
 
+const SPECTRAL_RESOLUTION_LEVELS = ['verylow', 'low', 'medium', 'high'];
+const SPECTRAL_RESOLUTION_LABELS = ['Very low', 'Low', 'Medium', 'High'];
+
 function getAlbedoValueFromSlider(sliderValue) {
   const continuousAlbedo = (sliderValue / 100) * 0.3;
   let nearest = AVAILABLE_ALBEDOS[0];
@@ -229,7 +233,11 @@ function App() {
     spectralUnits: false,
   });
 
-  const [spectralResolution, setSpectralResolution] = useState('high');
+  const [spectralResolutionIndex, setSpectralResolutionIndex] = useState(3);
+  const spectralResolution = SPECTRAL_RESOLUTION_LEVELS[spectralResolutionIndex];
+
+  const [materialAlbedoMap, setMaterialAlbedoMap] = useState(null);
+  const [materialLayerVisible, setMaterialLayerVisible] = useState({ 0: false, 1: false, 2: false });
 
   const [transmissionToggles, setTransmissionToggles] = useState({
     ch4: false,
@@ -248,10 +256,6 @@ function App() {
 
   const handleTransmissionToggleChange = (name) => {
     setTransmissionToggles(prev => ({ ...prev, [name]: !prev[name] }));
-  };
-
-  const handleResolutionChange = (resolution) => {
-    setSpectralResolution(resolution);
   };
 
   // Spectral data state
@@ -1337,6 +1341,12 @@ function App() {
     }
   }, [sliders.albedo, spectralDataOld, spectralDataNew]);
 
+  useEffect(() => {
+    loadMaterialAlbedoMap()
+      .then(setMaterialAlbedoMap)
+      .catch(() => setMaterialAlbedoMap(null));
+  }, []);
+
   // Cleanup effect
   useEffect(() => {
     return () => {
@@ -1472,6 +1482,12 @@ function App() {
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
                               phaseAngleDeg={sliders.phaseAngle * 5}
+                              materialOverlay={materialAlbedoMap}
+                              materialVisibility={[
+                                materialLayerVisible[0],
+                                materialLayerVisible[1],
+                                materialLayerVisible[2],
+                              ]}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -1544,6 +1560,41 @@ function App() {
                               <span>2, 1.6, 1.3 µm</span>
                             </label>
                           </div>
+                          {materialAlbedoMap && (
+                            <div style={{ marginTop: '16px' }}>
+                              <h4 style={{ fontSize: '15px', marginBottom: '10px', color: '#e0e0e0', fontWeight: 'normal' }}>
+                                <Tooltip content="Class map (0–2) scaled to the IR image; toggle tints per class.">
+                                  Surface materials
+                                </Tooltip>
+                              </h4>
+                              {[0, 1, 2].map((k) => (
+                                <label
+                                  key={k}
+                                  className="toggle-label"
+                                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer' }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={materialLayerVisible[k]}
+                                    onChange={() =>
+                                      setMaterialLayerVisible((prev) => ({ ...prev, [k]: !prev[k] }))
+                                    }
+                                  />
+                                  <span
+                                    style={{
+                                      display: 'inline-block',
+                                      width: '12px',
+                                      height: '12px',
+                                      borderRadius: '2px',
+                                      background: k === 0 ? 'rgba(255,90,90,0.85)' : k === 1 ? 'rgba(90,220,120,0.85)' : 'rgba(100,160,255,0.85)',
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span style={{ color: '#ccc', fontSize: '13px' }}>Map value {k}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                       {geoValues && (
@@ -2144,38 +2195,33 @@ function App() {
                           <Tooltip variant="green" content={
                             <>
                               <strong>Resolution</strong>
-                              Controls the spectral resolution of the plot. High resolution shows more detailed
-                              spectral features and absorption lines, while low resolution provides a smoother,
-                              more general view of the spectral shape. Higher resolution is useful for identifying
-                              specific gas absorption features, while lower resolution helps visualize overall trends
-                              and reduces computational load.
+                              Spectra are interpolated to the same wavelength grid as gas transmission
+                              (/data/gas_transmission.json), smoothed with a Gaussian (narrower toward the right,
+                              wider toward the left), then binned when fewer points are shown. Gas overlays use the
+                              same smoothing so curves stay comparable.
                             </>
                           }>
                             Resolution
                           </Tooltip>
                         </h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <input
-                              type="radio"
-                              name="spectralResolution"
-                              value="high"
-                              checked={spectralResolution === 'high'}
-                              onChange={() => handleResolutionChange('high')}
-                            />
-                            <span>High Resolution</span>
-                          </label>
-                          <label className="toggle-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <input
-                              type="radio"
-                              name="spectralResolution"
-                              value="low"
-                              checked={spectralResolution === 'low'}
-                              onChange={() => handleResolutionChange('low')}
-                            />
-                            <span>Low Resolution</span>
-                          </label>
-                        </div>
+                        <label style={{ display: 'flex', flexDirection: 'column', gap: '8px', color: '#ccc' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888' }}>
+                            <span>Smoother</span>
+                            <span>More detail</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={0}
+                            max={3}
+                            step={1}
+                            value={spectralResolutionIndex}
+                            onChange={(e) => setSpectralResolutionIndex(parseInt(e.target.value, 10))}
+                            aria-valuetext={SPECTRAL_RESOLUTION_LABELS[spectralResolutionIndex]}
+                          />
+                          <span style={{ fontSize: '13px' }}>
+                            {SPECTRAL_RESOLUTION_LABELS[spectralResolutionIndex]}
+                          </span>
+                        </label>
                       </div>
                       {!toggles.plotMultiple && (
                         <div className="transmission-box" style={{ marginTop: '20px', marginBottom: '20px', paddingTop: '12px', borderTop: '1px solid #3a3a3a' }}>

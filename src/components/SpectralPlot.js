@@ -19,19 +19,90 @@ const formatAngles = (incidence, emission, phase) => {
   return `i:${i}° e:${e}° p:${p}°`;
 };
 
-/**
- * Downsample spectral data by binning wavelengths and averaging intensities
- * @param {Array} wavelengths - Original wavelength array
- * @param {Array} intensities - Original intensity array
- * @param {number} numBins - Number of bins to reduce to
- * @returns {{ wavelengths: Array, intensities: Array }} Downsampled data
- */
+const GAUSSIAN_SIGMA_INDEX = {
+  high: 0.85,
+  medium: 2.5,
+  low: 6.5,
+  verylow: 10,
+};
+
+const interpolateOntoGrid = (x, y, xq) => {
+  if (!x?.length || !y?.length || x.length !== y.length || !xq?.length) return [];
+  const out = new Array(xq.length);
+  for (let i = 0; i < xq.length; i++) {
+    const t = xq[i];
+    if (t <= x[0]) {
+      out[i] = y[0];
+      continue;
+    }
+    if (t >= x[x.length - 1]) {
+      out[i] = y[y.length - 1];
+      continue;
+    }
+    let lo = 0;
+    let hi = x.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (x[mid] <= t) lo = mid;
+      else hi = mid;
+    }
+    const w1 = x[lo];
+    const w2 = x[hi];
+    const f = (t - w1) / (w2 - w1);
+    out[i] = y[lo] + f * (y[hi] - y[lo]);
+  }
+  return out;
+};
+
+const convolveGaussian1D = (values, sigma) => {
+  if (!values?.length) return [];
+  if (sigma < 0.25) return values.slice();
+  const n = values.length;
+  const radius = Math.min(n - 1, Math.max(1, Math.ceil(3 * sigma)));
+  const kernel = [];
+  let kSum = 0;
+  for (let k = -radius; k <= radius; k++) {
+    const w = Math.exp(-(k * k) / (2 * sigma * sigma));
+    kernel.push(w);
+    kSum += w;
+  }
+  for (let i = 0; i < kernel.length; i++) kernel[i] /= kSum;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let acc = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const j = i + k;
+      const v = j < 0 ? values[0] : j >= n ? values[n - 1] : values[j];
+      acc += v * kernel[k + radius];
+    }
+    out[i] = acc;
+  }
+  return out;
+};
+
+const applySpectralResolution = (modelWl, modelI, gasWavelengths, resolution, numBinsTarget) => {
+  if (!modelWl?.length || !modelI?.length) {
+    return { wavelengths: [], intensities: [] };
+  }
+  if (!gasWavelengths?.length) {
+    return downsampleSpectrum(modelWl, modelI, numBinsTarget);
+  }
+
+  const onGrid = interpolateOntoGrid(modelWl, modelI, gasWavelengths);
+  const sigma = GAUSSIAN_SIGMA_INDEX[resolution] ?? GAUSSIAN_SIGMA_INDEX.high;
+  const smoothed = convolveGaussian1D(onGrid, sigma);
+
+  if (numBinsTarget >= gasWavelengths.length) {
+    return { wavelengths: gasWavelengths.slice(), intensities: smoothed };
+  }
+  return downsampleSpectrum(gasWavelengths, smoothed, numBinsTarget);
+};
+
 const downsampleSpectrum = (wavelengths, intensities, numBins) => {
   if (!wavelengths || !intensities || wavelengths.length === 0) {
     return { wavelengths: [], intensities: [] };
   }
 
-  // If already fewer points than bins, return as-is
   if (wavelengths.length <= numBins) {
     return { wavelengths: Array.from(wavelengths), intensities: Array.from(intensities) };
   }
@@ -48,7 +119,6 @@ const downsampleSpectrum = (wavelengths, intensities, numBins) => {
     const binEnd = binStart + binWidth;
     const binCenter = (binStart + binEnd) / 2;
 
-    // Find all points in this bin and average them
     let sum = 0;
     let count = 0;
 
@@ -60,7 +130,6 @@ const downsampleSpectrum = (wavelengths, intensities, numBins) => {
       }
     }
 
-    // Include last point in final bin
     if (i === numBins - 1) {
       for (let j = 0; j < wavelengths.length; j++) {
         const w = wavelengths[j];
@@ -80,12 +149,11 @@ const downsampleSpectrum = (wavelengths, intensities, numBins) => {
   return { wavelengths: binnedWavelengths, intensities: binnedIntensities };
 };
 
-// number of spectral bins
 const RESOLUTION_BINS = {
-  'high': 256,    // Full VIMS resolution
-  'medium': 64,   // Reduced resolution
-  'low': 16,      // Low resolution 
-  'verylow': 8    // Very low 
+  'high': 256,
+  'medium': 64,
+  'low': 16,
+  'verylow': 8
 };
 
 const SpectralPlot = ({
@@ -100,7 +168,7 @@ const SpectralPlot = ({
   transmissionToggles = {},
   spectralUnits = false,
   albedo = 0.1,
-  spectralResolution = 'high'  // New prop for resolution control
+  spectralResolution = 'high'
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
@@ -258,12 +326,15 @@ const SpectralPlot = ({
               });
             }
 
-            // Downsample if not at full resolution
-            if (numBins < 256) {
-              const downsampled = downsampleSpectrum(wavelengths, intensities, numBins);
-              wavelengths = downsampled.wavelengths;
-              intensities = downsampled.intensities;
-            }
+            const resolved = applySpectralResolution(
+              wavelengths,
+              intensities,
+              gasTransmissionData?.wavelength,
+              spectralResolution,
+              numBins
+            );
+            wavelengths = resolved.wavelengths;
+            intensities = resolved.intensities;
 
             const nameMap = {
               standard: 'CH₄ + haze',
@@ -343,12 +414,15 @@ const SpectralPlot = ({
               });
             }
 
-            // Downsample if not at full resolution
-            if (numBins < 256) {
-              const downsampled = downsampleSpectrum(wavelengths, intensities, numBins);
-              wavelengths = downsampled.wavelengths;
-              intensities = downsampled.intensities;
-            }
+            const resolved = applySpectralResolution(
+              wavelengths,
+              intensities,
+              gasTransmissionData?.wavelength,
+              spectralResolution,
+              numBins
+            );
+            wavelengths = resolved.wavelengths;
+            intensities = resolved.intensities;
 
             const nameMap = {
               standard: 'CH₄ + haze',
@@ -412,15 +486,17 @@ const SpectralPlot = ({
         if (isSelected && gasName && gasTransmissionData.gases[gasName]) {
           const gasData = gasTransmissionData.gases[gasName];
 
-          // Also downsample gas transmission if resolution is low
           let gasWavelengths = gasTransmissionData.wavelength;
           let gasTransmission = gasData.transmission;
-
-          if (numBins < 256) {
-            const downsampled = downsampleSpectrum(gasWavelengths, gasTransmission, numBins);
-            gasWavelengths = downsampled.wavelengths;
-            gasTransmission = downsampled.intensities;
-          }
+          const gasResolved = applySpectralResolution(
+            gasWavelengths,
+            gasTransmission,
+            gasWavelengths,
+            spectralResolution,
+            numBins
+          );
+          gasWavelengths = gasResolved.wavelengths;
+          gasTransmission = gasResolved.intensities;
 
           traces.push({
             x: gasWavelengths,
@@ -440,7 +516,7 @@ const SpectralPlot = ({
     }
 
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins]);
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins, spectralResolution]);
 
   // Update actualAngles in a separate effect to avoid infinite loop
   useEffect(() => {

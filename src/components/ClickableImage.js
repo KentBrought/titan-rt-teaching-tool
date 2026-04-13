@@ -1,29 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import './ClickableImage.css';
 
-/**
- * ClickableImage component that displays an image with click functionality
- * Shows a red X marker at clicked position until clicked again
- */
 const ClickableImage = ({ 
   src, 
   alt, 
   onImageClick,
-  onImageHover = null, // Callback for hover events: (x, y, position) => void
+  onImageHover = null,
   className = '',
   style = {},
-  initialPosition = null, // Allow external control of position
-  multiplePositions = [], // Array of positions for multiple mode
-  plotMultiple = false, // Whether in multiple mode
+  initialPosition = null,
+  multiplePositions = [],
+  plotMultiple = false,
   showLatLonGrid = false,
   phaseAngleDeg = 0,
+  materialOverlay = null,
+  materialVisibility = [true, true, true],
 }) => {
   const [clickPosition, setClickPosition] = useState(initialPosition);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [overlayRevision, setOverlayRevision] = useState(0);
   const imageRef = useRef(null);
   const containerRef = useRef(null);
   const imageContainerRef = useRef(null);
+  const materialCanvasRef = useRef(null);
   const dragStateRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, panStartX: 0, panStartY: 0 });
   const clickPositionRef = useRef(clickPosition);
   
@@ -129,10 +129,64 @@ const ClickableImage = ({
     setPan({ x: 0, y: 0 });
   }, [src]);
 
-  // No longer need to position the inner container absolutely
-  // It will stay in the normal flow and size to the image
+  const materialVisKey = materialVisibility.join(',');
 
-  // Helper function to calculate coordinates from mouse event
+  useLayoutEffect(() => {
+    if (!materialOverlay || !imageRef.current || !materialCanvasRef.current) return;
+    const img = imageRef.current;
+    const canvas = materialCanvasRef.current;
+    const dw = img.offsetWidth;
+    const dh = img.offsetHeight;
+    const natW = img.naturalWidth;
+    const natH = img.naturalHeight;
+    if (!dw || !dh || !natW || !natH) return;
+
+    const { width: mw, height: mh, data: map } = materialOverlay;
+    canvas.width = dw;
+    canvas.height = dh;
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.createImageData(dw, dh);
+    const colors = [
+      [255, 90, 90],
+      [90, 220, 120],
+      [100, 160, 255],
+    ];
+    const alpha = 110;
+    for (let py = 0; py < dh; py++) {
+      for (let px = 0; px < dw; px++) {
+        const nx = Math.floor((px + 0.5) * natW / dw);
+        const ny = Math.floor((py + 0.5) * natH / dh);
+        const mc = Math.min(mw - 1, Math.floor(nx * mw / natW));
+        const mr = Math.min(mh - 1, Math.floor(ny * mh / natH));
+        const cls = map[mr * mw + mc];
+        const idx = (py * dw + px) * 4;
+        if (cls >= 0 && cls <= 2 && materialVisibility[cls]) {
+          const [r, g, b] = colors[cls];
+          imageData.data[idx] = r;
+          imageData.data[idx + 1] = g;
+          imageData.data[idx + 2] = b;
+          imageData.data[idx + 3] = alpha;
+        } else {
+          imageData.data[idx] = 0;
+          imageData.data[idx + 1] = 0;
+          imageData.data[idx + 2] = 0;
+          imageData.data[idx + 3] = 0;
+        }
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+    canvas.style.width = `${dw}px`;
+    canvas.style.height = `${dh}px`;
+  }, [materialOverlay, materialVisKey, src, zoom, pan, overlayRevision]);
+
+  useEffect(() => {
+    const el = imageRef.current;
+    if (!el || !materialOverlay) return;
+    const ro = new ResizeObserver(() => setOverlayRevision((n) => n + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [src, materialOverlay]);
+
   const calculateCoordinates = (e) => {
     if (!imageRef.current || !imageContainerRef.current) return null;
 
@@ -348,7 +402,22 @@ const ClickableImage = ({
             alt={alt}
             className="clickable-image"
             style={{ maxWidth: '100%', height: 'auto', objectFit: 'contain', display: 'block' }}
+            onLoad={() => setOverlayRevision((n) => n + 1)}
           />
+          {materialOverlay && (
+            <canvas
+              ref={materialCanvasRef}
+              width={0}
+              height={0}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                pointerEvents: 'none',
+                zIndex: 10,
+              }}
+            />
+          )}
           {plotMultiple ? (
             // Multiple markers with different colors
             multiplePositions.map((pos, index) => {
