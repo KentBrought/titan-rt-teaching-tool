@@ -1067,7 +1067,13 @@ function App() {
         const result = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName, requestedAlbedo);
         setCurrentImage(result.url);
 
-        preloadAdjacentImages(phaseAngle, imageTypeToLoad, hazeFolderName, 2, requestedAlbedo);
+        preloadAdjacentImages(
+          phaseAngle,
+          imageTypeToLoad,
+          result?.actualFolder || hazeFolderName,
+          2,
+          result?.actualAlbedo ?? requestedAlbedo
+        );
       } catch (error) {
         console.error('Error loading image:', error);
         setCurrentImage(null);

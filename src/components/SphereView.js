@@ -7,7 +7,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { loadHeightMap } from '../utils/heightMapLoader';
-import { getPublicAssetUrl } from '../utils/assetUrl';
+import { getPublicAssetUrl, getRuntimePublicBase, resolveRuntimeAssetUrl } from '../utils/assetUrl';
+import cassiniModelBundledUrl from '../assets/Cassini.glb';
+import { CASSINI_GLB_BASE64 } from '../assets/cassiniModelBase64';
 
 function SphereView({
   minHeight = 400,
@@ -695,11 +697,34 @@ function SphereView({
         );
 
         const gltfLoader = new GLTFLoader();
-        const cassiniModelUrls = [
+        const cassiniModelUrlsRaw = [
+          cassiniModelBundledUrl,
           getPublicAssetUrl('/assets/3d-model/Cassini.glb'),
           getPublicAssetUrl('/assets/3d-model/cassini.glb'),
           getPublicAssetUrl('/assets/3d-model/Cassini.GLB'),
         ];
+        const cassiniModelUrls = Array.from(
+          new Set(cassiniModelUrlsRaw.map((url) => resolveRuntimeAssetUrl(url)).filter(Boolean))
+        );
+        const cassiniLogPrefix = '[SphereView/Cassini]';
+        const cassiniLoaderVersion = 'cassini-loader-embedded-v4-2026-04-15';
+        const looksLikeHtmlPayload = (arrayBuffer) => {
+          if (!arrayBuffer || arrayBuffer.byteLength === 0) return false;
+          try {
+            const sample = new Uint8Array(arrayBuffer, 0, Math.min(160, arrayBuffer.byteLength));
+            const text = new TextDecoder('utf-8').decode(sample).trim().toLowerCase();
+            return text.startsWith('<!doctype') || text.startsWith('<html') || text.startsWith('<head');
+          } catch {
+            return false;
+          }
+        };
+        console.info(cassiniLogPrefix, 'Runtime base + URL candidates', {
+          version: cassiniLoaderVersion,
+          runtimeBase: getRuntimePublicBase(),
+          bundledUrlRaw: cassiniModelBundledUrl,
+          candidates: cassiniModelUrls,
+          embeddedBase64Chars: CASSINI_GLB_BASE64?.length || 0,
+        });
         const applyCassiniModel = (gltf) => {
           if (cancelled || !satelliteBody) return;
           const cassiniModel = gltf.scene;
@@ -719,14 +744,22 @@ function SphereView({
           cassiniModel.position.sub(center);
 
           cassiniModel.rotation.y = THREE.MathUtils.degToRad(90);
+          let meshCount = 0;
           cassiniModel.traverse((node) => {
             if (node.isMesh) {
+              meshCount += 1;
               node.castShadow = false;
               node.receiveShadow = false;
             }
           });
           cassiniVisualRadius = targetSize * 0.55;
           cassiniAnchor.add(cassiniModel);
+          console.info(cassiniLogPrefix, 'Model applied', {
+            meshCount,
+            targetSize,
+            scale,
+            visualRadius: cassiniVisualRadius,
+          });
         };
         const parseCassiniData = (data) => new Promise((resolve, reject) => {
           gltfLoader.parse(
@@ -739,19 +772,78 @@ function SphereView({
             (err) => reject(err)
           );
         });
+        const decodeCassiniBase64ToArrayBuffer = (base64Payload) => {
+          if (!base64Payload || typeof base64Payload !== 'string') {
+            throw new Error('Cassini Base64 payload is missing');
+          }
+          if (typeof atob !== 'function') {
+            throw new Error('atob is not available in this environment');
+          }
+          const binary = atob(base64Payload);
+          const len = binary.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i += 1) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          return bytes.buffer;
+        };
         const loadCassiniModel = async () => {
+          try {
+            console.info(cassiniLogPrefix, 'Attempting embedded Base64 model parse', {
+              base64Chars: CASSINI_GLB_BASE64?.length || 0,
+            });
+            const embeddedData = decodeCassiniBase64ToArrayBuffer(CASSINI_GLB_BASE64);
+            console.info(cassiniLogPrefix, 'Embedded payload decoded', {
+              byteLength: embeddedData.byteLength,
+            });
+            await parseCassiniData(embeddedData);
+            console.info(cassiniLogPrefix, 'Load success from embedded Base64 payload');
+            return;
+          } catch (embeddedErr) {
+            console.warn(cassiniLogPrefix, 'Embedded Base64 load failed, falling back to URL fetch', {
+              error: embeddedErr?.message || embeddedErr,
+            });
+          }
+
           let lastError = null;
-          for (const url of cassiniModelUrls) {
+          for (let idx = 0; idx < cassiniModelUrls.length; idx += 1) {
+            const url = cassiniModelUrls[idx];
             try {
+              console.info(cassiniLogPrefix, 'Attempting fetch', { index: idx, total: cassiniModelUrls.length, url });
               const response = await fetch(url, { cache: 'no-store' });
+              const contentType = response.headers.get('content-type') || 'unknown';
+              const contentLength = response.headers.get('content-length') || 'unknown';
+              console.info(cassiniLogPrefix, 'Fetch response', {
+                url,
+                status: response.status,
+                ok: response.ok,
+                contentType,
+                contentLength,
+              });
               if (!response.ok) {
                 lastError = new Error(`HTTP ${response.status} for ${url}`);
                 continue;
               }
               const data = await response.arrayBuffer();
-              await parseCassiniData(data);
+              console.info(cassiniLogPrefix, 'Downloaded bytes', { url, byteLength: data.byteLength });
+              if (data.byteLength < 1024) {
+                console.warn(cassiniLogPrefix, 'Payload looks too small for a GLB file', { url, byteLength: data.byteLength });
+              }
+              const isHtmlType = typeof contentType === 'string' && contentType.toLowerCase().includes('text/html');
+              const isHtmlPayload = looksLikeHtmlPayload(data);
+              if (isHtmlType || isHtmlPayload) {
+                const msg = `Asset URL resolved to HTML shell (likely rewrite), not GLB: ${url}`;
+                console.warn(cassiniLogPrefix, msg, { contentType, byteLength: data.byteLength });
+                lastError = new Error(msg);
+                continue;
+              }
+              await parseCassiniData(data).catch((parseError) => {
+                throw new Error(`Parse failed for ${url}: ${parseError?.message || parseError}`);
+              });
+              console.info(cassiniLogPrefix, 'Load success', { url });
               return;
             } catch (err) {
+              console.warn(cassiniLogPrefix, 'Load attempt failed', { url, error: err?.message || err });
               lastError = err;
             }
           }
@@ -759,8 +851,39 @@ function SphereView({
         };
         loadCassiniModel().catch((err) => {
           if (cancelled || !satelliteBody) return;
-          // Intentionally no fallback geometry: only render the real Cassini model.
-          console.error('Failed to load Cassini model', { urls: cassiniModelUrls, error: err });
+          const fallbackBody = new THREE.Mesh(
+            new THREE.BoxGeometry(0.12, 0.06, 0.08),
+            new THREE.MeshStandardMaterial({
+              color: 0xd7dee8,
+              emissive: 0x1b212b,
+              emissiveIntensity: 0.25,
+              roughness: 0.55,
+              metalness: 0.35,
+              transparent: true,
+              opacity: 0.96,
+              side: THREE.DoubleSide,
+            })
+          );
+          const fallbackDish = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.045, 0.045, 0.009, 20),
+            new THREE.MeshStandardMaterial({
+              color: 0xb9c3d2,
+              emissive: 0x161d25,
+              emissiveIntensity: 0.2,
+              roughness: 0.45,
+              metalness: 0.4,
+              side: THREE.DoubleSide,
+            })
+          );
+          fallbackDish.rotation.z = Math.PI / 2;
+          fallbackDish.position.set(0.095, 0, 0);
+          cassiniAnchor.add(fallbackBody);
+          cassiniAnchor.add(fallbackDish);
+          cassiniVisualRadius = 0.12;
+          console.error(cassiniLogPrefix, 'Failed to load GLB, using fallback satellite geometry', {
+            urls: cassiniModelUrls,
+            error: err?.message || err,
+          });
         });
 
         const createStarField = (count, radius, size, opacity) => {

@@ -54,6 +54,29 @@ function canonicalDtFolder(hazeFolder, albedo, compositeType) {
   return hazeFolder;
 }
 
+// Folder-level albedo availability in `public/assets/dt/`.
+const FOLDER_ALBEDO_SUPPORT = {
+  'dooseA0.1_haze1': [0.1],
+  'dooseA0.2_haze1': [0.2],
+  'dooseA0.2_haze0.52': [0.2],
+  'dooseA0.2_haze2': [0.2],
+  'tomasko_1.0': [0.1],
+};
+
+function getFolderAlbedoOrder(folder, requestedAlbedo) {
+  const supported = FOLDER_ALBEDO_SUPPORT[folder] || [requestedAlbedo];
+  if (supported.includes(requestedAlbedo)) {
+    return [requestedAlbedo, ...supported.filter((v) => v !== requestedAlbedo)];
+  }
+  return supported;
+}
+
+function resolveFolderAndAlbedo(hazeFolder, requestedAlbedo, compositeType) {
+  const folder = canonicalDtFolder(hazeFolder, requestedAlbedo, compositeType);
+  const albedo = getFolderAlbedoOrder(folder, requestedAlbedo)[0];
+  return { folder, albedo };
+}
+
 /**
  * @param {string} hazeFolder - dt subfolder (canonical or legacy doose_*)
  */
@@ -69,7 +92,9 @@ const getAssetBasePath = (hazeFolder) => `/assets/dt/${hazeFolder}`;
  */
 export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder, albedo = 0.1) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  const folder = canonicalDtFolder(hazeFolder, albedo, compositeType);
+  const resolved = resolveFolderAndAlbedo(hazeFolder, albedo, compositeType);
+  const folder = resolved.folder;
+  const effectiveAlbedo = resolved.albedo;
   const basePath = getAssetBasePath(folder);
   
   // Handle geo-based image types (incidence, emission, phase)
@@ -79,7 +104,7 @@ export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder, a
   }
   
   // Handle composite image types with albedo
-  return `${basePath}/2012_A${albedo}_p${paddedPhase}_${compositeType}.png`;
+  return `${basePath}/2012_A${effectiveAlbedo}_p${paddedPhase}_${compositeType}.png`;
 };
 
 /**
@@ -153,25 +178,25 @@ const preloadImage = (imageUrl) => {
  */
 export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeFolder, albedo = 0.1) => {
   try {
-    const primaryFolder = canonicalDtFolder(hazeFolder, albedo, compositeType);
+    const resolvedPrimary = resolveFolderAndAlbedo(hazeFolder, albedo, compositeType);
+    const primaryFolder = resolvedPrimary.folder;
+    const primaryAlbedo = resolvedPrimary.albedo;
 
-    // Build list of folder/albedo combinations to try
-    const albedosToTry = [albedo, 0.1, 0.2].filter((v, i, a) => a.indexOf(v) === i); // unique values, requested first
-
-    const isDoose = hazeFolder.startsWith('doose');
+    const isDoose = typeof hazeFolder === 'string' && hazeFolder.startsWith('doose');
     const fallbackFolders = isDoose
       ? [primaryFolder, 'dooseA0.1_haze1', 'dooseA0.2_haze1', 'dooseA0.2_haze0.52', 'dooseA0.2_haze2', 'tomasko_1.0']
       : [hazeFolder, 'tomasko_1.0', 'dooseA0.1_haze1', 'dooseA0.2_haze1'];
 
-    const foldersToTry = [...new Set(fallbackFolders)];
+    const foldersToTry = [...new Set(fallbackFolders.filter(Boolean))];
 
     for (const folder of foldersToTry) {
+      const albedosToTry = getFolderAlbedoOrder(folder, albedo);
       for (const tryAlbedo of albedosToTry) {
         const imageUrl = getImageUrl(phaseAngle, compositeType, folder, tryAlbedo);
         const loaded = await preloadImage(imageUrl);
         
         if (loaded) {
-          const fallbackUsed = (folder !== primaryFolder || tryAlbedo !== albedo);
+          const fallbackUsed = (folder !== primaryFolder || tryAlbedo !== primaryAlbedo);
           return {
             url: imageUrl,
             fallbackUsed,
@@ -204,12 +229,13 @@ export const preloadAdjacentImages = async (currentPhaseAngle, compositeType, ha
   if (currentIndex === -1) return;
 
   const preloadFolder = canonicalDtFolder(hazeFolder, albedo, compositeType);
+  const preloadAlbedo = getFolderAlbedoOrder(preloadFolder, albedo)[0];
 
   for (let i = -range; i <= range; i++) {
     const targetIndex = currentIndex + i;
     if (targetIndex >= 0 && targetIndex < availableAngles.length && i !== 0) {
       const targetAngle = availableAngles[targetIndex];
-      const imageUrl = getImageUrl(targetAngle, compositeType, preloadFolder, albedo);
+      const imageUrl = getImageUrl(targetAngle, compositeType, preloadFolder, preloadAlbedo);
       // Preload without blocking
       preloadImage(imageUrl).catch(() => {
         // Silently fail for preloads
