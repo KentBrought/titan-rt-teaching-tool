@@ -14,21 +14,33 @@ function SphereView({
   incidenceDeg = 45,
   emissionDeg = 45,
   phaseDeg = 0,
+  titanYawDeg = 0,
+  obliquityDeg = 0,
   cameraPreset = 'none', // 'none' | 'cassini' | 'sun'
-  cameraCenter = 'titan', // 'titan' | 'spacecraft' | 'vector'
+  cameraCenter = 'titan', // 'titan' | 'spacecraft' | 'vector' | 'overhead'
+  geometryInteractionMode = 'camera', // 'camera' | 'editTitan' | 'editCassini'
   introAnimation = true,
   showLatLonGrid = false,
+  showGeometryGrid = false,
   showRotationAxis = false,
+  showAngleArcs = false,
+  showVectorLabels = true,
+  showExtendedVectorLines = false,
+  allowMultipleVectors = false,
+  showAtmosphere = true,
   interactionMode = 'vector', // 'vector' | 'plotPoint'
   onSurfacePointSelect,
+  onGeometryChange,
   onCameraPresetRelease,
   onVectorPlaced,
   multiplePoints = [],
 }) {
   const containerRef = useRef(null);
-  const clickOverlayRef = useRef({ marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross: null });
+  const clickOverlayRef = useRef({ marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross: null, vectors: [] });
   const angleRef = useRef({ incidenceDeg: 45, emissionDeg: 45, phaseDeg: 0 });
   const interactionRef = useRef({ mode: 'vector', onSurfacePointSelect: null });
+  const geometryModeRef = useRef('camera');
+  const geometryChangeRef = useRef(typeof onGeometryChange === 'function' ? onGeometryChange : null);
   const presetReleaseRef = useRef(typeof onCameraPresetRelease === 'function' ? onCameraPresetRelease : null);
   const vectorPlacedRef = useRef(typeof onVectorPlaced === 'function' ? onVectorPlaced : null);
   const pointerStateRef = useRef({
@@ -48,6 +60,8 @@ function SphereView({
   const textureRef = useRef(null);
   const cameraRef = useRef(null);
   const meshRef = useRef(null);
+  const atmosphereRef = useRef(null);
+  const atmosphereGlowRef = useRef(null);
   const multiPointGroupRef = useRef(null);
   const resizeCleanupRef = useRef(null);
   const cameraModeRef = useRef({ preset: 'none', center: 'titan' });
@@ -55,16 +69,28 @@ function SphereView({
   const introEnabledRef = useRef(!!introAnimation);
   const prevCameraCenterRef = useRef('titan');
   const pendingSpacecraftAutoZoomRef = useRef(false);
+  const pendingOverheadSnapRef = useRef(false);
   const latLonGridRef = useRef(null);
   const latLonLabelsRef = useRef(null);
   const latLonGridEnabledRef = useRef(!!showLatLonGrid);
+  const geometryGridRef = useRef(null);
+  const geometryGridEnabledRef = useRef(!!showGeometryGrid);
   const rotationAxisRef = useRef(null);
   const rotationAxisEnabledRef = useRef(!!showRotationAxis);
+  const showAngleArcsRef = useRef(!!showAngleArcs);
+  const showVectorLabelsRef = useRef(showVectorLabels !== false);
+  const showExtendedVectorLinesRef = useRef(!!showExtendedVectorLines);
+  const allowMultipleVectorsRef = useRef(!!allowMultipleVectors);
+  const showAtmosphereRef = useRef(!!showAtmosphere);
+  const titanYawRadRef = useRef(0);
+  const obliquityRadRef = useRef(0);
+  const activeGeometryDragRef = useRef({ type: null, lastX: 0, lastY: 0, lastAngle: null });
   const tooltipStateRef = useRef({ visible: false, text: '', x: 0, y: 0, color: '#66ccff', pinned: false, key: null });
   const pinnedVectorTooltipsRef = useRef([]);
   const pinnedVectorKeysRef = useRef(new Set());
   const hoveredVectorKeyRef = useRef(null);
   const overlaySceneRef = useRef(null);
+  const vectorIdCounterRef = useRef(1);
 
   useEffect(() => {
     angleRef.current = {
@@ -73,6 +99,24 @@ function SphereView({
       phaseDeg: Math.max(0, Math.min(360, Number.isFinite(phaseDeg) ? phaseDeg : 0)),
     };
   }, [incidenceDeg, emissionDeg, phaseDeg]);
+
+  useEffect(() => {
+    const normalizedYaw = Number.isFinite(titanYawDeg)
+      ? (((titanYawDeg % 360) + 360) % 360)
+      : 0;
+    titanYawRadRef.current = THREE.MathUtils.degToRad(normalizedYaw);
+  }, [titanYawDeg]);
+
+  useEffect(() => {
+    const clampedObliquity = Math.max(-23, Math.min(23, Number.isFinite(obliquityDeg) ? obliquityDeg : 0));
+    const obliquityRad = THREE.MathUtils.degToRad(clampedObliquity);
+    obliquityRadRef.current = obliquityRad;
+    if (meshRef.current) meshRef.current.rotation.z = obliquityRad;
+    if (rotationAxisRef.current) rotationAxisRef.current.rotation.z = obliquityRad;
+    if (cameraModeRef.current.center === 'overhead') {
+      pendingOverheadSnapRef.current = true;
+    }
+  }, [obliquityDeg]);
 
   useEffect(() => {
     interactionRef.current = {
@@ -92,6 +136,18 @@ function SphereView({
   }, [interactionMode, onSurfacePointSelect]);
 
   useEffect(() => {
+    geometryModeRef.current = (geometryInteractionMode === 'editTitan' || geometryInteractionMode === 'editCassini')
+      ? geometryInteractionMode
+      : 'camera';
+    activeGeometryDragRef.current = { type: null, lastX: 0, lastY: 0, lastAngle: null };
+    if (controlsRef.current) controlsRef.current.enabled = true;
+  }, [geometryInteractionMode]);
+
+  useEffect(() => {
+    geometryChangeRef.current = typeof onGeometryChange === 'function' ? onGeometryChange : null;
+  }, [onGeometryChange]);
+
+  useEffect(() => {
     presetReleaseRef.current = typeof onCameraPresetRelease === 'function' ? onCameraPresetRelease : null;
   }, [onCameraPresetRelease]);
 
@@ -103,10 +159,15 @@ function SphereView({
     const preset = cameraPreset === 'cassini' || cameraPreset === 'sun' ? cameraPreset : 'none';
     const center = cameraCenter === 'spacecraft'
       ? 'spacecraft'
-      : (cameraCenter === 'vector' ? 'vector' : 'titan');
+      : (cameraCenter === 'vector'
+        ? 'vector'
+        : (cameraCenter === 'overhead' ? 'overhead' : 'titan'));
     cameraModeRef.current = { preset, center };
     if (prevCameraCenterRef.current !== center && center === 'spacecraft') {
       pendingSpacecraftAutoZoomRef.current = true;
+    }
+    if (prevCameraCenterRef.current !== center && center === 'overhead') {
+      pendingOverheadSnapRef.current = true;
     }
     prevCameraCenterRef.current = center;
   }, [cameraPreset, cameraCenter]);
@@ -122,9 +183,62 @@ function SphereView({
   }, [showLatLonGrid]);
 
   useEffect(() => {
+    geometryGridEnabledRef.current = !!showGeometryGrid;
+    if (geometryGridRef.current) geometryGridRef.current.visible = !!showGeometryGrid;
+  }, [showGeometryGrid]);
+
+  useEffect(() => {
     rotationAxisEnabledRef.current = !!showRotationAxis;
     if (rotationAxisRef.current) rotationAxisRef.current.visible = !!showRotationAxis;
   }, [showRotationAxis]);
+
+  useEffect(() => {
+    showAngleArcsRef.current = !!showAngleArcs;
+    const overlay = clickOverlayRef.current;
+    if (!overlay || !Array.isArray(overlay.vectors)) return;
+    overlay.vectors.forEach((vectorSet) => {
+      if (Array.isArray(vectorSet.angleArcs)) {
+        vectorSet.angleArcs.forEach((obj) => { if (obj) obj.visible = !!showAngleArcs; });
+      }
+      if (Array.isArray(vectorSet.angleLabels)) {
+        vectorSet.angleLabels.forEach((obj) => { if (obj) obj.visible = !!showAngleArcs; });
+      }
+    });
+  }, [showAngleArcs]);
+
+  useEffect(() => {
+    showVectorLabelsRef.current = showVectorLabels !== false;
+    const overlay = clickOverlayRef.current;
+    if (!overlay || !Array.isArray(overlay.vectors)) return;
+    overlay.vectors.forEach((vectorSet) => {
+      if (!Array.isArray(vectorSet.vectorLabels)) return;
+      vectorSet.vectorLabels.forEach((obj) => { if (obj) obj.visible = showVectorLabels !== false; });
+    });
+  }, [showVectorLabels]);
+
+  useEffect(() => {
+    showExtendedVectorLinesRef.current = !!showExtendedVectorLines;
+    const overlay = clickOverlayRef.current;
+    if (!overlay || !Array.isArray(overlay.vectors)) return;
+    overlay.vectors.forEach((vectorSet) => {
+      if (!Array.isArray(vectorSet.guideLines)) return;
+      vectorSet.guideLines.forEach((obj) => { if (obj) obj.visible = !!showExtendedVectorLines; });
+    });
+  }, [showExtendedVectorLines]);
+
+  useEffect(() => {
+    allowMultipleVectorsRef.current = !!allowMultipleVectors;
+  }, [allowMultipleVectors]);
+
+  useEffect(() => {
+    showAtmosphereRef.current = !!showAtmosphere;
+    if (atmosphereRef.current) {
+      atmosphereRef.current.visible = !!showAtmosphere;
+    }
+    if (atmosphereGlowRef.current) {
+      atmosphereGlowRef.current.visible = !!showAtmosphere;
+    }
+  }, [showAtmosphere]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -232,9 +346,66 @@ function SphereView({
         mesh.receiveShadow = true;
         // Rotate Titan to the requested yaw.
         const baseTitanYaw = THREE.MathUtils.degToRad(-90);
-        mesh.rotation.y = baseTitanYaw;
+        mesh.rotation.y = baseTitanYaw + titanYawRadRef.current;
+        mesh.rotation.z = obliquityRadRef.current;
         meshRef.current = mesh;
         scene.add(mesh);
+
+        const atmosphereRadiusScale = 1.062;
+        const atmosphere = new THREE.Mesh(
+          new THREE.SphereGeometry(atmosphereRadiusScale, 128, 128),
+          new THREE.ShaderMaterial({
+            transparent: true,
+            opacity: 1,
+            side: THREE.FrontSide,
+            depthWrite: false,
+            toneMapped: false,
+            uniforms: {},
+            vertexShader: `
+              varying vec3 vWorldNormal;
+              varying vec3 vWorldPos;
+              void main() {
+                vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                vWorldPos = worldPos.xyz;
+                vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                gl_Position = projectionMatrix * viewMatrix * worldPos;
+              }
+            `,
+            fragmentShader: `
+              varying vec3 vWorldNormal;
+              varying vec3 vWorldPos;
+              void main() {
+                vec3 viewDir = normalize(cameraPosition - vWorldPos);
+                float ndv = max(dot(normalize(vWorldNormal), viewDir), 0.0);
+                float rim = pow(1.0 - ndv, 2.6);
+                float alpha = mix(0.46, 0.92, rim);
+                vec3 centerColor = vec3(0.66, 0.50, 0.16);
+                vec3 edgeColor = vec3(0.98, 0.84, 0.34);
+                vec3 color = mix(centerColor, edgeColor, rim);
+                gl_FragColor = vec4(color, alpha);
+              }
+            `,
+          })
+        );
+        atmosphere.visible = showAtmosphereRef.current;
+        atmosphereRef.current = atmosphere;
+        scene.add(atmosphere);
+
+        const atmosphereGlow = new THREE.Mesh(
+          new THREE.SphereGeometry(1.086, 96, 96),
+          new THREE.MeshBasicMaterial({
+            color: 0xaebdca,
+            transparent: true,
+            opacity: 0.055,
+            side: THREE.BackSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            toneMapped: false,
+          })
+        );
+        atmosphereGlow.visible = showAtmosphereRef.current;
+        atmosphereGlowRef.current = atmosphereGlow;
+        scene.add(atmosphereGlow);
 
         const createTextSprite = (text, color = '#8fe7ff') => {
           const canvas = document.createElement('canvas');
@@ -326,6 +497,45 @@ function SphereView({
         mesh.add(gridGroup);
         mesh.add(labelGroup);
 
+        const geometryGrid = new THREE.Group();
+        const ringRadius = 1.38;
+        const makeRing = (color, opacity = 0.45) => new THREE.LineLoop(
+          new THREE.BufferGeometry().setFromPoints(
+            Array.from({ length: 96 }, (_, idx) => {
+              const t = (idx / 96) * Math.PI * 2;
+              return new THREE.Vector3(Math.cos(t) * ringRadius, 0, Math.sin(t) * ringRadius);
+            })
+          ),
+          new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+        );
+        const eqRing = makeRing(0x66ccff, 0.5);
+        geometryGrid.add(eqRing);
+        const meridianA = makeRing(0xffc366, 0.38);
+        meridianA.rotation.x = Math.PI / 2;
+        geometryGrid.add(meridianA);
+        const meridianB = makeRing(0xa7ff8a, 0.38);
+        meridianB.rotation.z = Math.PI / 2;
+        geometryGrid.add(meridianB);
+
+        for (let deg = 0; deg < 360; deg += 15) {
+          const isMajor = deg % 45 === 0;
+          const rad = THREE.MathUtils.degToRad(deg);
+          const inner = new THREE.Vector3(Math.cos(rad) * 1.06, 0, Math.sin(rad) * 1.06);
+          const outer = new THREE.Vector3(Math.cos(rad) * (isMajor ? 1.52 : 1.45), 0, Math.sin(rad) * (isMajor ? 1.52 : 1.45));
+          const spoke = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([inner, outer]),
+            new THREE.LineBasicMaterial({
+              color: isMajor ? 0xfff0b3 : 0x9ec6d8,
+              transparent: true,
+              opacity: isMajor ? 0.55 : 0.25,
+            })
+          );
+          geometryGrid.add(spoke);
+        }
+        geometryGrid.visible = geometryGridEnabledRef.current;
+        geometryGridRef.current = geometryGrid;
+        scene.add(geometryGrid);
+
         const axisGroup = new THREE.Group();
         const axisMat = new THREE.LineBasicMaterial({ color: 0xf66d6d, transparent: true, opacity: 0.9 });
         const axisPts = [new THREE.Vector3(0, -1.45, 0), new THREE.Vector3(0, 1.45, 0)];
@@ -336,6 +546,7 @@ function SphereView({
         );
         topCone.position.set(0, 1.5, 0);
         axisGroup.add(topCone);
+        axisGroup.rotation.z = obliquityRadRef.current;
         axisGroup.visible = rotationAxisEnabledRef.current;
         rotationAxisRef.current = axisGroup;
         scene.add(axisGroup);
@@ -360,6 +571,20 @@ function SphereView({
               m.opacity = opacity;
               m.side = THREE.DoubleSide;
               m.needsUpdate = true;
+            });
+          });
+        };
+
+        const setObjectIllumination = (object, emissiveIntensity = 0) => {
+          object.traverse((node) => {
+            if (!node.material) return;
+            const mats = Array.isArray(node.material) ? node.material : [node.material];
+            mats.forEach((m) => {
+              if ('emissive' in m && m.emissive) {
+                m.emissive.setHex(0xffe1ad);
+                m.emissiveIntensity = emissiveIntensity;
+                m.needsUpdate = true;
+              }
             });
           });
         };
@@ -534,23 +759,8 @@ function SphereView({
         };
         loadCassiniModel().catch((err) => {
           if (cancelled || !satelliteBody) return;
-          // Keep fallback visible, but log the real error for production diagnostics.
+          // Intentionally no fallback geometry: only render the real Cassini model.
           console.error('Failed to load Cassini model', { urls: cassiniModelUrls, error: err });
-          const fallback = new THREE.Mesh(
-            new THREE.SphereGeometry(0.18, 20, 20),
-            new THREE.MeshStandardMaterial({
-              color: 0xa8a8a8,
-              roughness: 0.85,
-              metalness: 0.2,
-              transparent: true,
-              opacity: 1,
-              side: THREE.DoubleSide,
-            })
-          );
-          fallback.castShadow = false;
-          fallback.receiveShadow = false;
-          cassiniAnchor.add(fallback);
-          cassiniVisualRadius = 0.18;
         });
 
         const createStarField = (count, radius, size, opacity) => {
@@ -631,41 +841,71 @@ function SphereView({
           setPinnedVectorTooltips(next);
         };
 
+        const getOverlayVectors = () => {
+          const vectors = clickOverlayRef.current?.vectors;
+          return Array.isArray(vectors) ? vectors : [];
+        };
+
         const getVectorHitTargets = () => {
-          const overlay = clickOverlayRef.current;
           const targets = [];
-          ['sunArrow', 'satArrow', 'normalArrow'].forEach((key) => {
-            const arrow = overlay[key];
-            if (!arrow) return;
-            if (arrow.line) targets.push(arrow.line);
-            if (arrow.cone) targets.push(arrow.cone);
-            if (arrow.userData?.shaft) targets.push(arrow.userData.shaft);
+          getOverlayVectors().forEach((vectorSet) => {
+            [vectorSet.sunArrow, vectorSet.satArrow, vectorSet.normalArrow].forEach((arrow) => {
+              if (!arrow) return;
+              if (arrow.line) targets.push(arrow.line);
+              if (arrow.cone) targets.push(arrow.cone);
+              if (arrow.userData?.shaft) targets.push(arrow.userData.shaft);
+            });
+            if (Array.isArray(vectorSet.angleArcs)) {
+              vectorSet.angleArcs.forEach((arc) => { if (arc) targets.push(arc); });
+            }
           });
           return targets;
         };
 
+        const getMarkerHitTargets = () => {
+          const markers = [];
+          getOverlayVectors().forEach((vectorSet) => {
+            if (vectorSet.marker) markers.push(vectorSet.marker);
+          });
+          return markers;
+        };
+
+        const getArrowByVectorKey = (vectorKey) => {
+          if (!vectorKey) return null;
+          const vectors = getOverlayVectors();
+          for (let i = 0; i < vectors.length; i += 1) {
+            const vectorSet = vectors[i];
+            const arrows = [vectorSet.sunArrow, vectorSet.satArrow, vectorSet.normalArrow];
+            for (let j = 0; j < arrows.length; j += 1) {
+              const arrow = arrows[j];
+              if (arrow?.cone?.userData?.vectorKey === vectorKey) return arrow;
+            }
+          }
+          return null;
+        };
+
         const setVectorHoverScale = (hoverKey) => {
-          const overlay = clickOverlayRef.current;
-          const keyMap = {
-            sun: overlay.sunArrow,
-            sat: overlay.satArrow,
-            normal: overlay.normalArrow,
-          };
-          Object.entries(keyMap).forEach(([key, arrow]) => {
-            if (!arrow) return;
-            const isPinned = pinnedVectorKeysRef.current.has(key);
-            const scale = (key === hoverKey || isPinned) ? 1.08 : 1.0;
-            arrow.scale.setScalar(scale);
+          getOverlayVectors().forEach((vectorSet) => {
+            [vectorSet.sunArrow, vectorSet.satArrow, vectorSet.normalArrow].forEach((arrow) => {
+              if (!arrow) return;
+              const key = arrow?.cone?.userData?.vectorKey || '';
+              const isPinned = pinnedVectorKeysRef.current.has(key);
+              const scale = (key === hoverKey || isPinned) ? 1.08 : 1.0;
+              arrow.scale.setScalar(scale);
+            });
           });
         };
 
-        const setMarkerHoverState = (isHovered) => {
-          const marker = clickOverlayRef.current?.marker;
-          if (!marker || !marker.material) return;
-          marker.scale.setScalar(isHovered ? 1.35 : 1);
-          marker.material.color.setHex(isHovered ? 0xff4040 : 0xffffff);
-          marker.material.opacity = isHovered ? 1 : 0.95;
-          marker.material.needsUpdate = true;
+        const setMarkerHoverState = (hoveredMarker = null) => {
+          getOverlayVectors().forEach((vectorSet) => {
+            const marker = vectorSet.marker;
+            if (!marker || !marker.material) return;
+            const isHovered = hoveredMarker === marker;
+            marker.scale.setScalar(isHovered ? 1.35 : 1);
+            marker.material.color.setHex(isHovered ? 0xff4040 : 0xffffff);
+            marker.material.opacity = isHovered ? 1 : 0.95;
+            marker.material.needsUpdate = true;
+          });
         };
 
         const getHoveredVectorInfo = (event) => {
@@ -694,10 +934,23 @@ function SphereView({
           };
         };
 
+        const getPointerAngleAroundCenter = (event) => {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const cx = rect.left + (rect.width / 2);
+          const cy = rect.top + (rect.height / 2);
+          return Math.atan2(event.clientY - cy, event.clientX - cx);
+        };
+
+        const normalizeAngleDelta = (delta) => {
+          if (delta > Math.PI) return delta - (Math.PI * 2);
+          if (delta < -Math.PI) return delta + (Math.PI * 2);
+          return delta;
+        };
+
         const updateVectorHover = (event) => {
           if (!renderer || !camera || interactionRef.current.mode !== 'vector') {
             setVectorHoverScale(null);
-            setMarkerHoverState(false);
+            setMarkerHoverState(null);
             hideVectorTooltip();
             return;
           }
@@ -705,9 +958,20 @@ function SphereView({
           pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
           pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
           raycaster.setFromCamera(pointer, camera);
-          const marker = clickOverlayRef.current?.marker;
-          const markerHovered = !!(marker && raycaster.intersectObject(marker, true).length > 0);
-          setMarkerHoverState(markerHovered);
+          const markerHits = raycaster.intersectObjects(getMarkerHitTargets(), true);
+          const markerTargets = getMarkerHitTargets();
+          let hoveredMarker = null;
+          if (markerHits?.[0]?.object) {
+            let candidate = markerHits[0].object;
+            while (candidate) {
+              if (markerTargets.includes(candidate)) {
+                hoveredMarker = candidate;
+                break;
+              }
+              candidate = candidate.parent;
+            }
+          }
+          setMarkerHoverState(hoveredMarker);
           const info = getHoveredVectorInfo(event);
           if (!info) {
             hoveredVectorKeyRef.current = null;
@@ -717,6 +981,10 @@ function SphereView({
           }
           hoveredVectorKeyRef.current = info.key;
           setVectorHoverScale(info.key);
+          if (pinnedVectorKeysRef.current.has(info.key)) {
+            hideVectorTooltip();
+            return;
+          }
           maybeUpdateTooltip({
             visible: true,
             text: info.label,
@@ -737,8 +1005,85 @@ function SphereView({
           pointerStateRef.current.downX = event.clientX;
           pointerStateRef.current.downY = event.clientY;
           pointerStateRef.current.wasDragging = false;
+
+          const geometryMode = geometryModeRef.current;
+          const mode = interactionRef.current.mode;
+          if (geometryMode === 'camera' || mode !== 'vector' || !renderer || !camera) return;
+
+          const rect = renderer.domElement.getBoundingClientRect();
+          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(pointer, camera);
+
+          if (geometryMode === 'editTitan' && mesh) {
+            const titanHits = raycaster.intersectObject(mesh, false);
+            if (titanHits.length > 0) {
+              activeGeometryDragRef.current = {
+                type: 'titan',
+                lastX: event.clientX,
+                lastY: event.clientY,
+                lastAngle: getPointerAngleAroundCenter(event),
+              };
+              controls.enabled = false;
+            }
+            return;
+          }
+
+          if (geometryMode === 'editCassini' && satelliteBody) {
+            const satHits = raycaster.intersectObject(satelliteBody, true);
+            if (satHits.length > 0) {
+              activeGeometryDragRef.current = {
+                type: 'cassini',
+                lastX: event.clientX,
+                lastY: event.clientY,
+                lastAngle: getPointerAngleAroundCenter(event),
+              };
+              controls.enabled = false;
+            }
+          }
         };
         pointerMoveHandler = (event) => {
+          const dragState = activeGeometryDragRef.current;
+          if (dragState.type) {
+            const dx = event.clientX - dragState.lastX;
+            const dy = event.clientY - dragState.lastY;
+            dragState.lastX = event.clientX;
+            dragState.lastY = event.clientY;
+            if ((dx * dx) + (dy * dy) > 0.2) {
+              pointerStateRef.current.wasDragging = true;
+            }
+
+            if (dragState.type === 'titan') {
+              let yawDeltaDeg = dx * 0.9;
+              if (cameraModeRef.current.center === 'overhead' && Number.isFinite(dragState.lastAngle)) {
+                const pointerAngle = getPointerAngleAroundCenter(event);
+                const angleDelta = normalizeAngleDelta(pointerAngle - dragState.lastAngle);
+                dragState.lastAngle = pointerAngle;
+                yawDeltaDeg = -THREE.MathUtils.radToDeg(angleDelta);
+              }
+              const currentYawDeg = THREE.MathUtils.radToDeg(titanYawRadRef.current);
+              const nextYawDeg = (((currentYawDeg + yawDeltaDeg) % 360) + 360) % 360;
+              titanYawRadRef.current = THREE.MathUtils.degToRad(nextYawDeg);
+              if (geometryChangeRef.current) geometryChangeRef.current({ titanYawDeg: nextYawDeg });
+            } else if (dragState.type === 'cassini') {
+              let phaseDeltaDeg = dx * 1.1;
+              if (Number.isFinite(dragState.lastAngle)) {
+                const pointerAngle = getPointerAngleAroundCenter(event);
+                const angleDelta = normalizeAngleDelta(pointerAngle - dragState.lastAngle);
+                dragState.lastAngle = pointerAngle;
+                phaseDeltaDeg = -THREE.MathUtils.radToDeg(angleDelta);
+              }
+              const nextPhaseDeg = THREE.MathUtils.clamp(angleRef.current.phaseDeg + phaseDeltaDeg, 0, 355);
+              angleRef.current.phaseDeg = nextPhaseDeg;
+              if (geometryChangeRef.current) {
+                geometryChangeRef.current({
+                  phaseDeg: nextPhaseDeg,
+                });
+              }
+            }
+            return;
+          }
+
           if (pointerStateRef.current.isPointerDown) {
             const dx = event.clientX - pointerStateRef.current.downX;
             const dy = event.clientY - pointerStateRef.current.downY;
@@ -750,12 +1095,16 @@ function SphereView({
         };
         pointerUpHandler = () => {
           pointerStateRef.current.isPointerDown = false;
+          activeGeometryDragRef.current = { type: null, lastX: 0, lastY: 0, lastAngle: null };
+          controls.enabled = true;
         };
         pointerLeaveHandler = () => {
           pointerStateRef.current.isPointerDown = false;
+          activeGeometryDragRef.current = { type: null, lastX: 0, lastY: 0, lastAngle: null };
+          controls.enabled = true;
           hoveredVectorKeyRef.current = null;
           setVectorHoverScale(null);
-          setMarkerHoverState(false);
+          setMarkerHoverState(null);
           hideVectorTooltip();
         };
 
@@ -767,6 +1116,7 @@ function SphereView({
         clickHandler = (event) => {
           const mode = interactionRef.current.mode;
           if (mode !== 'vector' && mode !== 'plotPoint' && mode !== 'plotMultiple') return;
+          if (mode === 'vector' && geometryModeRef.current !== 'camera') return;
           if (pointerStateRef.current.wasDragging) {
             pointerStateRef.current.wasDragging = false;
             return;
@@ -790,21 +1140,68 @@ function SphereView({
               return;
             }
 
-            const existingMarker = clickOverlayRef.current?.marker;
-            if (existingMarker) {
-              const markerHits = raycaster.intersectObject(existingMarker, true);
-              if (markerHits && markerHits.length > 0) {
-                clearClickOverlay(overlayScene, clickOverlayRef);
-                pinnedVectorKeysRef.current = new Set();
-                hoveredVectorKeyRef.current = null;
-                setVectorHoverScale(null);
-                setMarkerHoverState(false);
-                hideVectorTooltip();
-                maybeUpdatePinnedTooltips([]);
-                if (cameraModeRef.current.center === 'vector') {
-                  controls.target.lerp(new THREE.Vector3(0, 0, 0), 1);
+            const markerTargets = getMarkerHitTargets();
+            const markerHits = raycaster.intersectObjects(markerTargets, true);
+            if (markerHits && markerHits.length > 0) {
+              let clickedMarker = null;
+              let node = markerHits[0].object;
+              while (node) {
+                if (markerTargets.includes(node)) {
+                  clickedMarker = node;
+                  break;
                 }
-                return;
+                node = node.parent;
+              }
+              if (clickedMarker) {
+                const overlay = clickOverlayRef.current;
+                const vectors = Array.isArray(overlay.vectors) ? overlay.vectors : [];
+                const targetSet = vectors.find((set) => set.marker === clickedMarker);
+                if (targetSet) {
+                  const removeObjects = [
+                    targetSet.marker,
+                    targetSet.sunArrow,
+                    targetSet.satArrow,
+                    targetSet.normalArrow,
+                    ...(targetSet.angleArcs || []),
+                    ...(targetSet.angleLabels || []),
+                    ...(targetSet.vectorLabels || []),
+                    ...(targetSet.guideLines || []),
+                  ];
+                  removeObjects.forEach((obj) => {
+                    if (!obj) return;
+                    if (overlayScene) overlayScene.remove(obj);
+                    obj.traverse((child) => {
+                      if (child.geometry) child.geometry.dispose();
+                      if (child.material) {
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach((m) => {
+                          if (m.map) m.map.dispose();
+                          m.dispose();
+                        });
+                      }
+                    });
+                  });
+                  overlay.vectors = vectors.filter((set) => set !== targetSet);
+                  const last = overlay.vectors.length > 0 ? overlay.vectors[overlay.vectors.length - 1] : null;
+                  overlay.marker = last?.marker || null;
+                  overlay.sunArrow = last?.sunArrow || null;
+                  overlay.satArrow = last?.satArrow || null;
+                  overlay.normalArrow = last?.normalArrow || null;
+                  const nextPinned = new Set();
+                  pinnedVectorKeysRef.current.forEach((key) => {
+                    if (getArrowByVectorKey(key)) nextPinned.add(key);
+                  });
+                  pinnedVectorKeysRef.current = nextPinned;
+                  hoveredVectorKeyRef.current = null;
+                  setVectorHoverScale(null);
+                  setMarkerHoverState(null);
+                  hideVectorTooltip();
+                  maybeUpdatePinnedTooltips([]);
+                  if (cameraModeRef.current.center === 'vector') {
+                    controls.target.copy(last?.marker?.position || new THREE.Vector3(0, 0, 0));
+                  }
+                  return;
+                }
               }
             }
           }
@@ -818,12 +1215,14 @@ function SphereView({
           const tangent = upRef.clone().cross(normal).normalize();
           const bitangent = normal.clone().cross(tangent).normalize();
 
-          clearClickOverlay(overlayScene, clickOverlayRef);
-          pinnedVectorKeysRef.current = new Set();
-          maybeUpdatePinnedTooltips([]);
-          setVectorHoverScale(null);
-          setMarkerHoverState(false);
-          hideVectorTooltip();
+          if (mode !== 'vector' || !allowMultipleVectorsRef.current) {
+            clearClickOverlay(overlayScene, clickOverlayRef);
+            pinnedVectorKeysRef.current = new Set();
+            maybeUpdatePinnedTooltips([]);
+            setVectorHoverScale(null);
+            setMarkerHoverState(null);
+            hideVectorTooltip();
+          }
           const origin = hitPoint.clone().add(normal.clone().multiplyScalar(0.004));
 
           if (mode === 'plotPoint') {
@@ -862,7 +1261,7 @@ function SphereView({
               const lon = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
               interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
             }
-            clickOverlayRef.current = { marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross };
+            clickOverlayRef.current = { marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross, vectors: [] };
             return;
           }
 
@@ -894,18 +1293,29 @@ function SphereView({
           marker.position.copy(hitPoint.clone().add(normal.clone().multiplyScalar(0.014)));
           marker.renderOrder = 1004;
           overlayScene.add(marker);
-          const arrowLength = 0.55;
+
+          const arrowLength = 0.68;
+          const normalLength = arrowLength * 0.75;
           const getDirectionFromClickToTarget = (target) => {
             const d = target.clone().sub(origin);
             if (d.lengthSq() < 1e-8) return normal.clone();
             return d.normalize();
           };
-          const sunArrow = new THREE.ArrowHelper(getDirectionFromClickToTarget(sunBody.position), origin, arrowLength, 0xffc94a, 0.12, 0.06);
-          const satArrow = new THREE.ArrowHelper(getDirectionFromClickToTarget(satelliteBody.position), origin, arrowLength, 0x66ccff, 0.12, 0.06);
-          const normalArrow = new THREE.ArrowHelper(normal.clone(), origin, arrowLength * 0.75, 0x66ff66, 0.1, 0.05);
-          const addVectorShaft = (arrow, colorHex) => {
+          const sunDirection = getDirectionFromClickToTarget(sunBody.position);
+          const satDirection = getDirectionFromClickToTarget(satelliteBody.position);
+          const normalDirection = normal.clone();
+          const sunHeadLength = 0.12;
+          const satHeadLength = 0.12;
+          const normalHeadLength = 0.1;
+          const sunArrow = new THREE.ArrowHelper(sunDirection, origin, arrowLength, 0xffc94a, sunHeadLength, 0.06);
+          const satArrow = new THREE.ArrowHelper(satDirection, origin, arrowLength, 0x66ccff, satHeadLength, 0.06);
+          const normalArrow = new THREE.ArrowHelper(normalDirection, origin, normalLength, 0x66ff66, normalHeadLength, 0.05);
+          const vectorId = vectorIdCounterRef.current;
+          vectorIdCounterRef.current += 1;
+
+          const addVectorShaft = (arrow, colorHex, length = 0.43) => {
             const shaft = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.009, 0.009, 0.43, 14),
+              new THREE.CylinderGeometry(0.009, 0.009, length, 14),
               new THREE.MeshBasicMaterial({
                 color: colorHex,
                 depthTest: false,
@@ -915,14 +1325,15 @@ function SphereView({
                 toneMapped: false,
               })
             );
-            shaft.position.set(0, 0.215, 0);
+            shaft.position.set(0, length / 2, 0);
             shaft.renderOrder = 1006;
             arrow.add(shaft);
             arrow.userData.shaft = shaft;
             return shaft;
           };
-          const setVectorMeta = (obj, key, label, color) => {
-            obj.userData.vectorKey = key;
+          const setVectorMeta = (obj, keySuffix, label, color) => {
+            const vectorKey = `v${vectorId}:${keySuffix}`;
+            obj.userData.vectorKey = vectorKey;
             obj.userData.vectorLabel = label;
             obj.userData.vectorColor = color;
           };
@@ -932,9 +1343,9 @@ function SphereView({
           setVectorMeta(satArrow.cone, 'sat', 'Spacecraft Vector', '#66ccff');
           setVectorMeta(normalArrow.line, 'normal', 'Surface Normal', '#66ff66');
           setVectorMeta(normalArrow.cone, 'normal', 'Surface Normal', '#66ff66');
-          const sunShaft = addVectorShaft(sunArrow, 0xffc94a);
-          const satShaft = addVectorShaft(satArrow, 0x66ccff);
-          const normalShaft = addVectorShaft(normalArrow, 0x66ff66);
+          const sunShaft = addVectorShaft(sunArrow, 0xffc94a, Math.max(0.05, arrowLength - sunHeadLength));
+          const satShaft = addVectorShaft(satArrow, 0x66ccff, Math.max(0.05, arrowLength - satHeadLength));
+          const normalShaft = addVectorShaft(normalArrow, 0x66ff66, Math.max(0.05, normalLength - normalHeadLength));
           setVectorMeta(sunShaft, 'sun', 'Sun Vector', '#ffc94a');
           setVectorMeta(satShaft, 'sat', 'Spacecraft Vector', '#66ccff');
           setVectorMeta(normalShaft, 'normal', 'Surface Normal', '#66ff66');
@@ -960,10 +1371,107 @@ function SphereView({
             arrow.line.renderOrder = 1006;
             arrow.cone.renderOrder = 1006;
           });
+          sunArrow.setLength(arrowLength, sunHeadLength, 0.06);
+          satArrow.setLength(arrowLength, satHeadLength, 0.06);
+          normalArrow.setLength(normalLength, normalHeadLength, 0.05);
           overlayScene.add(sunArrow);
           overlayScene.add(satArrow);
           overlayScene.add(normalArrow);
-          clickOverlayRef.current = { marker, sunArrow, satArrow, normalArrow, plotCross: null };
+
+          const guideLines = [];
+          const addGuideLine = (direction, distance, colorHex) => {
+            const points = [
+              origin.clone(),
+              origin.clone().add(direction.clone().multiplyScalar(Math.max(0.2, distance))),
+            ];
+            const guide = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints(points),
+              new THREE.LineBasicMaterial({
+                color: colorHex,
+                transparent: true,
+                opacity: 0.55,
+                depthTest: false,
+                depthWrite: false,
+                toneMapped: false,
+              })
+            );
+            guide.renderOrder = 1002;
+            guide.visible = showExtendedVectorLinesRef.current;
+            overlayScene.add(guide);
+            guideLines.push(guide);
+          };
+          addGuideLine(sunDirection, origin.distanceTo(sunBody.position), 0xffc94a);
+          addGuideLine(satDirection, origin.distanceTo(satelliteBody.position), 0x66ccff);
+          addGuideLine(normalDirection, 1.1, 0x66ff66);
+
+          const vectorLabels = [];
+
+          const angleArcs = [];
+          const angleLabels = [];
+          const createAngleArc = (angleKeySuffix, startDir, endDir, radius, colorHex, labelText, labelColor) => {
+            const start = startDir.clone().normalize();
+            const end = endDir.clone().normalize();
+            const angle = THREE.MathUtils.clamp(start.angleTo(end), 0, Math.PI);
+            if (angle < 1e-4) return;
+            let axis = start.clone().cross(end);
+            if (axis.lengthSq() < 1e-8) return;
+            axis.normalize();
+            const segments = 28;
+            [-0.006, 0, 0.006].forEach((radiusOffset) => {
+              const points = [];
+              for (let i = 0; i <= segments; i += 1) {
+                const t = i / segments;
+                const dir = start.clone().applyAxisAngle(axis, angle * t).normalize();
+                points.push(origin.clone().add(dir.multiplyScalar(radius + radiusOffset)).add(normal.clone().multiplyScalar(0.01)));
+              }
+              const geometryArc = new THREE.BufferGeometry().setFromPoints(points);
+              const line = new THREE.Line(
+                geometryArc,
+                new THREE.LineBasicMaterial({
+                  color: colorHex,
+                  transparent: true,
+                  opacity: 1,
+                  depthTest: false,
+                  depthWrite: false,
+                  toneMapped: false,
+                })
+              );
+              line.renderOrder = 1008;
+              line.userData.vectorKey = `v${vectorId}:angle:${angleKeySuffix}`;
+              line.userData.vectorLabel = labelText;
+              line.userData.vectorColor = labelColor;
+              line.visible = showAngleArcsRef.current;
+              overlayScene.add(line);
+              angleArcs.push(line);
+            });
+          };
+
+          const incidenceDeg = THREE.MathUtils.radToDeg(normalDirection.angleTo(sunDirection));
+          const emissionDeg = THREE.MathUtils.radToDeg(normalDirection.angleTo(satDirection));
+          const phaseDegActual = THREE.MathUtils.radToDeg(sunDirection.angleTo(satDirection));
+          createAngleArc('incidence', normalDirection, sunDirection, 0.28, 0xff4db8, `Incidence ${incidenceDeg.toFixed(1)}°`, '#ff4db8');
+          createAngleArc('emission', normalDirection, satDirection, 0.34, 0xff7a33, `Emission ${emissionDeg.toFixed(1)}°`, '#ff7a33');
+          createAngleArc('phase', sunDirection, satDirection, 0.40, 0xb27aff, `Phase ${phaseDegActual.toFixed(1)}°`, '#b27aff');
+
+          const overlay = clickOverlayRef.current;
+          if (!Array.isArray(overlay.vectors)) overlay.vectors = [];
+          const vectorSet = {
+            id: vectorId,
+            marker,
+            sunArrow,
+            satArrow,
+            normalArrow,
+            angleArcs,
+            angleLabels,
+            vectorLabels,
+            guideLines,
+          };
+          overlay.vectors.push(vectorSet);
+          overlay.plotCross = null;
+          overlay.marker = marker;
+          overlay.sunArrow = sunArrow;
+          overlay.satArrow = satArrow;
+          overlay.normalArrow = normalArrow;
 
           // After placing a vector, center camera target on it immediately.
           controls.target.copy(marker.position);
@@ -1121,9 +1629,15 @@ function SphereView({
             if (satelliteBody) {
               const satInside = cameraPos.distanceTo(satelliteBody.position) < (cassiniVisualRadius * 1.1);
               makeObjectSemiTransparent(satelliteBody, satInside ? insideFadeOpacity : normalOpacity);
+              const overheadIllumination = cameraModeRef.current.center === 'overhead' ? 0.24 : 0;
+              setObjectIllumination(satelliteBody, overheadIllumination);
             }
 
-            if (introActive) {
+            if (cameraModeRef.current.center === 'overhead' && introState.active) {
+              introState.active = false;
+            }
+
+            if (introActive && cameraModeRef.current.center !== 'overhead') {
               const finalPose = presetPose || getCassiniCameraPose(false) || {
                 position: defaultCameraOffset.clone(),
                 target: getDefaultCameraTarget(),
@@ -1139,35 +1653,86 @@ function SphereView({
               controls.enableRotate = false;
 
               const spin = (1 - introEase) * (Math.PI * 2.2);
-              mesh.rotation.y = baseTitanYaw + spin;
+              mesh.rotation.y = baseTitanYaw + titanYawRadRef.current + spin;
+              mesh.rotation.z = obliquityRadRef.current;
+              if (atmosphereRef.current) {
+                atmosphereRef.current.rotation.y = mesh.rotation.y;
+                atmosphereRef.current.rotation.z = mesh.rotation.z;
+              }
+              if (atmosphereGlowRef.current) {
+                atmosphereGlowRef.current.rotation.y = mesh.rotation.y;
+                atmosphereGlowRef.current.rotation.z = mesh.rotation.z;
+              }
+              if (rotationAxisRef.current) rotationAxisRef.current.rotation.z = obliquityRadRef.current;
               if (sunBody) sunBody.rotation.y = spin * 0.5;
               if (satelliteBody) satelliteBody.rotation.y = spin * 0.35;
             } else {
               if (introState.active) {
                 introState.active = false;
               }
-              mesh.rotation.y = baseTitanYaw;
+              mesh.rotation.y = baseTitanYaw + titanYawRadRef.current;
+              mesh.rotation.z = obliquityRadRef.current;
+              if (atmosphereRef.current) {
+                atmosphereRef.current.rotation.y = mesh.rotation.y;
+                atmosphereRef.current.rotation.z = mesh.rotation.z;
+              }
+              if (atmosphereGlowRef.current) {
+                atmosphereGlowRef.current.rotation.y = mesh.rotation.y;
+                atmosphereGlowRef.current.rotation.z = mesh.rotation.z;
+              }
+              if (rotationAxisRef.current) rotationAxisRef.current.rotation.z = obliquityRadRef.current;
               if (sunBody) sunBody.rotation.y = 0;
               if (satelliteBody) satelliteBody.rotation.y = 0;
 
               if (presetPose) {
-                controls.enableRotate = true;
+                controls.enableRotate = geometryModeRef.current === 'camera';
                 controls.minDistance = 0.03;
                 controls.maxDistance = 12;
+                controls.minPolarAngle = Math.PI / 2;
+                controls.maxPolarAngle = Math.PI / 2;
                 camera.position.lerp(presetPose.position, 0.18);
                 controls.target.lerp(presetPose.target, 0.22);
                 camera.lookAt(controls.target);
               } else {
-                controls.enableRotate = true;
-                if (cameraModeRef.current.center === 'vector') {
+                const isOverheadCenter = cameraModeRef.current.center === 'overhead';
+                controls.enableRotate = geometryModeRef.current === 'camera' && !isOverheadCenter;
+                if (isOverheadCenter) {
+                  pendingSpacecraftAutoZoomRef.current = false;
+                  controls.minDistance = 2.5;
+                  controls.maxDistance = 28;
+                  controls.minPolarAngle = 0.02;
+                  controls.maxPolarAngle = 0.02;
+                  controls.enableDamping = false;
+                  const northPoleDir = new THREE.Vector3(0, 1, 0)
+                    .applyAxisAngle(new THREE.Vector3(0, 0, 1), obliquityRadRef.current)
+                    .normalize();
+                  const overheadTarget = new THREE.Vector3(0, 0, 0);
+                  const currentDistance = camera.position.distanceTo(controls.target);
+                  const desiredDistance = pendingOverheadSnapRef.current
+                    ? 17.5
+                    : THREE.MathUtils.clamp(currentDistance, controls.minDistance, controls.maxDistance);
+                  pendingOverheadSnapRef.current = false;
+                  const overheadPos = overheadTarget.clone()
+                    .addScaledVector(northPoleDir, desiredDistance)
+                    .add(new THREE.Vector3(0.001, 0, 0));
+                  controls.target.copy(overheadTarget);
+                  camera.position.copy(overheadPos);
+                  camera.lookAt(controls.target);
+                } else if (cameraModeRef.current.center === 'vector') {
+                  controls.enableDamping = true;
                   pendingSpacecraftAutoZoomRef.current = false;
                   controls.minDistance = 0.02;
                   controls.maxDistance = 12;
+                  controls.minPolarAngle = 0.02;
+                  controls.maxPolarAngle = Math.PI - 0.02;
                   const vectorTarget = getVectorCameraTarget();
                   controls.target.copy(vectorTarget);
                 } else if (cameraModeRef.current.center === 'spacecraft' && satelliteBody) {
+                  controls.enableDamping = true;
                   controls.minDistance = 0.02;
                   controls.maxDistance = 12.0;
+                  controls.minPolarAngle = Math.PI / 2;
+                  controls.maxPolarAngle = Math.PI / 2;
                   controls.target.lerp(satelliteBody.position, 0.12);
                   if (pendingSpacecraftAutoZoomRef.current) {
                     const camDir = camera.position.clone().sub(controls.target);
@@ -1180,9 +1745,12 @@ function SphereView({
                     }
                   }
                 } else {
+                  controls.enableDamping = true;
                   pendingSpacecraftAutoZoomRef.current = false;
                   controls.minDistance = 0.02;
                   controls.maxDistance = 7;
+                  controls.minPolarAngle = Math.PI / 2;
+                  controls.maxPolarAngle = Math.PI / 2;
                   controls.target.lerp(new THREE.Vector3(0, 0, 0), 0.18);
                 }
               }
@@ -1190,18 +1758,12 @@ function SphereView({
 
             controls.update();
             if (renderer) {
-              const keyMap = {
-                sun: clickOverlayRef.current?.sunArrow,
-                sat: clickOverlayRef.current?.satArrow,
-                normal: clickOverlayRef.current?.normalArrow,
-              };
               const rw = renderer.domElement.clientWidth || 1;
               const rh = renderer.domElement.clientHeight || 1;
               const nextPinnedTooltips = [];
               const keysToRemove = [];
-              ['sun', 'sat', 'normal'].forEach((key) => {
-                if (!pinnedVectorKeysRef.current.has(key)) return;
-                const arrow = keyMap[key];
+              Array.from(pinnedVectorKeysRef.current).forEach((key) => {
+                const arrow = getArrowByVectorKey(key);
                 if (!arrow?.cone) {
                   keysToRemove.push(key);
                   return;
@@ -1321,8 +1883,17 @@ function SphereView({
       if (multiPointGroupRef.current && scene) {
         scene.remove(multiPointGroupRef.current);
       }
+      if (geometryGridRef.current && scene) {
+        scene.remove(geometryGridRef.current);
+      }
       if (rotationAxisRef.current && scene) {
         scene.remove(rotationAxisRef.current);
+      }
+      if (atmosphereRef.current && scene) {
+        scene.remove(atmosphereRef.current);
+      }
+      if (atmosphereGlowRef.current && scene) {
+        scene.remove(atmosphereGlowRef.current);
       }
       if (renderer) {
         renderer.dispose();
@@ -1345,6 +1916,26 @@ function SphereView({
         textureRef.current.dispose();
         textureRef.current = null;
       }
+      if (atmosphereRef.current) {
+        atmosphereRef.current.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+        });
+        atmosphereRef.current = null;
+      }
+      if (atmosphereGlowRef.current) {
+        atmosphereGlowRef.current.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+            else child.material.dispose();
+          }
+        });
+        atmosphereGlowRef.current = null;
+      }
       sceneRef.current = null;
       overlaySceneRef.current = null;
       rendererRef.current = null;
@@ -1352,6 +1943,7 @@ function SphereView({
       cameraRef.current = null;
       meshRef.current = null;
       multiPointGroupRef.current = null;
+      geometryGridRef.current = null;
     };
   }, []);
 
@@ -1547,25 +2139,76 @@ function SphereView({
 
 function clearClickOverlay(scene, clickOverlayRef) {
   const overlay = clickOverlayRef.current;
-  ['marker', 'sunArrow', 'satArrow', 'normalArrow', 'plotCross'].forEach((key) => {
-    if (!overlay[key]) return;
-    if (scene) scene.remove(overlay[key]);
-    overlay[key].traverse((child) => {
+  if (!overlay) return;
+  const vectors = Array.isArray(overlay.vectors) ? overlay.vectors : [];
+  vectors.forEach((vectorSet) => {
+    const objects = [
+      vectorSet.marker,
+      vectorSet.sunArrow,
+      vectorSet.satArrow,
+      vectorSet.normalArrow,
+      ...(vectorSet.angleArcs || []),
+      ...(vectorSet.angleLabels || []),
+      ...(vectorSet.vectorLabels || []),
+      ...(vectorSet.guideLines || []),
+    ];
+    objects.forEach((obj) => {
+      if (!obj) return;
+      if (scene) scene.remove(obj);
+      obj.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach((m) => {
+            if (m.map) m.map.dispose();
+            m.dispose();
+          });
+        }
+      });
+    });
+  });
+  if (overlay.plotCross) {
+    if (scene) scene.remove(overlay.plotCross);
+    overlay.plotCross.traverse((child) => {
       if (child.geometry) child.geometry.dispose();
       if (child.material) {
-        if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-        else child.material.dispose();
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach((m) => {
+          if (m.map) m.map.dispose();
+          m.dispose();
+        });
       }
     });
-    overlay[key] = null;
-  });
+  }
+  overlay.marker = null;
+  overlay.sunArrow = null;
+  overlay.satArrow = null;
+  overlay.normalArrow = null;
+  overlay.plotCross = null;
+  overlay.vectors = [];
 }
 
 function setOverlayOpacity(overlay, opacity) {
   if (!overlay) return;
   const clamped = Math.max(0.1, Math.min(1, opacity));
-  ['marker', 'sunArrow', 'satArrow', 'normalArrow', 'plotCross'].forEach((key) => {
-    const obj = overlay[key];
+  const objects = [overlay.plotCross];
+  if (Array.isArray(overlay.vectors)) {
+    overlay.vectors.forEach((vectorSet) => {
+      objects.push(
+        vectorSet.marker,
+        vectorSet.sunArrow,
+        vectorSet.satArrow,
+        vectorSet.normalArrow,
+        ...(vectorSet.angleArcs || []),
+        ...(vectorSet.angleLabels || []),
+        ...(vectorSet.vectorLabels || []),
+        ...(vectorSet.guideLines || []),
+      );
+    });
+  } else {
+    objects.push(overlay.marker, overlay.sunArrow, overlay.satArrow, overlay.normalArrow);
+  }
+  objects.forEach((obj) => {
     if (!obj) return;
     obj.traverse((child) => {
       if (!child.material) return;
@@ -1577,6 +2220,55 @@ function setOverlayOpacity(overlay, opacity) {
       });
     });
   });
+}
+
+function createTextSprite(text, color = '#d7f2ff') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 196;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    return new THREE.Sprite(new THREE.SpriteMaterial({ color: 0xffffff, depthTest: false, depthWrite: false }));
+  }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(8, 14, 24, 0.92)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 6;
+  roundRect(ctx, 8, 8, canvas.width - 16, canvas.height - 16, 22);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = 'bold 56px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.frustumCulled = false;
+  return sprite;
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
 }
 
 function isPointOccludedByTitan(cameraPos, pointPos, titanRadius = 1.0) {
