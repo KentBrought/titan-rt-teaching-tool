@@ -590,6 +590,7 @@ function App() {
 
   // Debounce timer ref for hover handler
   const hoverDebounceTimerRef = useRef(null);
+  const lastHoverPixelRef = useRef({ x: null, y: null });
   // Debounce timer ref for image loading
   const imageLoadTimerRef = useRef(null);
 
@@ -611,7 +612,7 @@ function App() {
     loadGeoCube();
   }, [sliders.phaseAngle]);
 
-  // Handle image hover to extract geo values (with debouncing and cached data)
+  // Handle image hover to extract geo values (throttled + cached lookups)
   const handleImageHover = useCallback((x, y, position) => {
     // Clear any existing timer
     if (hoverDebounceTimerRef.current) {
@@ -619,9 +620,16 @@ function App() {
     }
 
     if (x === null || y === null) {
+      lastHoverPixelRef.current = { x: null, y: null };
       setHoverGeoValues(null);
       return;
     }
+
+    // Skip no-op updates for the same hovered pixel.
+    if (lastHoverPixelRef.current.x === x && lastHoverPixelRef.current.y === y) {
+      return;
+    }
+    lastHoverPixelRef.current = { x, y };
 
     // Use cached data for instant lookups (no async needed)
     hoverDebounceTimerRef.current = setTimeout(() => {
@@ -630,7 +638,19 @@ function App() {
         // If data not loaded yet, fall back to async call
         const phaseAngle = sliders.phaseAngle * 5;
         extractGeoValues(phaseAngle, x, y).then(values => {
-          setHoverGeoValues(values);
+          setHoverGeoValues(prev => {
+            if (
+              prev &&
+              prev.x === values.x &&
+              prev.y === values.y &&
+              prev.incidence === values.incidence &&
+              prev.emis === values.emis &&
+              prev.phase === values.phase
+            ) {
+              return prev;
+            }
+            return values;
+          });
         }).catch(error => {
           console.error('Error extracting hover geo values:', error);
           setHoverGeoValues(null);
@@ -646,7 +666,7 @@ function App() {
         const incidence = getGeoValue(geoData, x, y, 5);
         const emis = getGeoValue(geoData, x, y, 6);
 
-        setHoverGeoValues({
+        const nextHover = {
           lat: lat !== null ? lat : null,
           lon: lon !== null ? lon : null,
           phase: phase !== null ? phase : null,
@@ -654,12 +674,25 @@ function App() {
           emis: emis !== null ? emis : null,
           x,
           y
+        };
+        setHoverGeoValues(prev => {
+          if (
+            prev &&
+            prev.x === nextHover.x &&
+            prev.y === nextHover.y &&
+            prev.incidence === nextHover.incidence &&
+            prev.emis === nextHover.emis &&
+            prev.phase === nextHover.phase
+          ) {
+            return prev;
+          }
+          return nextHover;
         });
       } catch (error) {
         console.error('Error extracting hover geo values:', error);
         setHoverGeoValues(null);
       }
-    }, 10); // Reduced debounce delay to 10ms since lookups are now instant
+    }, 60);
   }, [sliders.phaseAngle]);
 
   // Cleanup debounce timers on unmount
@@ -1001,6 +1034,7 @@ function App() {
   };
 
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
+  const activeAlbedoValue = getAlbedoValueFromSlider(sliders.albedo);
   const activeGridEnabled = irDisplayMode === '3d' ? sphereGridEnabled3d : irGridEnabled2d;
   const optionsPanelTitle = irDisplayMode === '3d' ? 'Observing Geometry Options' : 'IR Image Options';
   const panelMatchHeightPx = 760;
@@ -1333,7 +1367,7 @@ function App() {
     };
   }, []);
 
-  // Load both spectral libraries once on mount (albedo 0.1 fine grid + multi-albedo comp library)
+  // Load default spectral library on mount.
   useEffect(() => {
     let isCancelled = false;
 
@@ -1353,16 +1387,6 @@ function App() {
           /* optional init_gui library missing or invalid */
         }
 
-        const newDataPath = `/assets/dt/tomasko_1.0/init_comp_library.json`;
-        try {
-          const newSpectralJson = await loadJsonFile(newDataPath);
-          if (isCancelled) return;
-          if (newSpectralJson && newSpectralJson.wavelength && newSpectralJson.data) {
-            setSpectralDataNew(newSpectralJson);
-          }
-        } catch (newErr) {
-          /* optional init_comp library missing or invalid */
-        }
       } catch (err) {
         if (isCancelled) return;
         console.error('Error loading spectral data:', err);
@@ -1388,7 +1412,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const albedo = getAlbedoValueFromSlider(sliders.albedo);
+    const albedo = activeAlbedoValue;
 
     if (albedo === 0.1 && spectralDataOld) {
       setSpectralData(spectralDataOld);
@@ -1407,7 +1431,32 @@ function App() {
         setAngleOptions({ inc, emi, daz });
       }
     }
-  }, [sliders.albedo, spectralDataOld, spectralDataNew]);
+  }, [activeAlbedoValue, spectralDataOld, spectralDataNew]);
+
+  // Lazy-load multi-albedo spectral library only when needed.
+  useEffect(() => {
+    if (activeAlbedoValue === 0.1 || spectralDataNew) return;
+
+    let isCancelled = false;
+    const loadCompLibrary = async () => {
+      try {
+        const newDataPath = `/assets/dt/tomasko_1.0/init_comp_library.json`;
+        const newSpectralJson = await loadJsonFile(newDataPath);
+        if (isCancelled) return;
+        if (newSpectralJson && newSpectralJson.wavelength && newSpectralJson.data) {
+          setSpectralDataNew(newSpectralJson);
+        }
+      } catch (newErr) {
+        if (isCancelled) return;
+        console.error('Error loading multi-albedo spectral data:', newErr);
+      }
+    };
+
+    loadCompLibrary();
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeAlbedoValue, spectralDataNew]);
 
   // Cleanup effect
   useEffect(() => {
@@ -1584,7 +1633,7 @@ function App() {
                           </div>
                         </>
                       ) : (
-                        <div className="placeholder-circle"></div>
+                        <div className="ir-image-placeholder" aria-label="IR image loading placeholder"></div>
                       )}
                     </div>
                     <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
