@@ -64,6 +64,9 @@ export const parseGeoCube = (buffer) => {
  * @returns {number} The value at the specified position
  */
 export const getGeoValue = (geoCubeData, x, y, band) => {
+  if (!geoCubeData || typeof geoCubeData.length !== 'number') {
+    return null;
+  }
   const numBands = 9;
   const numLines = 681;
   const numSamples = 681;
@@ -82,6 +85,14 @@ export const getGeoValue = (geoCubeData, x, y, band) => {
   }
   
   return geoCubeData[index];
+};
+
+const toFiniteOrNull = (value) => (Number.isFinite(value) ? value : null);
+
+const toFiniteInRangeOrNull = (value, min, max) => {
+  if (!Number.isFinite(value)) return null;
+  if (value < min || value > max) return null;
+  return value;
 };
 
 /**
@@ -118,20 +129,27 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
   try {
     const geoData = await getGeoCubeData(phaseAngle);
     
-    const lat = getGeoValue(geoData, x, y, 0);         // Layer 0: lat (negative = North)
-    const lon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon (negative = West)
-    const phase = getGeoValue(geoData, x, y, 4);      // Layer 4: phase (Deg)
-    const incidence = getGeoValue(geoData, x, y, 5);   // Layer 5: incidence (Deg)
-    const emis = getGeoValue(geoData, x, y, 6);       // Layer 6: emis (Deg)
-    const azimuth = getGeoValue(geoData, x, y, 7);    // Layer 7: azimuth (Deg)
+    const rawLat = getGeoValue(geoData, x, y, 0);       // Layer 0: lat (negative = North)
+    const rawLon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon (negative = West)
+    const rawPhase = getGeoValue(geoData, x, y, 4);     // Layer 4: phase (Deg)
+    const rawIncidence = getGeoValue(geoData, x, y, 5); // Layer 5: incidence (Deg)
+    const rawEmis = getGeoValue(geoData, x, y, 6);      // Layer 6: emis (Deg)
+    const rawAzimuth = getGeoValue(geoData, x, y, 7);   // Layer 7: azimuth (Deg)
+
+    const lat = toFiniteInRangeOrNull(rawLat, -90, 90);
+    const lon = toFiniteInRangeOrNull(rawLon, -360, 360);
+    const phase = toFiniteInRangeOrNull(rawPhase, 0, 360);
+    const incidence = toFiniteInRangeOrNull(rawIncidence, 0, 180);
+    const emis = toFiniteInRangeOrNull(rawEmis, 0, 180);
+    const azimuth = toFiniteInRangeOrNull(rawAzimuth, -360, 360);
     
     return {
-      lat: lat !== null ? lat : null,
-      lon: lon !== null ? lon : null,
-      phase: phase !== null ? phase : null,
-      incidence: incidence !== null ? incidence : null,
-      emis: emis !== null ? emis : null,
-      azimuth: azimuth !== null ? azimuth : null,
+      lat,
+      lon,
+      phase,
+      incidence,
+      emis,
+      azimuth,
       x,
       y
     };
@@ -140,7 +158,7 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
     return {
       lat: null,
       lon: null,
-      phase: null,
+      phase: toFiniteOrNull(phaseAngle),
       incidence: null,
       emis: null,
       azimuth: null,
@@ -150,4 +168,3 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
     };
   }
 };
-

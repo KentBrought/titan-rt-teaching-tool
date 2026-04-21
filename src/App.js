@@ -50,11 +50,11 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
                   <p style={{ color: '#ff6b6b' }}>Error: {values.error}</p>
                 ) : (
                   <div style={{ fontSize: '14px', color: '#ccc' }}>
-                    <p><strong>Latitude:</strong> {values.lat != null ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                    <p><strong>Longitude:</strong> {values.lon != null ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                    <p><strong>Phase:</strong> {values.phase != null ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
-                    <p><strong>Incidence:</strong> {values.incidence != null ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
-                    <p><strong>Emis:</strong> {values.emis != null ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Latitude:</strong> {isFiniteNumber(values.lat) ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                    <p><strong>Longitude:</strong> {isFiniteNumber(values.lon) ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                    <p><strong>Phase:</strong> {isFiniteNumber(values.phase) ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Incidence:</strong> {isFiniteNumber(values.incidence) ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Emis:</strong> {isFiniteNumber(values.emis) ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
                   </div>
                 )}
                 {index < geoValues.length - 1 && (
@@ -79,11 +79,11 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
               <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
             ) : (
               <div style={{ fontSize: '14px', color: '#ccc' }}>
-                <p><strong>Latitude:</strong> {geoValues.lat != null ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
-                <p><strong>Longitude:</strong> {geoValues.lon != null ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                <p><strong>Phase:</strong> {geoValues.phase != null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
-                <p><strong>Incidence:</strong> {geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
-                <p><strong>Emis:</strong> {geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Latitude:</strong> {isFiniteNumber(geoValues.lat) ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
+                <p><strong>Longitude:</strong> {isFiniteNumber(geoValues.lon) ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
+                <p><strong>Phase:</strong> {isFiniteNumber(geoValues.phase) ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Incidence:</strong> {isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Emis:</strong> {isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
               </div>
             )}
           </>
@@ -130,21 +130,10 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
 
 GeoValuesDisplay.displayName = 'GeoValuesDisplay';
 
-const AVAILABLE_ALBEDOS = [0, 0.1, 0.2];
-
-function getAlbedoValueFromSlider(sliderValue) {
-  const continuousAlbedo = (sliderValue / 100) * 0.3;
-  let nearest = AVAILABLE_ALBEDOS[0];
-  let minDiff = Math.abs(continuousAlbedo - nearest);
-  for (const a of AVAILABLE_ALBEDOS) {
-    const diff = Math.abs(continuousAlbedo - a);
-    if (diff < minDiff) {
-      minDiff = diff;
-      nearest = a;
-    }
-  }
-  return nearest;
-}
+const FIXED_ALBEDO = 0.1;
+const MAX_SELECTED_POINTS = 5;
+const isFiniteNumber = (value) => Number.isFinite(value);
+const toFiniteOrNull = (value) => (Number.isFinite(value) ? value : null);
 
 function SpherePage() {
   const [viewMode, setViewMode] = useState('default');
@@ -221,8 +210,6 @@ function App() {
     phaseAngle: 0,
     titanYaw: 0,
     obliquity: 0,
-    /** 0–100 continuous; nearest of {0, 0.1, 0.2} used for data/images (see getAlbedoValueFromSlider) */
-    albedo: 33,
   });
 
 
@@ -286,9 +273,9 @@ function App() {
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
-  const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'plotPoint' | 'plotMultiplePoints'
+  const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [cameraPreset3d, setCameraPreset3d] = useState(''); // '' | 'cassini' | 'sun'
-  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft' | 'vector' | 'overhead'
+  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft' | 'overhead'
   const [geometryInteractionMode3d, setGeometryInteractionMode3d] = useState('camera'); // 'camera' | 'editTitan' | 'editCassini'
   const [irGridEnabled2d, setIrGridEnabled2d] = useState(false);
   const [sphereGridEnabled3d, setSphereGridEnabled3d] = useState(false);
@@ -307,10 +294,6 @@ function App() {
 
   const handleGeometryInteractionModeChange = (mode) => {
     setGeometryInteractionMode3d(mode);
-    if (mode === 'editTitan' || mode === 'editCassini') {
-      setCameraCenter3d('overhead');
-      setCameraPreset3d('');
-    }
   };
 
   const handleGeometryChangeFrom3d = useCallback((geometry) => {
@@ -391,7 +374,7 @@ function App() {
   const handleSelectionModeChange = (mode) => {
     if (selectionMode === mode) return;
 
-    const isMultipleMode = mode === 'plotMultiplePoints';
+    const isMultipleMode = mode === 'plotMultiplePoints' || mode === 'multipleVectorSelection';
     setSelectionMode(mode);
     setToggles(prev => ({ ...prev, plotMultiple: isMultipleMode }));
 
@@ -413,11 +396,6 @@ function App() {
     // Leaving multiple mode: clear multi-point state.
     setMultiplePositions([]);
     setSelectedCasesByPoint({});
-    if (mode === 'vectorSelection') {
-      // Vector mode is purely 3D interaction.
-      setClickedPosition(null);
-      setGeoValues(null);
-    }
   };
 
   // Handle case selection change for single mode
@@ -453,7 +431,15 @@ function App() {
         return; // This request is stale, ignore the result
       }
 
-      setGeoValues({ ...values, phase: phaseAngle });
+      setGeoValues({
+        ...values,
+        lat: toFiniteOrNull(values?.lat),
+        lon: toFiniteOrNull(values?.lon),
+        phase: toFiniteOrNull(phaseAngle),
+        incidence: toFiniteOrNull(values?.incidence),
+        emis: toFiniteOrNull(values?.emis),
+        azimuth: toFiniteOrNull(values?.azimuth),
+      });
       console.log('Extracted geo values:', values);
     } catch (error) {
       // Check if this request is still valid
@@ -501,7 +487,12 @@ function App() {
 
           return {
             ...values,
-            phase: phaseAngle,
+            lat: toFiniteOrNull(values?.lat),
+            lon: toFiniteOrNull(values?.lon),
+            phase: toFiniteOrNull(phaseAngle),
+            incidence: toFiniteOrNull(values?.incidence),
+            emis: toFiniteOrNull(values?.emis),
+            azimuth: toFiniteOrNull(values?.azimuth),
             x: pos.x,
             y: pos.y,
             index,
@@ -551,38 +542,6 @@ function App() {
       }
     }
   }, [sliders.phaseAngle]);
-
-  const findNearestGeoPixelByLatLon = useCallback(async (targetLat, targetLon, phaseAngleDeg) => {
-    const geoData = await getGeoCubeData(phaseAngleDeg);
-    const numSamples = 681;
-    const numLines = 681;
-    const bandSize = numSamples * numLines;
-    const latOffset = 0;
-    const lonOffset = bandSize;
-    let bestIndex = -1;
-    let bestScore = Number.POSITIVE_INFINITY;
-
-    for (let idx = 0; idx < bandSize; idx += 1) {
-      const lat = geoData[latOffset + idx];
-      const lon = geoData[lonOffset + idx];
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      if (Math.abs(lat) > 90 || Math.abs(lon) > 360) continue;
-      const dLat = lat - targetLat;
-      const dLonRaw = Math.abs(lon - targetLon);
-      const dLon = Math.min(dLonRaw, 360 - dLonRaw);
-      const score = (dLat * dLat) + (dLon * dLon);
-      if (score < bestScore) {
-        bestScore = score;
-        bestIndex = idx;
-      }
-    }
-
-    if (bestIndex < 0) return null;
-    return {
-      x: bestIndex % numSamples,
-      y: Math.floor(bestIndex / numSamples),
-    };
-  }, []);
 
   // Cache for geo cube data (by phase angle)
   const geoCubeDataRef = useRef(null);
@@ -667,11 +626,11 @@ function App() {
         const emis = getGeoValue(geoData, x, y, 6);
 
         const nextHover = {
-          lat: lat !== null ? lat : null,
-          lon: lon !== null ? lon : null,
-          phase: phase !== null ? phase : null,
-          incidence: incidence !== null ? incidence : null,
-          emis: emis !== null ? emis : null,
+          lat: toFiniteOrNull(lat),
+          lon: toFiniteOrNull(lon),
+          phase: toFiniteOrNull(phase),
+          incidence: toFiniteOrNull(incidence),
+          emis: toFiniteOrNull(emis),
           x,
           y
         };
@@ -760,11 +719,11 @@ function App() {
             fetchMultipleGeoValues(newPositions);
           }
           return newPositions;
-        } else if (prev.length < 6) {
+        } else if (prev.length < MAX_SELECTED_POINTS) {
           // Add new position - assign next available color index
           const usedColorIndices = prev.map(pos => pos.colorIndex !== undefined ? pos.colorIndex : prev.indexOf(pos));
           let nextColorIndex = 0;
-          while (usedColorIndices.includes(nextColorIndex) && nextColorIndex < 6) {
+          while (usedColorIndices.includes(nextColorIndex) && nextColorIndex < MAX_SELECTED_POINTS) {
             nextColorIndex++;
           }
           const newPositions = [...prev, { x, y, position, colorIndex: nextColorIndex }];
@@ -796,17 +755,9 @@ function App() {
     let targetX = point.x;
     let targetY = point.y;
 
-    if (Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
-      const nearest = await findNearestGeoPixelByLatLon(point.lat, point.lon, phaseAngle);
-      if (nearest) {
-        targetX = nearest.x;
-        targetY = nearest.y;
-      }
-    }
-
     if (targetX == null || targetY == null) return;
 
-    if (selectionMode === 'plotMultiplePoints') {
+    if (selectionMode === 'plotMultiplePoints' || selectionMode === 'multipleVectorSelection') {
       setMultiplePositions(prev => {
         const existingIndex = prev.findIndex(pos =>
           Math.abs((pos.x ?? -9999) - targetX) <= 3 &&
@@ -837,19 +788,19 @@ function App() {
           return newPositions;
         }
 
-        if (prev.length >= 6) return prev;
+        if (prev.length >= MAX_SELECTED_POINTS) return prev;
 
         const usedColorIndices = prev.map(pos => pos.colorIndex !== undefined ? pos.colorIndex : prev.indexOf(pos));
         let nextColorIndex = 0;
-        while (usedColorIndices.includes(nextColorIndex) && nextColorIndex < 6) {
+        while (usedColorIndices.includes(nextColorIndex) && nextColorIndex < MAX_SELECTED_POINTS) {
           nextColorIndex++;
         }
 
         const newPositions = [...prev, {
           x: targetX,
           y: targetY,
-          lat: point.lat,
-          lon: point.lon,
+          lat: toFiniteOrNull(point.lat),
+          lon: toFiniteOrNull(point.lon),
           position: {
             naturalX: targetX,
             naturalY: targetY,
@@ -886,7 +837,12 @@ function App() {
       }
     });
     await fetchGeoValues(targetX, targetY, phaseAngle);
-  }, [fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, sliders.phaseAngle]);
+  }, [fetchGeoValues, fetchMultipleGeoValues, selectionMode, sliders.phaseAngle]);
+
+  const syncedSelectionPointsFor3d = useMemo(() => {
+    if (toggles.plotMultiple) return Array.isArray(multiplePositions) ? multiplePositions : [];
+    return clickedPosition ? [clickedPosition] : [];
+  }, [toggles.plotMultiple, multiplePositions, clickedPosition]);
 
   // Tutorial mode presets
   const tutorialPresets = {
@@ -953,7 +909,6 @@ function App() {
         phaseAngle: 0,
         titanYaw: 0,
         obliquity: 0,
-        albedo: 33,
       });
       setHazePropertiesModel('doose');
       handleSelectionModeChange('plotPoint');
@@ -1034,7 +989,7 @@ function App() {
   };
 
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
-  const activeAlbedoValue = getAlbedoValueFromSlider(sliders.albedo);
+  const activeAlbedoValue = FIXED_ALBEDO;
   const activeGridEnabled = irDisplayMode === '3d' ? sphereGridEnabled3d : irGridEnabled2d;
   const optionsPanelTitle = irDisplayMode === '3d' ? 'Observing Geometry Options' : 'IR Image Options';
   const panelMatchHeightPx = 760;
@@ -1051,7 +1006,7 @@ function App() {
 
   // For each selected point, whether it has associated spectral plot data (so we show/hide atmospheric components per point)
   const hasSpectralDataForSelection = useMemo(() => {
-    const albedo = getAlbedoValueFromSlider(sliders.albedo);
+    const albedo = FIXED_ALBEDO;
     if (!processedSpectralData) {
       return toggles.plotMultiple ? [] : false;
     }
@@ -1072,7 +1027,7 @@ function App() {
       return result && result.wavelengths && result.wavelengths.length > 0;
     }
     return toggles.plotMultiple ? [] : false;
-  }, [processedSpectralData, geoValues, toggles.plotMultiple, sliders.albedo]);
+  }, [processedSpectralData, geoValues, toggles.plotMultiple]);
 
   // Load image when relevant parameters change (with debouncing for smoother slider interaction)
   useEffect(() => {
@@ -1097,7 +1052,7 @@ function App() {
           imageTypeToLoad = imageType;
         }
 
-        const requestedAlbedo = getAlbedoValueFromSlider(sliders.albedo);
+        const requestedAlbedo = FIXED_ALBEDO;
         const result = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName, requestedAlbedo);
         setCurrentImage(result.url);
 
@@ -1122,7 +1077,7 @@ function App() {
         clearTimeout(imageLoadTimerRef.current);
       }
     };
-  }, [sliders.phaseAngle, sliders.albedo, compositeType, hazeFolderName, imageType]);
+  }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
 
   // Update geo values live when phase angle changes and there is an active selection.
   useEffect(() => {
@@ -1479,6 +1434,7 @@ function App() {
                 <div className="left-panel">
                   <div className="display-row">
                     {/* Gas Abundance Plot (Methane vs Altitude) */}
+                    {irDisplayMode !== '3d' && (
                     <div className="skinny-plot">
                       <h3>
                         <Tooltip content={
@@ -1497,6 +1453,7 @@ function App() {
                         <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
                       </div>
                     </div>
+                    )}
                     <div
                       ref={irColorImageRef}
                       className="display-box ir-color"
@@ -1507,7 +1464,9 @@ function App() {
                         onClick={() => {
                           setIrDisplayMode(prev => {
                             const next = prev === '2d' ? '3d' : '2d';
-                            if (next === '3d') setSelectionMode('vectorSelection');
+                            if (next === '3d') {
+                              setSelectionMode(toggles.plotMultiple ? 'multipleVectorSelection' : 'vectorSelection');
+                            }
                             return next;
                           });
                         }}
@@ -1569,7 +1528,6 @@ function App() {
                                 onGeometryChange={handleGeometryChangeFrom3d}
                                 onCameraPresetRelease={() => setCameraPreset3d('')}
                                 onVectorPlaced={() => {
-                                  setCameraCenter3d('vector');
                                   setCameraPreset3d('');
                                 }}
                                 introAnimation={true}
@@ -1579,11 +1537,15 @@ function App() {
                                 showAngleArcs={showAngleArcs3d}
                                 showVectorLabels={showVectorLabels3d}
                                 showExtendedVectorLines={showVectorGuideLines3d}
-                                allowMultipleVectors={allowMultipleVectors3d}
+                                allowMultipleVectors={allowMultipleVectors3d || selectionMode === 'multipleVectorSelection'}
                                 showAtmosphere={toggles.showAtmosphere}
-                                interactionMode={selectionMode === 'plotPoint' ? 'plotPoint' : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')}
+                                interactionMode={
+                                  selectionMode === 'plotPoint'
+                                    ? 'plotPoint'
+                                    : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')
+                                }
                                 onSurfacePointSelect={handleSpherePlotPoint}
-                                multiplePoints={selectionMode === 'plotMultiplePoints' ? multiplePositions : []}
+                                multiplePoints={syncedSelectionPointsFor3d}
                               />
                             </div>
                           </div>
@@ -1625,7 +1587,7 @@ function App() {
                           }}>
                             {hoverGeoValues ? (
                               <>
-                                <strong>Hover Position:</strong> Coordinates: (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{hoverGeoValues.x}, {hoverGeoValues.y}</span>), Incidence: {hoverGeoValues.incidence != null ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}, Emission: {hoverGeoValues.emis != null ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}, Phase: {hoverGeoValues.phase != null ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}
+                                <strong>Hover Position:</strong> Coordinates: (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{hoverGeoValues.x}, {hoverGeoValues.y}</span>), Incidence: {isFiniteNumber(hoverGeoValues.incidence) ? `${hoverGeoValues.incidence.toFixed(2)}°` : 'N/A'}, Emission: {isFiniteNumber(hoverGeoValues.emis) ? `${hoverGeoValues.emis.toFixed(2)}°` : 'N/A'}, Phase: {isFiniteNumber(hoverGeoValues.phase) ? `${hoverGeoValues.phase.toFixed(2)}°` : 'N/A'}
                               </>
                             ) : (
                               <span>Hover over the image to see coordinates and angles</span>
@@ -1636,48 +1598,8 @@ function App() {
                         <div className="ir-image-placeholder" aria-label="IR image loading placeholder"></div>
                       )}
                     </div>
-                    <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
-
-                      {imageType === 'irColor' && (
-                        <div className="composite-selector" style={!geoValues ? { flex: '1 1 auto' } : {}}>
-                          <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
-                            <Tooltip content={
-                              <>
-                                <strong>Composite Type</strong>
-                                Selects which three infrared wavelengths are combined to create the false-color image.
-                                "5, 2, 1.3 µm" uses longer wavelengths that penetrate deeper into the atmosphere,
-                                while "2, 1.6, 1.3 µm" uses shorter wavelengths that are more sensitive to surface features.
-                                Different composite types reveal different aspects of Titan's surface and atmospheric scattering properties.
-                              </>
-                            }>
-                              Composite Type
-                            </Tooltip>
-                          </h3>
-                          <div className="radio-group">
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="compositeType"
-                                value="5_2_1.3"
-                                checked={compositeType === '5_2_1.3'}
-                                onChange={(e) => setCompositeType(e.target.value)}
-                              />
-                              <span>5, 2, 1.3 µm</span>
-                            </label>
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="compositeType"
-                                value="2_1.6_1.3"
-                                checked={compositeType === '2_1.6_1.3'}
-                                onChange={(e) => setCompositeType(e.target.value)}
-                              />
-                              <span>2, 1.6, 1.3 µm</span>
-                            </label>
-                          </div>
-                        </div>
-                      )}
-                      {geoValues && (
+                    <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
+{geoValues && (
                         <div ref={geoValuesBoxRef} style={{ flex: imageType === 'irColor' ? '1 1 auto' : '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                           <GeoValuesDisplay
                             geoValues={geoValues}
@@ -1738,6 +1660,8 @@ function App() {
                         </h2>
                         <div className="sliders-scroll">
                         <div className="slider-group">
+                          {irDisplayMode !== '3d' && (
+                          <>
                           {/* Haze Model Section */}
                           <div style={{ marginBottom: '0', display: 'flex', flexDirection: 'column' }}>
                             <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal', textAlign: 'left', color: '#ccc', display: 'block', width: '100%' }}>
@@ -1830,6 +1754,8 @@ function App() {
                             <span>{sliders.methaneAbundance}</span>
                           </label>
 
+                          </>
+                          )}
                           <label style={{ color: '#ccc' }}>
                             <Tooltip content={
                               <>
@@ -1877,20 +1803,6 @@ function App() {
                             </label>
                           )}
 
-                          <label style={{ color: '#ccc' }}>
-                            <Tooltip content="Continuous 0–100; nearest 0, 0.1, or 0.2 for IR and spectra.">
-                              Albedo slider
-                            </Tooltip>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              step="1"
-                              value={sliders.albedo}
-                              onChange={(e) => handleSliderChange('albedo', parseInt(e.target.value, 10))}
-                            />
-                            <span>{getAlbedoValueFromSlider(sliders.albedo)}</span>
-                          </label>
                         </div>
                         <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
                         <div style={{ marginTop: '0' }}>
@@ -1932,10 +1844,10 @@ function App() {
                                 <Tooltip content={
                                   <>
                                     <strong>3D Camera Presets</strong>
-                                    Switches the camera to Cassini or Sun viewpoints that stay synced as the slider geometry changes.
+                                    Switches the camera to perspective views (Cassini or Sun) that stay synced as the slider geometry changes.
                                   </>
                                 }>
-                                  3D Camera Presets
+                                  3D Perspective Presets
                                 </Tooltip>
                               </h3>
                               <div className="radio-group">
@@ -1947,7 +1859,7 @@ function App() {
                                     checked={cameraPreset3d === 'cassini'}
                                     onChange={(e) => setCameraPreset3d(e.target.value)}
                                   />
-                                  <span>Cassini View</span>
+                                  <span>Perspective (Cassini)</span>
                                 </label>
                                 <label className="radio-label">
                                   <input
@@ -1957,27 +1869,9 @@ function App() {
                                     checked={cameraPreset3d === 'sun'}
                                     onChange={(e) => setCameraPreset3d(e.target.value)}
                                   />
-                                  <span>Sun View</span>
+                                  <span>Perspective (Sun)</span>
                                 </label>
                               </div>
-                              {cameraPreset3d !== '' && (
-                                <button
-                                  type="button"
-                                  onClick={() => setCameraPreset3d('')}
-                                  style={{
-                                    marginTop: '10px',
-                                    padding: '6px 10px',
-                                    borderRadius: '6px',
-                                    border: '1px solid #666',
-                                    backgroundColor: '#1a1a1a',
-                                    color: '#e0e0e0',
-                                    cursor: 'pointer',
-                                    fontSize: '12px'
-                                  }}
-                                >
-                                  Clear Preset (Manual Camera)
-                                </button>
-                              )}
                             </div>
                             <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
                             <div style={{ marginTop: '0' }}>
@@ -2061,16 +1955,6 @@ function App() {
                                   <input
                                     type="radio"
                                     name="cameraCenter3d"
-                                    value="vector"
-                                    checked={cameraCenter3d === 'vector'}
-                                    onChange={(e) => setCameraCenter3d(e.target.value)}
-                                  />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Vector</span>
-                                </label>
-                                <label className="radio-label">
-                                  <input
-                                    type="radio"
-                                    name="cameraCenter3d"
                                     value="overhead"
                                     checked={cameraCenter3d === 'overhead'}
                                     onChange={(e) => setCameraCenter3d(e.target.value)}
@@ -2132,8 +2016,7 @@ function App() {
                             <Tooltip content={
                               <>
                                 <strong>Selection Mode</strong>
-                                Chooses how you interact with the image/sphere:
-                                plot a single point, compare multiple points, or use 3D vector selection.
+                                Chooses single or multiple vector interaction in 3D, and single or multiple point selection in 2D.
                               </>
                             }>
                               Selection Mode
@@ -2141,37 +2024,53 @@ function App() {
                           </h3>
                           <div className="radio-group">
                             {irDisplayMode === '3d' && (
-                              <label className="radio-label">
-                                <input
-                                  type="radio"
-                                  name="selectionMode"
-                                  value="vectorSelection"
-                                  checked={selectionMode === 'vectorSelection'}
-                                  onChange={(e) => handleSelectionModeChange(e.target.value)}
-                                />
-                                <span>Vector Selection</span>
-                              </label>
+                              <>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="selectionMode"
+                                    value="vectorSelection"
+                                    checked={selectionMode === 'vectorSelection'}
+                                    onChange={(e) => handleSelectionModeChange(e.target.value)}
+                                  />
+                                  <span>Vector Selection</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="selectionMode"
+                                    value="multipleVectorSelection"
+                                    checked={selectionMode === 'multipleVectorSelection'}
+                                    onChange={(e) => handleSelectionModeChange(e.target.value)}
+                                  />
+                                  <span>Multiple Vector Selection</span>
+                                </label>
+                              </>
                             )}
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="selectionMode"
-                                value="plotPoint"
-                                checked={selectionMode === 'plotPoint'}
-                                onChange={(e) => handleSelectionModeChange(e.target.value)}
-                              />
-                              <span>Plot Point</span>
-                            </label>
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="selectionMode"
-                                value="plotMultiplePoints"
-                                checked={selectionMode === 'plotMultiplePoints'}
-                                onChange={(e) => handleSelectionModeChange(e.target.value)}
-                              />
-                              <span>Plot Multiple Points</span>
-                            </label>
+                            {irDisplayMode !== '3d' && (
+                              <>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="selectionMode"
+                                    value="plotPoint"
+                                    checked={selectionMode === 'plotPoint'}
+                                    onChange={(e) => handleSelectionModeChange(e.target.value)}
+                                  />
+                                  <span>Plot Point</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="selectionMode"
+                                    value="plotMultiplePoints"
+                                    checked={selectionMode === 'plotMultiplePoints'}
+                                    onChange={(e) => handleSelectionModeChange(e.target.value)}
+                                  />
+                                  <span>Plot Multiple Points</span>
+                                </label>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
@@ -2234,6 +2133,47 @@ function App() {
                               <span>Phase</span>
                             </label>
                           </div>
+                          {imageType === 'irColor' && (
+                            <>
+                              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                              <div style={{ marginTop: '0' }}>
+                                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                                  <Tooltip content={
+                                    <>
+                                      <strong>Composite Type</strong>
+                                      Selects which three infrared wavelengths are combined for the false-color image.
+                                      "5, 2, 1.3 um" emphasizes deeper atmospheric penetration, while "2, 1.6, 1.3 um"
+                                      is more surface-sensitive.
+                                    </>
+                                  }>
+                                    Composite Type
+                                  </Tooltip>
+                                </h3>
+                                <div className="radio-group">
+                                  <label className="radio-label">
+                                    <input
+                                      type="radio"
+                                      name="compositeType"
+                                      value="5_2_1.3"
+                                      checked={compositeType === '5_2_1.3'}
+                                      onChange={(e) => setCompositeType(e.target.value)}
+                                    />
+                                    <span>5, 2, 1.3 um</span>
+                                  </label>
+                                  <label className="radio-label">
+                                    <input
+                                      type="radio"
+                                      name="compositeType"
+                                      value="2_1.6_1.3"
+                                      checked={compositeType === '2_1.6_1.3'}
+                                      onChange={(e) => setCompositeType(e.target.value)}
+                                    />
+                                    <span>2, 1.6, 1.3 um</span>
+                                  </label>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                         )}
                         </div>
@@ -2306,7 +2246,7 @@ function App() {
                                 transmissionToggles={transmissionToggles}
                                 spectralUnits={toggles.spectralUnits}
                                 spectralResolution={spectralResolution}
-                                albedo={getAlbedoValueFromSlider(sliders.albedo)}
+                                albedo={FIXED_ALBEDO}
                               />
                             </ErrorBoundary>
                             {geoValues && (
@@ -2316,8 +2256,8 @@ function App() {
                                 ) : (
                                   <>
                                     Using geo-extracted angles:
-                                    Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'},
-                                    Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}
+                                    Inc={isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'},
+                                    Emi={isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}
                                   </>
                                 )}
                               </div>
@@ -2524,9 +2464,9 @@ function App() {
                                   const pointCases = selectedCasesByPoint[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
                                   // Format angles briefly for display
                                   const formatAngles = (incidence, emission, phase) => {
-                                    const i = incidence != null ? incidence.toFixed(0) : '?';
-                                    const e = emission != null ? emission.toFixed(0) : '?';
-                                    const p = phase != null ? phase.toFixed(0) : '?';
+                                    const i = isFiniteNumber(incidence) ? incidence.toFixed(0) : '?';
+                                    const e = isFiniteNumber(emission) ? emission.toFixed(0) : '?';
+                                    const p = isFiniteNumber(phase) ? phase.toFixed(0) : '?';
                                     return `i:${i}° e:${e}° p:${p}°`;
                                   };
                                   const angleStr = geoValue ? formatAngles(geoValue.incidence, geoValue.emis, geoValue.phase) : '';
@@ -2609,3 +2549,9 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
