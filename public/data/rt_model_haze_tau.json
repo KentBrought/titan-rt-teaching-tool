@@ -1,0 +1,27 @@
+{
+  "description": "Per-layer haze optical depth from the RT model (layers.tau.haze). The models object is empty until you add the real export from the RT code.",
+  "schema": "models[scenario_id].tau_haze[channel_index][layer]; lengths must match layer_center_km",
+  "channel_index_to_um_approx": {
+    "3": 0.934,
+    "68": 2.001,
+    "255": 5.123
+  },
+  "layer_boundaries_km": [
+    0.0,
+    6.0,
+    12.0,
+    20.0,
+    32.0,
+    42.0,
+    50.0
+  ],
+  "layer_center_km": [
+    3.0,
+    9.0,
+    16.0,
+    26.0,
+    37.0,
+    46.0
+  ],
+  "models": {}
+}

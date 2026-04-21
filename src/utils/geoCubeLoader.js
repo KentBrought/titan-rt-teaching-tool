@@ -117,6 +117,7 @@ export const getGeoCubeData = async (phaseAngle) => {
 export const extractGeoValues = async (phaseAngle, x, y) => {
   try {
     const geoData = await getGeoCubeData(phaseAngle);
+    const finiteOrNull = (v) => (Number.isFinite(v) ? v : null);
     
     const lat = getGeoValue(geoData, x, y, 0);         // Layer 0: lat (negative = North)
     const lon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon (negative = West)
@@ -126,12 +127,12 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
     const azimuth = getGeoValue(geoData, x, y, 7);    // Layer 7: azimuth (Deg)
     
     return {
-      lat: lat !== null ? lat : null,
-      lon: lon !== null ? lon : null,
-      phase: phase !== null ? phase : null,
-      incidence: incidence !== null ? incidence : null,
-      emis: emis !== null ? emis : null,
-      azimuth: azimuth !== null ? azimuth : null,
+      lat: finiteOrNull(lat),
+      lon: finiteOrNull(lon),
+      phase: finiteOrNull(phase),
+      incidence: finiteOrNull(incidence),
+      emis: finiteOrNull(emis),
+      azimuth: finiteOrNull(azimuth),
       x,
       y
     };

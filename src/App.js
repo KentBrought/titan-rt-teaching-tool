@@ -15,13 +15,18 @@ import { loadJsonFile, clearDataCache } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
-import { loadMaterialAlbedoMap } from './utils/materialMapLoader';
+import {
+  loadMaterialAlbedoMap,
+  getMaterialClassAtPixel,
+  mapMaterialClassToSpectralAlbedo,
+  formatSurfaceMaterialWithSpectrumAlbedo,
+  getSurfaceMaterialLabel,
+} from './utils/materialMapLoader';
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
 const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointCoordinates = true }) => {
   const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
   const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
-
   if (!geoValues) return null;
 
   return (
@@ -56,6 +61,9 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
                     <p><strong>Phase:</strong> {values.phase != null ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
                     <p><strong>Incidence:</strong> {values.incidence != null ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
                     <p><strong>Emis:</strong> {values.emis != null ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
+                    {Number.isFinite(values.materialClass) && (
+                      <p><strong>Surface material:</strong> {formatSurfaceMaterialWithSpectrumAlbedo(values.materialClass, values.surfaceAlbedo)}</p>
+                    )}
                   </div>
                 )}
                 {index < geoValues.length - 1 && (
@@ -85,6 +93,9 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
                 <p><strong>Phase:</strong> {geoValues.phase != null ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
                 <p><strong>Incidence:</strong> {geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
                 <p><strong>Emis:</strong> {geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
+                {Number.isFinite(geoValues.materialClass) && (
+                  <p><strong>Surface material:</strong> {formatSurfaceMaterialWithSpectrumAlbedo(geoValues.materialClass, geoValues.surfaceAlbedo)}</p>
+                )}
               </div>
             )}
           </>
@@ -237,7 +248,6 @@ function App() {
   const spectralResolution = SPECTRAL_RESOLUTION_LEVELS[spectralResolutionIndex];
 
   const [materialAlbedoMap, setMaterialAlbedoMap] = useState(null);
-  const [materialLayerVisible, setMaterialLayerVisible] = useState({ 0: false, 1: false, 2: false });
 
   const [transmissionToggles, setTransmissionToggles] = useState({
     ch4: false,
@@ -294,6 +304,8 @@ function App() {
   const [sphereGridEnabled3d, setSphereGridEnabled3d] = useState(false);
   const [rotationAxisEnabled3d, setRotationAxisEnabled3d] = useState(false);
   const [tutorialMode, setTutorialMode] = useState(null);
+  /** Left-panel vertical profile: gases vs T/P/haze (dropdown next to plot title) */
+  const [verticalProfileView, setVerticalProfileView] = useState('gases');
 
   const handleSliderChange = (name, value) => {
     const numericValue = parseFloat(value);
@@ -395,7 +407,16 @@ function App() {
         return; // This request is stale, ignore the result
       }
 
-      setGeoValues({ ...values, phase: phaseAngle });
+      const hasValidSurfaceData =
+        Number.isFinite(values?.lat) &&
+        Number.isFinite(values?.lon) &&
+        Number.isFinite(values?.incidence) &&
+        Number.isFinite(values?.emis);
+      const materialClass = hasValidSurfaceData ? getMaterialClassAtPixel(materialAlbedoMap, x, y) : null;
+      const surfaceAlbedo = Number.isFinite(materialClass)
+        ? mapMaterialClassToSpectralAlbedo(materialClass)
+        : null;
+      setGeoValues({ ...values, phase: phaseAngle, materialClass, surfaceAlbedo });
       console.log('Extracted geo values:', values);
     } catch (error) {
       // Check if this request is still valid
@@ -416,7 +437,7 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [sliders.phaseAngle]);
+  }, [sliders.phaseAngle, materialAlbedoMap]);
 
   // Fetch geo values for multiple positions
   const fetchMultipleGeoValues = useCallback(async (positions, phaseAngleOverride = null) => {
@@ -441,11 +462,23 @@ function App() {
           // Use stored colorIndex if available, otherwise fall back to array index
           const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : index;
 
+          const hasValidSurfaceData =
+            Number.isFinite(values?.lat) &&
+            Number.isFinite(values?.lon) &&
+            Number.isFinite(values?.incidence) &&
+            Number.isFinite(values?.emis);
+          const materialClass = hasValidSurfaceData
+            ? getMaterialClassAtPixel(materialAlbedoMap, pos.x, pos.y)
+            : null;
           return {
             ...values,
             phase: phaseAngle,
             x: pos.x,
             y: pos.y,
+            materialClass,
+            surfaceAlbedo: Number.isFinite(materialClass)
+              ? mapMaterialClassToSpectralAlbedo(materialClass)
+              : null,
             index,
             colorIndex,
             color: colorNames[colorIndex] || 'red'
@@ -492,7 +525,7 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [sliders.phaseAngle]);
+  }, [sliders.phaseAngle, materialAlbedoMap]);
 
   const findNearestGeoPixelByLatLon = useCallback(async (targetLat, targetLon, phaseAngleDeg) => {
     const geoData = await getGeoCubeData(phaseAngleDeg);
@@ -970,8 +1003,8 @@ function App() {
     }
     if (!toggles.plotMultiple && geoValues) {
       if (geoValues.error) return false;
-      const inc = geoValues.incidence ?? 0;
-      const emi = geoValues.emis ?? 0;
+      const inc = Number.isFinite(geoValues.incidence) ? geoValues.incidence : NaN;
+      const emi = Number.isFinite(geoValues.emis) ? geoValues.emis : NaN;
       const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard', albedo);
       return result && result.wavelengths && result.wavelengths.length > 0;
     }
@@ -1278,7 +1311,11 @@ function App() {
         try {
           const oldSpectralJson = await loadJsonFile(oldDataPath);
           if (isCancelled) return;
-          if (oldSpectralJson && oldSpectralJson.wavelength && oldSpectralJson.standard) {
+          if (
+            oldSpectralJson &&
+            oldSpectralJson.wavelength &&
+            (oldSpectralJson.standard || oldSpectralJson.data)
+          ) {
             setSpectralDataOld(oldSpectralJson);
           }
         } catch (oldErr) {
@@ -1367,23 +1404,59 @@ function App() {
                 {/* Left side - Display panels */}
                 <div className="left-panel">
                   <div className="display-row">
-                    {/* Gas Abundance Plot (Methane vs Altitude) */}
+                    {/* Vertical profile (gas abundances, T, P, haze — dropdown) */}
                     <div className="skinny-plot">
-                      <h3>
-                        <Tooltip content={
-                          <>
-                            <strong>Gas Abundance</strong>
-                            Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude.
-                            CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
-                            Adjusting the methane abundance slider scales the CH₄ profile, helping you understand how methane concentration
-                            affects Titan's atmospheric composition and radiative transfer properties.
-                          </>
-                        }>
-                          Gas Abundance
-                        </Tooltip>
-                      </h3>
+                      <div className="skinny-plot-header">
+                        <div className="skinny-plot-header-top">
+                          <h3>
+                            <Tooltip content={
+                              verticalProfileView === 'gases' ? (
+                                <>
+                                  <strong>Gas Abundance</strong>
+                                  Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude.
+                                  CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
+                                  Adjusting the methane abundance slider scales the CH₄ profile, helping you understand how methane concentration
+                                  affects Titan&apos;s atmospheric composition and radiative transfer properties.
+                                </>
+                              ) : verticalProfileView === 'temperature_pressure' ? (
+                                <>
+                                  <strong>Temperature and pressure</strong>
+                                  HASI L4 in situ temperature and pressure vs altitude on dual horizontal axes (linear K
+                                  below, log Pa above). Dotted lines mark radiative-transfer model layer interfaces.
+                                </>
+                              ) : (
+                                <>
+                                  <strong>Haze profile</strong>
+                                  Haze optical depth τ from the radiative-transfer model (<code>layers.tau.haze</code>) at
+                                  three wavelength bins (~0.93, ~2.0, ~5.1 µm), for the Doose / Tomasko haze scenario and
+                                  haze abundance selected in the main panel — same configuration as the spectra and IR images.
+                                </>
+                              )
+                            }>
+                              {verticalProfileView === 'gases' && 'Gas Abundance'}
+                              {verticalProfileView === 'temperature_pressure' && 'Temperature & pressure'}
+                              {verticalProfileView === 'haze' && 'Haze profile'}
+                            </Tooltip>
+                          </h3>
+                          <select
+                            id="vertical-profile-select"
+                            className="skinny-plot-select"
+                            aria-label="Atmospheric profile type"
+                            value={verticalProfileView}
+                            onChange={(e) => setVerticalProfileView(e.target.value)}
+                          >
+                            <option value="gases">Gas abundances</option>
+                            <option value="temperature_pressure">Temperature &amp; pressure</option>
+                            <option value="haze">Haze profile</option>
+                          </select>
+                        </div>
+                      </div>
                       <div className="skinny-plot-content">
-                        <GasAbundancePlot methaneAbundance={sliders.methaneAbundance} />
+                        <GasAbundancePlot
+                          methaneAbundance={sliders.methaneAbundance}
+                          profile={verticalProfileView}
+                          hazeScenarioKey={hazeFolderName}
+                        />
                       </div>
                     </div>
                     <div
@@ -1482,12 +1555,6 @@ function App() {
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
                               phaseAngleDeg={sliders.phaseAngle * 5}
-                              materialOverlay={materialAlbedoMap}
-                              materialVisibility={[
-                                materialLayerVisible[0],
-                                materialLayerVisible[1],
-                                materialLayerVisible[2],
-                              ]}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -1560,41 +1627,6 @@ function App() {
                               <span>2, 1.6, 1.3 µm</span>
                             </label>
                           </div>
-                          {materialAlbedoMap && (
-                            <div style={{ marginTop: '16px' }}>
-                              <h4 style={{ fontSize: '15px', marginBottom: '10px', color: '#e0e0e0', fontWeight: 'normal' }}>
-                                <Tooltip content="Class map (0–2) scaled to the IR image; toggle tints per class.">
-                                  Surface materials
-                                </Tooltip>
-                              </h4>
-                              {[0, 1, 2].map((k) => (
-                                <label
-                                  key={k}
-                                  className="toggle-label"
-                                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', cursor: 'pointer' }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={materialLayerVisible[k]}
-                                    onChange={() =>
-                                      setMaterialLayerVisible((prev) => ({ ...prev, [k]: !prev[k] }))
-                                    }
-                                  />
-                                  <span
-                                    style={{
-                                      display: 'inline-block',
-                                      width: '12px',
-                                      height: '12px',
-                                      borderRadius: '2px',
-                                      background: k === 0 ? 'rgba(255,90,90,0.85)' : k === 1 ? 'rgba(90,220,120,0.85)' : 'rgba(100,160,255,0.85)',
-                                      flexShrink: 0,
-                                    }}
-                                  />
-                                  <span style={{ color: '#ccc', fontSize: '13px' }}>Map value {k}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       )}
                       {geoValues && (
@@ -2078,8 +2110,16 @@ function App() {
                             <ErrorBoundary>
                               <SpectralPlot
                                 spectralData={spectralData}
-                                incidenceAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.incidence ?? 0 : geoValues.incidence ?? 0) : 0}
-                                emissionAngle={geoValues ? (Array.isArray(geoValues) ? geoValues[0]?.emis ?? 0 : geoValues.emis ?? 0) : 0}
+                                incidenceAngle={geoValues
+                                  ? (Array.isArray(geoValues)
+                                    ? (Number.isFinite(geoValues[0]?.incidence) ? geoValues[0].incidence : NaN)
+                                    : (Number.isFinite(geoValues.incidence) ? geoValues.incidence : NaN))
+                                  : NaN}
+                                emissionAngle={geoValues
+                                  ? (Array.isArray(geoValues)
+                                    ? (Number.isFinite(geoValues[0]?.emis) ? geoValues[0].emis : NaN)
+                                    : (Number.isFinite(geoValues.emis) ? geoValues.emis : NaN))
+                                  : NaN}
                                 selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
                                 plotMultiple={toggles.plotMultiple}
                                 multiplePositions={toggles.plotMultiple ? multiplePositions : null}
@@ -2099,6 +2139,13 @@ function App() {
                                     Using geo-extracted angles:
                                     Inc={geoValues.incidence != null ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'},
                                     Emi={geoValues.emis != null ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}
+                                    {geoValues.materialClass != null ? (
+                                      <>
+                                        {' | '}
+                                        Surface: {getSurfaceMaterialLabel(geoValues.materialClass)}
+                                        {' | '}Spectrum albedo={geoValues.surfaceAlbedo}
+                                      </>
+                                    ) : null}
                                   </>
                                 )}
                               </div>

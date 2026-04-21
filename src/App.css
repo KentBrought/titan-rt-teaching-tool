@@ -390,11 +390,44 @@ body {
   align-self: stretch;
 }
 
-.skinny-plot h3 {
-  font-size: 14px;
+.skinny-plot-header {
+  width: 100%;
   margin-bottom: 8px;
+}
+
+.skinny-plot-header-top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.skinny-plot-header-top h3 {
+  font-size: 14px;
+  margin: 0;
   color: #e0e0e0;
-  text-align: center;
+  text-align: left;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.skinny-plot-select {
+  flex: 0 1 auto;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #66ccff;
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.skinny-plot-select:focus {
+  outline: 2px solid #66ccff;
+  outline-offset: 2px;
 }
 
 .skinny-plot-content {

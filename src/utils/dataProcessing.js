@@ -183,6 +183,10 @@ const calculateFlatIndex = (incIdx, emiIdx, azIdx, numEmi, numAz) => {
  */
 export const createSpectralPlotData = (processedData, incidenceAngle, emissionAngle, azimuthAngle, caseType, albedo = 0.1) => {
   if (!processedData || !processedData.wavelength) return { wavelengths: [], intensities: [] };
+  // Invalid/off-disc geo samples can produce NaN angles. Never map those to a spectrum.
+  if (!Number.isFinite(incidenceAngle) || !Number.isFinite(emissionAngle) || !Number.isFinite(azimuthAngle)) {
+    return { wavelengths: [], intensities: [] };
+  }
 
   const { wavelength, inc, emi, daz, isNewFormat } = processedData;
 

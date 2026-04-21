@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import { processSpectralData, createSpectralPlotData, getActualAngles } from '../utils/dataProcessing';
+import { getSurfaceMaterialLabel } from '../utils/materialMapLoader';
 
 // Helper function to adjust color brightness
 const adjustColorBrightness = (hex, percent) => {
@@ -17,6 +18,13 @@ const formatAngles = (incidence, emission, phase) => {
   const e = emission != null ? emission.toFixed(0) : '?';
   const p = phase != null ? phase.toFixed(0) : '?';
   return `i:${i}° e:${e}° p:${p}°`;
+};
+
+const formatSurfaceMaterial = (materialClass, surfaceAlbedo) => {
+  if (!Number.isFinite(materialClass)) return '';
+  const name = getSurfaceMaterialLabel(materialClass);
+  if (Number.isFinite(surfaceAlbedo)) return `${name} A:${surfaceAlbedo}`;
+  return name;
 };
 
 const GAUSSIAN_SIGMA_INDEX = {
@@ -288,9 +296,10 @@ const SpectralPlot = ({
       // Multiple mode: create traces for each point and each selected case
       geoValues.forEach((geoValue, pointIndex) => {
         const pointCases = selectedCases[pointIndex] || { standard: true, no_ch4: false, no_haze: false };
-        const pointIncidence = geoValue.incidence ?? 0;
-        const pointEmission = geoValue.emis ?? 0;
-        const pointAzimuth = geoValue.azimuth ?? 0;
+        const pointIncidence = Number.isFinite(geoValue.incidence) ? geoValue.incidence : NaN;
+        const pointEmission = Number.isFinite(geoValue.emis) ? geoValue.emis : NaN;
+        const pointAzimuth = Number.isFinite(geoValue.azimuth) ? geoValue.azimuth : NaN;
+        const pointAlbedo = Number.isFinite(geoValue?.surfaceAlbedo) ? geoValue.surfaceAlbedo : albedo;
 
         // Count how many cases are selected for this point to determine shade variations
         const selectedCaseTypes = Object.entries(pointCases)
@@ -309,7 +318,7 @@ const SpectralPlot = ({
             pointEmission,
             pointAzimuth,
             caseType,
-            albedo
+            pointAlbedo
           );
 
           if (data && data.wavelengths && data.wavelengths.length > 0) {
@@ -345,7 +354,8 @@ const SpectralPlot = ({
             // Get actual angles for this point
             const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
             const phase = geoValue.phase ?? (actual.incidence + actual.emission);
-            const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
+            const materialTag = formatSurfaceMaterial(geoValue?.materialClass, pointAlbedo);
+            const traceName = `${caseName}${materialTag ? ` [${materialTag}]` : ''} (${formatAngles(actual.incidence, actual.emission, phase)})`;
 
             // Use different shades of the same color for multiple components
             let lineColor = baseColor;
@@ -390,15 +400,19 @@ const SpectralPlot = ({
       });
     } else if (!plotMultiple && geoValues) {
       // Single mode: use the original logic
+      const surfaceAlbedo = Number.isFinite(geoValues?.surfaceAlbedo) ? geoValues.surfaceAlbedo : albedo;
+      const selectedIncidence = Number.isFinite(incidenceAngle) ? incidenceAngle : NaN;
+      const selectedEmission = Number.isFinite(emissionAngle) ? emissionAngle : NaN;
+      const selectedAzimuth = Number.isFinite(azimuthAngle) ? azimuthAngle : NaN;
       Object.entries(selectedCases).forEach(([caseType, isSelected]) => {
         if (isSelected) {
           const data = createSpectralPlotData(
             processedData,
-            incidenceAngle,
-            emissionAngle,
-            azimuthAngle,
+            selectedIncidence,
+            selectedEmission,
+            selectedAzimuth,
             caseType,
-            albedo
+            surfaceAlbedo
           );
 
           if (data && data.wavelengths && data.wavelengths.length > 0) {
@@ -432,7 +446,8 @@ const SpectralPlot = ({
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
             const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
             const phase = geoValues.phase ?? (actual.incidence + actual.emission);
-            const traceName = `${caseName} (${formatAngles(actual.incidence, actual.emission, phase)})`;
+            const materialTag = formatSurfaceMaterial(geoValues?.materialClass, surfaceAlbedo);
+            const traceName = `${caseName}${materialTag ? ` [${materialTag}]` : ''} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             traces.push({
               x: wavelengths,
               y: intensities,
