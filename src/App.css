@@ -475,12 +475,14 @@ body {
   color: #e0e0e0;
 }
 
-.placeholder-circle {
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, #555, #222);
-  border: 2px solid #444;
+.ir-image-placeholder {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 360px;
+  max-height: 100%;
+  border-radius: 4px;
+  background: #000;
+  border: 1px solid #1f1f1f;
 }
 
 .true-color {
@@ -593,6 +595,14 @@ body {
   min-width: 250px;
   max-width: 300px;
   flex: 0 0 auto;
+}
+
+.sliders-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
 .toggles-box {

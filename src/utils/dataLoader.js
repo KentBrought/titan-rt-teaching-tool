@@ -4,6 +4,7 @@
 
 // Cache for loaded data to prevent multiple loads
 const dataCache = new Map();
+const inFlightLoads = new Map();
 
 /**
  * Clear the data cache to free memory
@@ -123,67 +124,38 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
     return dataCache.get(url);
   }
 
-  try {
+  // Reuse in-flight request to avoid duplicate fetch/parse work
+  if (inFlightLoads.has(url)) {
+    console.log(`Awaiting in-flight load for ${url}`);
+    return inFlightLoads.get(url);
+  }
+
+  const loadPromise = (async () => {
     console.log(`Loading ${url}...`);
     
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
-    let text = await response.text();
-    console.log(`Loaded ${url}, size: ${text.length} characters`);
-    
-    // Check file size - increased limit for real data
-    if (text.length > maxSize) {
-      console.warn(`File ${url} is very large (${text.length} chars), but attempting to parse...`);
+
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > maxSize) {
+      console.warn(`File ${url} is very large (${Math.round(contentLength / 1024 / 1024)}MB), attempting to parse...`);
     }
-    
-    // Parse the JSON with error handling
-    // For very large files, this might cause memory issues
+
     let data;
     try {
-      // Check memory before parsing
-      const memoryBefore = getMemoryInfo();
-      if (memoryBefore) {
-        console.log(`Memory before parsing: ${memoryBefore.used} / ${memoryBefore.limit}`);
+      data = await response.json();
+    } catch (parseErr) {
+      const errorMsg = parseErr.message || String(parseErr);
+      if (
+        errorMsg.toLowerCase().includes('memory') ||
+        errorMsg.toLowerCase().includes('out of') ||
+        parseErr.name === 'RangeError'
+      ) {
+        throw new Error(`Out of memory while parsing ${url}. The file is too large for your browser.`);
       }
-      
-      // Use a try-catch around JSON.parse to catch memory errors
-      const textLength = text.length; // Store length before clearing
-      try {
-        data = JSON.parse(text);
-      } catch (parseErr) {
-        // Clear text immediately if parse fails to free memory
-        text = null;
-        
-        // Check if it's a memory-related error
-        const errorMsg = parseErr.message || String(parseErr);
-        if (errorMsg.toLowerCase().includes('memory') || 
-            errorMsg.toLowerCase().includes('out of') ||
-            parseErr.name === 'RangeError') {
-          throw new Error(`Out of memory while parsing ${url} (${(textLength / 1024 / 1024).toFixed(2)}MB). The file is too large for your browser.`);
-        }
-        throw parseErr;
-      }
-      
-      // Clear the text string to free memory immediately after parsing
-      // This helps reduce peak memory usage
-      text = null; // Allow GC to free the string immediately
-      
-      const memoryAfter = getMemoryInfo();
-      if (memoryAfter) {
-        console.log(`Memory after parsing: ${memoryAfter.used} / ${memoryAfter.limit}`);
-        const usedMB = parseInt(memoryAfter.used);
-        const limitMB = parseInt(memoryAfter.limit);
-        if (usedMB > limitMB * 0.9) {
-          console.warn(`Memory usage is very high (${usedMB}MB / ${limitMB}MB). Consider reducing dataset size.`);
-        }
-      }
-    } catch (parseError) {
-      console.error(`JSON parse error in ${url}:`, parseError);
-      // Re-throw with better error message
-      throw parseError;
+      throw parseErr;
     }
     
     // Keep spectral library data as-is (no conversion to avoid memory spikes)
@@ -203,9 +175,16 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
     dataCache.set(url, data);
     console.log(`Successfully parsed and cached ${url}`);
     return data;
+  })();
+
+  inFlightLoads.set(url, loadPromise);
+
+  try {
+    return await loadPromise;
   } catch (error) {
     console.error(`Error loading ${url}:`, error);
     throw error;
+  } finally {
+    inFlightLoads.delete(url);
   }
 };
-

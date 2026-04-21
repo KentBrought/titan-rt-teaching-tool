@@ -234,6 +234,8 @@ function App() {
     incidenceAngle: 45,
     emissionAngle: 45,
     phaseAngle: 0,
+    titanYaw: 0,
+    obliquity: 0,
     /** 0–100 continuous; nearest of {0, 0.1, 0.2} used for data/images (see getAlbedoValueFromSlider) */
     albedo: 33,
   });
@@ -242,6 +244,7 @@ function App() {
   const [toggles, setToggles] = useState({
     plotMultiple: false,
     spectralUnits: false,
+    showAtmosphere: true,
   });
 
   const [spectralResolutionIndex, setSpectralResolutionIndex] = useState(3);
@@ -299,10 +302,16 @@ function App() {
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [cameraPreset3d, setCameraPreset3d] = useState(''); // '' | 'cassini' | 'sun'
-  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft' | 'vector'
+  const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft' | 'vector' | 'overhead'
+  const [geometryInteractionMode3d, setGeometryInteractionMode3d] = useState('camera'); // 'camera' | 'editTitan' | 'editCassini'
   const [irGridEnabled2d, setIrGridEnabled2d] = useState(false);
   const [sphereGridEnabled3d, setSphereGridEnabled3d] = useState(false);
+  const [geometryGridEnabled3d, setGeometryGridEnabled3d] = useState(false);
   const [rotationAxisEnabled3d, setRotationAxisEnabled3d] = useState(false);
+  const [showAngleArcs3d, setShowAngleArcs3d] = useState(false);
+  const [showVectorLabels3d, setShowVectorLabels3d] = useState(true);
+  const [showVectorGuideLines3d, setShowVectorGuideLines3d] = useState(false);
+  const [allowMultipleVectors3d, setAllowMultipleVectors3d] = useState(false);
   const [tutorialMode, setTutorialMode] = useState(null);
   /** Left-panel vertical profile: gases vs T/P/haze (dropdown next to plot title) */
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
@@ -311,6 +320,59 @@ function App() {
     const numericValue = parseFloat(value);
     setSliders(prev => ({ ...prev, [name]: numericValue }));
   };
+
+  const handleGeometryInteractionModeChange = (mode) => {
+    setGeometryInteractionMode3d(mode);
+    if (mode === 'editTitan' || mode === 'editCassini') {
+      setCameraCenter3d('overhead');
+      setCameraPreset3d('');
+    }
+  };
+
+  const handleGeometryChangeFrom3d = useCallback((geometry) => {
+    if (!geometry || typeof geometry !== 'object') return;
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const normalize360 = (v) => {
+      const n = v % 360;
+      return n < 0 ? n + 360 : n;
+    };
+
+    setSliders(prev => {
+      const next = { ...prev };
+      let changed = false;
+
+      if (Number.isFinite(geometry.phaseDeg)) {
+        const phaseSlider = Math.round(clamp(geometry.phaseDeg, 0, 355) / 5);
+        if (next.phaseAngle !== phaseSlider) {
+          next.phaseAngle = phaseSlider;
+          changed = true;
+        }
+      }
+      if (Number.isFinite(geometry.incidenceDeg)) {
+        const incidence = clamp(geometry.incidenceDeg, 0, 180);
+        if (next.incidenceAngle !== incidence) {
+          next.incidenceAngle = incidence;
+          changed = true;
+        }
+      }
+      if (Number.isFinite(geometry.emissionDeg)) {
+        const emission = clamp(geometry.emissionDeg, 0, 180);
+        if (next.emissionAngle !== emission) {
+          next.emissionAngle = emission;
+          changed = true;
+        }
+      }
+      if (Number.isFinite(geometry.titanYawDeg)) {
+        const titanYaw = normalize360(geometry.titanYawDeg);
+        if (next.titanYaw !== titanYaw) {
+          next.titanYaw = titanYaw;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, []);
 
   const handleToggleChange = (name) => {
     if (name === 'plotMultiple') {
@@ -565,6 +627,7 @@ function App() {
 
   // Debounce timer ref for hover handler
   const hoverDebounceTimerRef = useRef(null);
+  const lastHoverPixelRef = useRef({ x: null, y: null });
   // Debounce timer ref for image loading
   const imageLoadTimerRef = useRef(null);
 
@@ -586,7 +649,7 @@ function App() {
     loadGeoCube();
   }, [sliders.phaseAngle]);
 
-  // Handle image hover to extract geo values (with debouncing and cached data)
+  // Handle image hover to extract geo values (throttled + cached lookups)
   const handleImageHover = useCallback((x, y, position) => {
     // Clear any existing timer
     if (hoverDebounceTimerRef.current) {
@@ -594,9 +657,16 @@ function App() {
     }
 
     if (x === null || y === null) {
+      lastHoverPixelRef.current = { x: null, y: null };
       setHoverGeoValues(null);
       return;
     }
+
+    // Skip no-op updates for the same hovered pixel.
+    if (lastHoverPixelRef.current.x === x && lastHoverPixelRef.current.y === y) {
+      return;
+    }
+    lastHoverPixelRef.current = { x, y };
 
     // Use cached data for instant lookups (no async needed)
     hoverDebounceTimerRef.current = setTimeout(() => {
@@ -605,7 +675,19 @@ function App() {
         // If data not loaded yet, fall back to async call
         const phaseAngle = sliders.phaseAngle * 5;
         extractGeoValues(phaseAngle, x, y).then(values => {
-          setHoverGeoValues(values);
+          setHoverGeoValues(prev => {
+            if (
+              prev &&
+              prev.x === values.x &&
+              prev.y === values.y &&
+              prev.incidence === values.incidence &&
+              prev.emis === values.emis &&
+              prev.phase === values.phase
+            ) {
+              return prev;
+            }
+            return values;
+          });
         }).catch(error => {
           console.error('Error extracting hover geo values:', error);
           setHoverGeoValues(null);
@@ -621,7 +703,7 @@ function App() {
         const incidence = getGeoValue(geoData, x, y, 5);
         const emis = getGeoValue(geoData, x, y, 6);
 
-        setHoverGeoValues({
+        const nextHover = {
           lat: lat !== null ? lat : null,
           lon: lon !== null ? lon : null,
           phase: phase !== null ? phase : null,
@@ -629,12 +711,25 @@ function App() {
           emis: emis !== null ? emis : null,
           x,
           y
+        };
+        setHoverGeoValues(prev => {
+          if (
+            prev &&
+            prev.x === nextHover.x &&
+            prev.y === nextHover.y &&
+            prev.incidence === nextHover.incidence &&
+            prev.emis === nextHover.emis &&
+            prev.phase === nextHover.phase
+          ) {
+            return prev;
+          }
+          return nextHover;
         });
       } catch (error) {
         console.error('Error extracting hover geo values:', error);
         setHoverGeoValues(null);
       }
-    }, 10); // Reduced debounce delay to 10ms since lookups are now instant
+    }, 60);
   }, [sliders.phaseAngle]);
 
   // Cleanup debounce timers on unmount
@@ -893,6 +988,8 @@ function App() {
         incidenceAngle: 45,
         emissionAngle: 45,
         phaseAngle: 0,
+        titanYaw: 0,
+        obliquity: 0,
         albedo: 33,
       });
       setHazePropertiesModel('doose');
@@ -974,7 +1071,10 @@ function App() {
   };
 
   const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
+  const activeAlbedoValue = getAlbedoValueFromSlider(sliders.albedo);
   const activeGridEnabled = irDisplayMode === '3d' ? sphereGridEnabled3d : irGridEnabled2d;
+  const optionsPanelTitle = irDisplayMode === '3d' ? 'Observing Geometry Options' : 'IR Image Options';
+  const panelMatchHeightPx = 760;
   const handleActiveGridToggle = (enabled) => {
     if (irDisplayMode === '3d') setSphereGridEnabled3d(enabled);
     else setIrGridEnabled2d(enabled);
@@ -1038,7 +1138,13 @@ function App() {
         const result = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName, requestedAlbedo);
         setCurrentImage(result.url);
 
-        preloadAdjacentImages(phaseAngle, imageTypeToLoad, hazeFolderName, 2, requestedAlbedo);
+        preloadAdjacentImages(
+          phaseAngle,
+          imageTypeToLoad,
+          result?.actualFolder || hazeFolderName,
+          2,
+          result?.actualAlbedo ?? requestedAlbedo
+        );
       } catch (error) {
         console.error('Error loading image:', error);
         setCurrentImage(null);
@@ -1298,7 +1404,7 @@ function App() {
     };
   }, []);
 
-  // Load both spectral libraries once on mount (albedo 0.1 fine grid + multi-albedo comp library)
+  // Load default spectral library on mount.
   useEffect(() => {
     let isCancelled = false;
 
@@ -1322,16 +1428,6 @@ function App() {
           /* optional init_gui library missing or invalid */
         }
 
-        const newDataPath = `/assets/dt/tomasko_1.0/init_comp_library.json`;
-        try {
-          const newSpectralJson = await loadJsonFile(newDataPath);
-          if (isCancelled) return;
-          if (newSpectralJson && newSpectralJson.wavelength && newSpectralJson.data) {
-            setSpectralDataNew(newSpectralJson);
-          }
-        } catch (newErr) {
-          /* optional init_comp library missing or invalid */
-        }
       } catch (err) {
         if (isCancelled) return;
         console.error('Error loading spectral data:', err);
@@ -1357,7 +1453,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const albedo = getAlbedoValueFromSlider(sliders.albedo);
+    const albedo = activeAlbedoValue;
 
     if (albedo === 0.1 && spectralDataOld) {
       setSpectralData(spectralDataOld);
@@ -1376,7 +1472,32 @@ function App() {
         setAngleOptions({ inc, emi, daz });
       }
     }
-  }, [sliders.albedo, spectralDataOld, spectralDataNew]);
+  }, [activeAlbedoValue, spectralDataOld, spectralDataNew]);
+
+  // Lazy-load multi-albedo spectral library only when needed.
+  useEffect(() => {
+    if (activeAlbedoValue === 0.1 || spectralDataNew) return;
+
+    let isCancelled = false;
+    const loadCompLibrary = async () => {
+      try {
+        const newDataPath = `/assets/dt/tomasko_1.0/init_comp_library.json`;
+        const newSpectralJson = await loadJsonFile(newDataPath);
+        if (isCancelled) return;
+        if (newSpectralJson && newSpectralJson.wavelength && newSpectralJson.data) {
+          setSpectralDataNew(newSpectralJson);
+        }
+      } catch (newErr) {
+        if (isCancelled) return;
+        console.error('Error loading multi-albedo spectral data:', newErr);
+      }
+    };
+
+    loadCompLibrary();
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeAlbedoValue, spectralDataNew]);
 
   useEffect(() => {
     loadMaterialAlbedoMap()
@@ -1462,7 +1583,7 @@ function App() {
                     <div
                       ref={irColorImageRef}
                       className="display-box ir-color"
-                      style={{ position: 'relative', alignSelf: irDisplayMode === '3d' ? 'flex-start' : 'stretch' }}
+                      style={{ position: 'relative', alignSelf: 'stretch' }}
                     >
                       <button
                         type="button"
@@ -1493,7 +1614,7 @@ function App() {
                         <Tooltip content={
                           irDisplayMode === '3d' ? (
                             <>
-                              <strong>Observeing Geomtery</strong>
+                              <strong>Observing Geometry</strong>
                               Interactive 3D observing geometry view showing Titan, Cassini, and Sun positions.
                               Click on Titan to visualize vectors from your selected surface location to the Sun and spacecraft,
                               plus the local surface normal vector.
@@ -1508,13 +1629,13 @@ function App() {
                             </>
                           )
                         }>
-                          {irDisplayMode === '3d' ? 'Observeing Geomtery' : 'IR Color'}
+                          {irDisplayMode === '3d' ? 'Observing Geometry' : 'IR Color'}
                         </Tooltip>
                       </h2>
                       {irDisplayMode === '3d' ? (
                         <>
                           <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                            <div style={{ width: '100%', maxWidth: '760px', aspectRatio: '1 / 1', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ width: '100%', height: `${panelMatchHeightPx}px`, borderRadius: '4px', overflow: 'hidden' }}>
                               <SphereView
                                 phaseAngle={sliders.phaseAngle * 5}
                                 compositeType={compositeType}
@@ -1523,8 +1644,12 @@ function App() {
                                 incidenceDeg={sliders.incidenceAngle}
                                 emissionDeg={sliders.emissionAngle}
                                 phaseDeg={sliders.phaseAngle * 5}
+                                titanYawDeg={sliders.titanYaw}
+                                obliquityDeg={sliders.obliquity}
                                 cameraPreset={cameraPreset3d || 'none'}
                                 cameraCenter={cameraCenter3d}
+                                geometryInteractionMode={geometryInteractionMode3d}
+                                onGeometryChange={handleGeometryChangeFrom3d}
                                 onCameraPresetRelease={() => setCameraPreset3d('')}
                                 onVectorPlaced={() => {
                                   setCameraCenter3d('vector');
@@ -1532,7 +1657,13 @@ function App() {
                                 }}
                                 introAnimation={true}
                                 showLatLonGrid={sphereGridEnabled3d}
+                                showGeometryGrid={geometryGridEnabled3d}
                                 showRotationAxis={rotationAxisEnabled3d}
+                                showAngleArcs={showAngleArcs3d}
+                                showVectorLabels={showVectorLabels3d}
+                                showExtendedVectorLines={showVectorGuideLines3d}
+                                allowMultipleVectors={allowMultipleVectors3d}
+                                showAtmosphere={toggles.showAtmosphere}
                                 interactionMode={selectionMode === 'plotPoint' ? 'plotPoint' : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')}
                                 onSurfacePointSelect={handleSpherePlotPoint}
                                 multiplePoints={selectionMode === 'plotMultiplePoints' ? multiplePositions : []}
@@ -1585,7 +1716,7 @@ function App() {
                           </div>
                         </>
                       ) : (
-                        <div className="placeholder-circle"></div>
+                        <div className="ir-image-placeholder" aria-label="IR image loading placeholder"></div>
                       )}
                     </div>
                     <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
@@ -1673,21 +1804,22 @@ function App() {
                           <option value="2">Haze Comparison</option>
                         </select>
                       </div>
-                      {/* IR Image Options */}
-                      <div className="control-box sliders-box" style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
+                      {/* IR/Geometry Options */}
+                      <div className="control-box sliders-box" style={{ flex: '1', display: 'flex', flexDirection: 'column', maxHeight: `${panelMatchHeightPx}px` }}>
                         <h2>
                           <Tooltip content={
                             <>
-                              <strong>IR Image Options</strong>
+                              <strong>{optionsPanelTitle}</strong>
                               Controls that modify the infrared image display and atmospheric parameters.
                               These settings affect both the visible image and the underlying radiative transfer calculations
                               used to generate spectral plots. Adjusting these parameters helps you explore how different
                               atmospheric conditions and viewing geometries affect what we observe on Titan.
                             </>
                           }>
-                            IR Image Options
+                            {optionsPanelTitle}
                           </Tooltip>
                         </h2>
+                        <div className="sliders-scroll">
                         <div className="slider-group">
                           {/* Haze Model Section */}
                           <div style={{ marginBottom: '0', display: 'flex', flexDirection: 'column' }}>
@@ -1806,6 +1938,28 @@ function App() {
                             <span>{sliders.phaseAngle * 5}°</span>
                           </label>
 
+                          {irDisplayMode === '3d' && (
+                            <label style={{ color: '#ccc' }}>
+                              <Tooltip content={
+                                <>
+                                  <strong>Obliquity</strong>
+                                  Tilts Titan around the Z-axis in the 3D view.
+                                </>
+                              }>
+                                Obliquity
+                              </Tooltip>
+                              <input
+                                type="range"
+                                min="-23"
+                                max="23"
+                                step="1"
+                                value={sliders.obliquity}
+                                onChange={(e) => handleSliderChange('obliquity', e.target.value)}
+                              />
+                              <span>{sliders.obliquity}°</span>
+                            </label>
+                          )}
+
                           <label style={{ color: '#ccc' }}>
                             <Tooltip content="Continuous 0–100; nearest 0, 0.1, or 0.2 for IR and spectra.">
                               Albedo slider
@@ -1821,7 +1975,9 @@ function App() {
                             <span>{getAlbedoValueFromSlider(sliders.albedo)}</span>
                           </label>
                         </div>
-                        <div style={{ marginTop: '10px' }}>
+                        <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                        <div style={{ marginTop: '0' }}>
+                          <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Display Overlays</h3>
                           <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <input
                               type="checkbox"
@@ -1830,6 +1986,26 @@ function App() {
                             />
                             <span>Lat/Lon Grid + Labels</span>
                           </label>
+                          {irDisplayMode === '3d' && (
+                            <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                              <input
+                                type="checkbox"
+                                checked={geometryGridEnabled3d}
+                                onChange={(e) => setGeometryGridEnabled3d(e.target.checked)}
+                              />
+                              <span>Show Geometry Angle Grid</span>
+                            </label>
+                          )}
+                          {irDisplayMode === '3d' && (
+                            <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                              <input
+                                type="checkbox"
+                                checked={toggles.showAtmosphere}
+                                onChange={() => handleToggleChange('showAtmosphere')}
+                              />
+                              <span>Show Gas Layer</span>
+                            </label>
+                          )}
                         </div>
                         {irDisplayMode === '3d' && (
                           <>
@@ -1886,7 +2062,53 @@ function App() {
                                 </button>
                               )}
                             </div>
-                            <div style={{ marginTop: '12px' }}>
+                            <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                            <div style={{ marginTop: '0' }}>
+                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                                <Tooltip content={
+                                  <>
+                                    <strong>3D Geometry Controls</strong>
+                                    Choose whether drag gestures orbit the camera, rotate Titan, or move Cassini to update phase and emission.
+                                  </>
+                                }>
+                                  3D Geometry Controls
+                                </Tooltip>
+                              </h3>
+                              <div className="radio-group">
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="geometryInteractionMode3d"
+                                    value="camera"
+                                    checked={geometryInteractionMode3d === 'camera'}
+                                    onChange={(e) => handleGeometryInteractionModeChange(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Camera Orbit</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="geometryInteractionMode3d"
+                                    value="editTitan"
+                                    checked={geometryInteractionMode3d === 'editTitan'}
+                                    onChange={(e) => handleGeometryInteractionModeChange(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Edit Titan</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="geometryInteractionMode3d"
+                                    value="editCassini"
+                                    checked={geometryInteractionMode3d === 'editCassini'}
+                                    onChange={(e) => handleGeometryInteractionModeChange(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Edit Cassini</span>
+                                </label>
+                              </div>
+                            </div>
+                            <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                            <div style={{ marginTop: '0' }}>
                               <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
                                 <Tooltip content={
                                   <>
@@ -1897,7 +2119,7 @@ function App() {
                                   Camera Center
                                 </Tooltip>
                               </h3>
-                              <div className="radio-group" style={{ flexDirection: 'row', gap: '20px' }}>
+                              <div className="radio-group">
                                 <label className="radio-label">
                                   <input
                                     type="radio"
@@ -1928,14 +2150,61 @@ function App() {
                                   />
                                   <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Vector</span>
                                 </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="cameraCenter3d"
+                                    value="overhead"
+                                    checked={cameraCenter3d === 'overhead'}
+                                    onChange={(e) => setCameraCenter3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Overhead</span>
+                                </label>
                               </div>
-                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '12px', marginBottom: '12px' }}></div>
+                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>View Aids</h3>
+                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <input
                                   type="checkbox"
                                   checked={rotationAxisEnabled3d}
                                   onChange={(e) => setRotationAxisEnabled3d(e.target.checked)}
                                 />
-                                <span>Show Rotation Axis</span>
+                                <span>Show Axis of Rotation</span>
+                              </label>
+                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={showAngleArcs3d}
+                                  onChange={(e) => setShowAngleArcs3d(e.target.checked)}
+                                />
+                                <span>Show Angle Arcs + Labels</span>
+                              </label>
+
+                              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '12px', marginBottom: '12px' }}></div>
+                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>Vector Display</h3>
+                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={showVectorLabels3d}
+                                  onChange={(e) => setShowVectorLabels3d(e.target.checked)}
+                                />
+                                <span>Show Vector Labels</span>
+                              </label>
+                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={showVectorGuideLines3d}
+                                  onChange={(e) => setShowVectorGuideLines3d(e.target.checked)}
+                                />
+                                <span>Show Full Vector Guide Lines</span>
+                              </label>
+                              <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={allowMultipleVectors3d}
+                                  onChange={(e) => setAllowMultipleVectors3d(e.target.checked)}
+                                />
+                                <span>Add Multiple Vectors</span>
                               </label>
                             </div>
                           </>
@@ -2050,6 +2319,7 @@ function App() {
                           </div>
                         </div>
                         )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2203,10 +2473,10 @@ function App() {
                       <div className="toggle-group">
                         {/* Existing non-functional toggles */}
                         {Object.entries(toggles)
-                          .filter(([key]) => key !== 'plotMultiple')
+                          .filter(([key]) => key !== 'plotMultiple' && key !== 'showAtmosphere')
                           .map(([key, value]) => {
                             const labelMap = {
-                              spectralUnits: 'Spectral units'
+                              spectralUnits: 'Spectral units',
                             };
                             const label = labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                             return (

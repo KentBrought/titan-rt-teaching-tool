@@ -6,8 +6,10 @@ import ssiLogo from '../assets/SSI_Logo.png';
 import './SplashOverlay.css';
 
 const SESSION_STORAGE_KEY = 'titan_rt_splash_shown';
-const DEBUG_DISPLAY_TIME = 5000; // 5 seconds for debugging
+const DEBUG_DISPLAY_TIME = 1800;
 const FADE_OUT_DURATION = 3000; // 3 seconds for fade animation
+const IMAGE_PRELOAD_TIMEOUT = 5000;
+const READY_FAILSAFE_TIMEOUT = 7000;
 
 function SplashOverlay({ onReady }) {
   const [isVisible, setIsVisible] = useState(false);
@@ -20,6 +22,32 @@ function SplashOverlay({ onReady }) {
   const dismissTimeoutRef = React.useRef(null);
   const overlayRef = React.useRef(null);
   const readyCallbackRef = React.useRef(onReady);
+  const readySignaledRef = React.useRef(false);
+
+  const getSessionShown = useCallback(() => {
+    try {
+      return sessionStorage.getItem(SESSION_STORAGE_KEY) === 'true';
+    } catch (err) {
+      console.warn('Session storage unavailable while reading splash flag:', err);
+      return false;
+    }
+  }, []);
+
+  const setSessionShown = useCallback(() => {
+    try {
+      sessionStorage.setItem(SESSION_STORAGE_KEY, 'true');
+    } catch (err) {
+      console.warn('Session storage unavailable while writing splash flag:', err);
+    }
+  }, []);
+
+  const signalReady = useCallback(() => {
+    if (readySignaledRef.current) return;
+    readySignaledRef.current = true;
+    if (readyCallbackRef.current) {
+      readyCallbackRef.current();
+    }
+  }, []);
 
   // Handle dismiss logic
   const handleDismiss = useCallback((immediate = false) => {
@@ -30,11 +58,12 @@ function SplashOverlay({ onReady }) {
     }
 
     // Mark as shown in sessionStorage
-    sessionStorage.setItem(SESSION_STORAGE_KEY, 'true');
+    setSessionShown();
 
     if (immediate) {
       setIsFading(false);
       setShouldRender(false);
+      signalReady();
       return;
     }
 
@@ -54,47 +83,63 @@ function SplashOverlay({ onReady }) {
       // After fade animation completes, remove from DOM
       fadeTimeoutRef.current = setTimeout(() => {
         setShouldRender(false);
+        signalReady();
       }, FADE_OUT_DURATION);
     }, 10);
-  }, []);
+  }, [setSessionShown, signalReady]);
 
   // Check if splash has been shown in this session
   useEffect(() => {
-    const hasBeenShown = sessionStorage.getItem(SESSION_STORAGE_KEY) === 'true';
+    const hasBeenShown = getSessionShown();
     
     if (hasBeenShown) {
       // Already shown, notify parent immediately that we're ready
-      if (readyCallbackRef.current) {
-        readyCallbackRef.current();
-      }
+      signalReady();
       return;
     }
 
     // Preload all images before showing splash
+    let cancelled = false;
+    let preloadTimeout = null;
     const preloadImages = () => {
       const imageUrls = [soderblomLogo, dragonflyLogo, nasaLogo, ssiLogo];
       const imagePromises = imageUrls.map((url) => {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
           const img = new Image();
           img.onload = resolve;
-          img.onerror = reject;
+          img.onerror = resolve;
           img.src = url;
         });
       });
 
-      Promise.all(imagePromises)
+      preloadTimeout = setTimeout(() => {
+        if (!cancelled) {
+          console.warn('Splash image preload timed out, continuing startup.');
+          setImagesLoaded(true);
+        }
+      }, IMAGE_PRELOAD_TIMEOUT);
+
+      Promise.allSettled(imagePromises)
         .then(() => {
-          setImagesLoaded(true);
+          if (!cancelled) {
+            setImagesLoaded(true);
+          }
         })
-        .catch((error) => {
-          console.error('Error preloading images:', error);
-          // Still show splash even if images fail to load
-          setImagesLoaded(true);
+        .finally(() => {
+          if (preloadTimeout) {
+            clearTimeout(preloadTimeout);
+          }
         });
     };
 
     preloadImages();
-  }, []);
+    return () => {
+      cancelled = true;
+      if (preloadTimeout) {
+        clearTimeout(preloadTimeout);
+      }
+    };
+  }, [getSessionShown, signalReady]);
 
   // Update callback ref when onReady changes
   useEffect(() => {
@@ -103,24 +148,14 @@ function SplashOverlay({ onReady }) {
 
   // Show splash once images are loaded (only if not shown before)
   useEffect(() => {
-    const hasBeenShown = sessionStorage.getItem(SESSION_STORAGE_KEY) === 'true';
+    const hasBeenShown = getSessionShown();
     if (hasBeenShown || !imagesLoaded) return;
 
     setShouldRender(true);
     setIsVisible(true);
     startTimeRef.current = Date.now();
-    
-    // Notify parent that splash is ready (rendered and visible)
-    // Use requestAnimationFrame to ensure DOM is ready
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (readyCallbackRef.current) {
-          readyCallbackRef.current();
-        }
-      });
-    });
-    
-    // Auto-dismiss after 3 seconds
+
+    // Keep splash visible for a minimum duration.
     dismissTimeoutRef.current = setTimeout(() => {
       handleDismiss();
     }, DEBUG_DISPLAY_TIME);
@@ -130,7 +165,18 @@ function SplashOverlay({ onReady }) {
         clearTimeout(dismissTimeoutRef.current);
       }
     };
-  }, [imagesLoaded, handleDismiss]);
+  }, [imagesLoaded, getSessionShown, handleDismiss]);
+  
+  // Failsafe: never allow startup to remain blocked by splash state.
+  useEffect(() => {
+    const fallback = setTimeout(() => {
+      signalReady();
+      setShouldRender(false);
+      setIsVisible(false);
+      setIsFading(false);
+    }, READY_FAILSAFE_TIMEOUT);
+    return () => clearTimeout(fallback);
+  }, [signalReady]);
 
   // Ensure fade animation triggers when isFading changes
   useEffect(() => {
