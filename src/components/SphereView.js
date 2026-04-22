@@ -282,6 +282,7 @@ function SphereView({
     let controlsStartHandler = null;
     const satTargetPos = new THREE.Vector3();
     const sunTargetPos = new THREE.Vector3();
+    const sunDirectionForAtmosphere = new THREE.Vector3(0, 0, -1);
 
     const rafId = requestAnimationFrame(function initThree() {
       if (cancelled) return;
@@ -381,7 +382,9 @@ function SphereView({
             side: THREE.FrontSide,
             depthWrite: false,
             toneMapped: false,
-            uniforms: {},
+            uniforms: {
+              sunDirectionWorld: { value: sunDirectionForAtmosphere.clone() },
+            },
             vertexShader: `
               varying vec3 vWorldNormal;
               varying vec3 vWorldPos;
@@ -395,14 +398,25 @@ function SphereView({
             fragmentShader: `
               varying vec3 vWorldNormal;
               varying vec3 vWorldPos;
+              uniform vec3 sunDirectionWorld;
               void main() {
+                vec3 normalDir = normalize(vWorldNormal);
                 vec3 viewDir = normalize(cameraPosition - vWorldPos);
-                float ndv = max(dot(normalize(vWorldNormal), viewDir), 0.0);
+                vec3 sunDir = normalize(sunDirectionWorld);
+                float ndv = max(dot(normalDir, viewDir), 0.0);
+                float ndlRaw = dot(normalDir, sunDir);
+                float sunlit = smoothstep(-0.08, 0.55, ndlRaw);
                 float rim = pow(1.0 - ndv, 2.6);
-                float alpha = mix(0.46, 0.92, rim);
-                vec3 centerColor = vec3(0.66, 0.50, 0.16);
-                vec3 edgeColor = vec3(0.98, 0.84, 0.34);
+                float nightsideDarkness = 1.0 - smoothstep(-0.85, -0.10, ndlRaw);
+                float alpha = mix(0.08, 0.92, rim) * mix(0.18, 1.0, sunlit) * mix(0.35, 1.0, 1.0 - nightsideDarkness);
+                vec3 centerColorNight = vec3(0.05, 0.03, 0.01);
+                vec3 centerColorDay = vec3(0.72, 0.56, 0.20);
+                vec3 edgeColorNight = vec3(0.12, 0.08, 0.03);
+                vec3 edgeColorDay = vec3(0.99, 0.87, 0.37);
+                vec3 centerColor = mix(centerColorNight, centerColorDay, sunlit);
+                vec3 edgeColor = mix(edgeColorNight, edgeColorDay, sunlit);
                 vec3 color = mix(centerColor, edgeColor, rim);
+                color *= mix(0.12, 1.0, sunlit);
                 gl_FragColor = vec4(color, alpha);
               }
             `,
@@ -414,14 +428,45 @@ function SphereView({
 
         const atmosphereGlow = new THREE.Mesh(
           new THREE.SphereGeometry(1.086, 96, 96),
-          new THREE.MeshBasicMaterial({
-            color: 0xaebdca,
+          new THREE.ShaderMaterial({
             transparent: true,
-            opacity: 0.055,
+            opacity: 1,
             side: THREE.BackSide,
             depthWrite: false,
             blending: THREE.AdditiveBlending,
             toneMapped: false,
+            uniforms: {
+              sunDirectionWorld: { value: sunDirectionForAtmosphere.clone() },
+            },
+            vertexShader: `
+              varying vec3 vWorldNormal;
+              varying vec3 vWorldPos;
+              void main() {
+                vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                vWorldPos = worldPos.xyz;
+                vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                gl_Position = projectionMatrix * viewMatrix * worldPos;
+              }
+            `,
+            fragmentShader: `
+              varying vec3 vWorldNormal;
+              varying vec3 vWorldPos;
+              uniform vec3 sunDirectionWorld;
+              void main() {
+                vec3 normalDir = normalize(vWorldNormal);
+                vec3 viewDir = normalize(cameraPosition - vWorldPos);
+                vec3 sunDir = normalize(sunDirectionWorld);
+                float rim = pow(1.0 - max(dot(normalDir, viewDir), 0.0), 2.2);
+                float ndlRaw = dot(normalDir, sunDir);
+                float sunlit = smoothstep(-0.05, 0.55, ndlRaw);
+                float nightsideDarkness = 1.0 - smoothstep(-0.85, -0.10, ndlRaw);
+                vec3 glowNight = vec3(0.02, 0.03, 0.05);
+                vec3 glowDay = vec3(0.62, 0.72, 0.82);
+                vec3 color = mix(glowNight, glowDay, sunlit) * rim;
+                float alpha = rim * mix(0.02, 0.16, sunlit) * mix(0.12, 1.0, 1.0 - nightsideDarkness);
+                gl_FragColor = vec4(color, alpha);
+              }
+            `,
           })
         );
         atmosphereGlow.visible = showAtmosphereRef.current;
@@ -1703,7 +1748,7 @@ function SphereView({
           const incidenceRad = THREE.MathUtils.degToRad(angleRef.current.incidenceDeg);
           const sunDirection = new THREE.Vector3(Math.sin(incidenceRad), 0, -Math.cos(incidenceRad)).normalize();
           const satDirection = sunDirection.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), phaseRad).normalize();
-          const satDistance = 2.9 + (emissionNorm * 1.1);
+          const satDistance = 4.2 + (emissionNorm * 1.6);
           const sunDistance = (3.6 + (incidenceNorm * 1.4)) * 2.0;
 
           satTargetPos.copy(satDirection.multiplyScalar(satDistance));
@@ -1754,6 +1799,37 @@ function SphereView({
           return null;
         };
 
+        const moveCameraAlongOrbit = (desiredPosition, desiredTarget) => {
+          const orbitCenter = desiredTarget.clone();
+          const currentOffset = camera.position.clone().sub(orbitCenter);
+          const desiredOffset = desiredPosition.clone().sub(orbitCenter);
+          const currentRadius = Math.max(currentOffset.length(), 1e-6);
+          const desiredRadius = Math.max(desiredOffset.length(), 1e-6);
+          const currentDir = currentOffset.clone().normalize();
+          const desiredDir = desiredOffset.clone().normalize();
+          const angleToTarget = currentDir.angleTo(desiredDir);
+
+          let nextDir = desiredDir.clone();
+          if (Number.isFinite(angleToTarget) && angleToTarget > 1e-5) {
+            const maxStepRad = THREE.MathUtils.degToRad(3.0);
+            const stepRad = Math.min(angleToTarget, maxStepRad);
+            let axis = new THREE.Vector3().crossVectors(currentDir, desiredDir);
+            if (axis.lengthSq() < 1e-10) {
+              axis = new THREE.Vector3(0, 1, 0).cross(currentDir);
+              if (axis.lengthSq() < 1e-10) {
+                axis = new THREE.Vector3(1, 0, 0);
+              }
+            }
+            axis.normalize();
+            nextDir = currentDir.clone().applyAxisAngle(axis, stepRad).normalize();
+          }
+
+          const nextRadius = THREE.MathUtils.lerp(currentRadius, desiredRadius, 0.18);
+          controls.target.lerp(desiredTarget, 0.22);
+          camera.position.copy(orbitCenter.clone().addScaledVector(nextDir, nextRadius));
+          camera.lookAt(controls.target);
+        };
+
         introStateRef.current = {
           active: introEnabledRef.current,
           startMs: performance.now(),
@@ -1777,6 +1853,13 @@ function SphereView({
             satelliteBody.position.copy(satTargetPos);
             satelliteBody.lookAt(0, 0, 0);
             sunBody.position.copy(sunTargetPos);
+            if (atmosphereRef.current?.material?.uniforms?.sunDirectionWorld) {
+              sunDirectionForAtmosphere.copy(sunBody.position).normalize();
+              atmosphereRef.current.material.uniforms.sunDirectionWorld.value.copy(sunDirectionForAtmosphere);
+            }
+            if (atmosphereGlowRef.current?.material?.uniforms?.sunDirectionWorld) {
+              atmosphereGlowRef.current.material.uniforms.sunDirectionWorld.value.copy(sunDirectionForAtmosphere);
+            }
             if (interactionRef.current.mode === 'vector' && syncKey !== lastSyncedPointsKeyRef.current) {
               lastSyncedPointsKeyRef.current = syncKey;
               clearClickOverlay(overlayScene, clickOverlayRef);
@@ -1931,9 +2014,7 @@ function SphereView({
                 controls.maxDistance = 12;
                 controls.minPolarAngle = Math.PI / 2;
                 controls.maxPolarAngle = Math.PI / 2;
-                camera.position.lerp(presetPose.position, 0.18);
-                controls.target.lerp(presetPose.target, 0.22);
-                camera.lookAt(controls.target);
+                moveCameraAlongOrbit(presetPose.position, presetPose.target);
               } else {
                 const isOverheadCenter = cameraModeRef.current.center === 'overhead';
                 controls.enableRotate = geometryModeRef.current === 'camera' && !isOverheadCenter;

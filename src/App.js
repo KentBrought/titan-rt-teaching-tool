@@ -1948,7 +1948,7 @@ function App() {
                                 <Tooltip content={
                                   <>
                                     <strong>3D Camera Presets</strong>
-                                    Switches the camera to perspective views (Cassini or Sun) that stay synced as the slider geometry changes.
+                                    Switches the camera to perspective views (Cassini's Perspective or Sun's Perspective) that stay synced as the slider geometry changes.
                                   </>
                                 }>
                                   3D Perspective Presets
@@ -1963,7 +1963,7 @@ function App() {
                                     checked={cameraPreset3d === 'cassini'}
                                     onChange={(e) => setCameraPreset3d(e.target.value)}
                                   />
-                                  <span>Perspective (Cassini)</span>
+                                  <span>Cassini's Perspective</span>
                                 </label>
                                 <label className="radio-label">
                                   <input
@@ -1973,7 +1973,7 @@ function App() {
                                     checked={cameraPreset3d === 'sun'}
                                     onChange={(e) => setCameraPreset3d(e.target.value)}
                                   />
-                                  <span>Perspective (Sun)</span>
+                                  <span>Sun's Perspective</span>
                                 </label>
                               </div>
                             </div>
