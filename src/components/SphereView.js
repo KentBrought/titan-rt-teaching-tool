@@ -11,6 +11,9 @@ import { getPublicAssetUrl, getRuntimePublicBase, resolveRuntimeAssetUrl } from 
 import cassiniModelBundledUrl from '../assets/Cassini.glb';
 import { CASSINI_GLB_BASE64 } from '../assets/cassiniModelBase64';
 
+const POINT_COLOR_PALETTE = [0xff0000, 0xffa500, 0xffff00, 0x00ff00, 0x0000ff, 0x800080];
+const MAX_SYNCED_VECTORS = 5;
+
 function SphereView({
   minHeight = 400,
   incidenceDeg = 45,
@@ -19,7 +22,7 @@ function SphereView({
   titanYawDeg = 0,
   obliquityDeg = 0,
   cameraPreset = 'none', // 'none' | 'cassini' | 'sun'
-  cameraCenter = 'titan', // 'titan' | 'spacecraft' | 'vector' | 'overhead'
+  cameraCenter = 'titan', // 'titan' | 'spacecraft' | 'overhead'
   geometryInteractionMode = 'camera', // 'camera' | 'editTitan' | 'editCassini'
   introAnimation = true,
   showLatLonGrid = false,
@@ -93,6 +96,13 @@ function SphereView({
   const hoveredVectorKeyRef = useRef(null);
   const overlaySceneRef = useRef(null);
   const vectorIdCounterRef = useRef(1);
+  const incomingPointsRef = useRef(Array.isArray(multiplePoints) ? multiplePoints : []);
+  const lastSyncedPointsKeyRef = useRef('');
+  const satOrbitPhaseDegRef = useRef(null);
+
+  useEffect(() => {
+    incomingPointsRef.current = Array.isArray(multiplePoints) ? multiplePoints : [];
+  }, [multiplePoints]);
 
   useEffect(() => {
     angleRef.current = {
@@ -100,6 +110,9 @@ function SphereView({
       emissionDeg: Math.max(0, Math.min(180, Number.isFinite(emissionDeg) ? emissionDeg : 45)),
       phaseDeg: Math.max(0, Math.min(360, Number.isFinite(phaseDeg) ? phaseDeg : 0)),
     };
+    if (satOrbitPhaseDegRef.current == null || !Number.isFinite(satOrbitPhaseDegRef.current)) {
+      satOrbitPhaseDegRef.current = Math.max(0, Math.min(360, Number.isFinite(phaseDeg) ? phaseDeg : 0));
+    }
   }, [incidenceDeg, emissionDeg, phaseDeg]);
 
   useEffect(() => {
@@ -161,9 +174,7 @@ function SphereView({
     const preset = cameraPreset === 'cassini' || cameraPreset === 'sun' ? cameraPreset : 'none';
     const center = cameraCenter === 'spacecraft'
       ? 'spacecraft'
-      : (cameraCenter === 'vector'
-        ? 'vector'
-        : (cameraCenter === 'overhead' ? 'overhead' : 'titan'));
+      : (cameraCenter === 'overhead' ? 'overhead' : 'titan');
     cameraModeRef.current = { preset, center };
     if (prevCameraCenterRef.current !== center && center === 'spacecraft') {
       pendingSpacecraftAutoZoomRef.current = true;
@@ -268,6 +279,7 @@ function SphereView({
     let pointerMoveHandler = null;
     let pointerUpHandler = null;
     let pointerLeaveHandler = null;
+    let controlsStartHandler = null;
     const satTargetPos = new THREE.Vector3();
     const sunTargetPos = new THREE.Vector3();
 
@@ -334,6 +346,13 @@ function SphereView({
         controls.rotateSpeed = 0.85;
         controls.target.set(0, 0, 0);
         controlsRef.current = controls;
+        controlsStartHandler = () => {
+          if (cameraModeRef.current.preset !== 'none') {
+            cameraModeRef.current.preset = 'none';
+            if (presetReleaseRef.current) presetReleaseRef.current();
+          }
+        };
+        controls.addEventListener('start', controlsStartHandler);
 
         geometry = new THREE.SphereGeometry(1, 256, 256);
         material = new THREE.MeshStandardMaterial({
@@ -500,7 +519,7 @@ function SphereView({
         mesh.add(labelGroup);
 
         const geometryGrid = new THREE.Group();
-        const ringRadius = 1.38;
+        const ringRadius = 8.4;
         const makeRing = (color, opacity = 0.45) => new THREE.LineLoop(
           new THREE.BufferGeometry().setFromPoints(
             Array.from({ length: 96 }, (_, idx) => {
@@ -523,7 +542,7 @@ function SphereView({
           const isMajor = deg % 45 === 0;
           const rad = THREE.MathUtils.degToRad(deg);
           const inner = new THREE.Vector3(Math.cos(rad) * 1.06, 0, Math.sin(rad) * 1.06);
-          const outer = new THREE.Vector3(Math.cos(rad) * (isMajor ? 1.52 : 1.45), 0, Math.sin(rad) * (isMajor ? 1.52 : 1.45));
+          const outer = new THREE.Vector3(Math.cos(rad) * (isMajor ? 10.4 : 9.8), 0, Math.sin(rad) * (isMajor ? 10.4 : 9.8));
           const spoke = new THREE.Line(
             new THREE.BufferGeometry().setFromPoints([inner, outer]),
             new THREE.LineBasicMaterial({
@@ -1024,8 +1043,11 @@ function SphereView({
             const marker = vectorSet.marker;
             if (!marker || !marker.material) return;
             const isHovered = hoveredMarker === marker;
+            const baseColor = Number.isFinite(marker.userData?.baseColorHex)
+              ? marker.userData.baseColorHex
+              : 0xffffff;
             marker.scale.setScalar(isHovered ? 1.35 : 1);
-            marker.material.color.setHex(isHovered ? 0xff4040 : 0xffffff);
+            marker.material.color.setHex(isHovered ? 0xff4040 : baseColor);
             marker.material.opacity = isHovered ? 1 : 0.95;
             marker.material.needsUpdate = true;
           });
@@ -1236,109 +1258,22 @@ function SphereView({
         renderer.domElement.addEventListener('pointerup', pointerUpHandler);
         renderer.domElement.addEventListener('pointerleave', pointerLeaveHandler);
 
-        clickHandler = (event) => {
-          const mode = interactionRef.current.mode;
-          if (mode !== 'vector' && mode !== 'plotPoint' && mode !== 'plotMultiple') return;
-          if (mode === 'vector' && geometryModeRef.current !== 'camera') return;
-          if (pointerStateRef.current.wasDragging) {
-            pointerStateRef.current.wasDragging = false;
-            return;
-          }
-          if (!renderer || !camera || !mesh || !scene) return;
+        const addVectorAtWorldPoint = ({
+          hitPoint,
+          normal,
+          markerColorHex = 0xffffff,
+          clearExisting = false,
+          notifySelection = false,
+          notifyVectorPlaced = false,
+          uv = null,
+        }) => {
+          if (!overlayScene || !sunBody || !satelliteBody || !controls || !mesh) return;
+          const n = normal.clone().normalize();
+          const origin = hitPoint.clone().add(n.clone().multiplyScalar(0.004));
+          const existingCount = Array.isArray(clickOverlayRef.current?.vectors) ? clickOverlayRef.current.vectors.length : 0;
+          if (!clearExisting && existingCount >= MAX_SYNCED_VECTORS) return;
 
-          const rect = renderer.domElement.getBoundingClientRect();
-          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-          raycaster.setFromCamera(pointer, camera);
-
-          if (mode === 'vector') {
-            const hovered = getHoveredVectorInfo(event);
-            if (hovered) {
-              if (pinnedVectorKeysRef.current.has(hovered.key)) {
-                pinnedVectorKeysRef.current.delete(hovered.key);
-              } else {
-                pinnedVectorKeysRef.current.add(hovered.key);
-              }
-              setVectorHoverScale(hoveredVectorKeyRef.current);
-              return;
-            }
-
-            const markerTargets = getMarkerHitTargets();
-            const markerHits = raycaster.intersectObjects(markerTargets, true);
-            if (markerHits && markerHits.length > 0) {
-              let clickedMarker = null;
-              let node = markerHits[0].object;
-              while (node) {
-                if (markerTargets.includes(node)) {
-                  clickedMarker = node;
-                  break;
-                }
-                node = node.parent;
-              }
-              if (clickedMarker) {
-                const overlay = clickOverlayRef.current;
-                const vectors = Array.isArray(overlay.vectors) ? overlay.vectors : [];
-                const targetSet = vectors.find((set) => set.marker === clickedMarker);
-                if (targetSet) {
-                  const removeObjects = [
-                    targetSet.marker,
-                    targetSet.sunArrow,
-                    targetSet.satArrow,
-                    targetSet.normalArrow,
-                    ...(targetSet.angleArcs || []),
-                    ...(targetSet.angleLabels || []),
-                    ...(targetSet.vectorLabels || []),
-                    ...(targetSet.guideLines || []),
-                  ];
-                  removeObjects.forEach((obj) => {
-                    if (!obj) return;
-                    if (overlayScene) overlayScene.remove(obj);
-                    obj.traverse((child) => {
-                      if (child.geometry) child.geometry.dispose();
-                      if (child.material) {
-                        const mats = Array.isArray(child.material) ? child.material : [child.material];
-                        mats.forEach((m) => {
-                          if (m.map) m.map.dispose();
-                          m.dispose();
-                        });
-                      }
-                    });
-                  });
-                  overlay.vectors = vectors.filter((set) => set !== targetSet);
-                  const last = overlay.vectors.length > 0 ? overlay.vectors[overlay.vectors.length - 1] : null;
-                  overlay.marker = last?.marker || null;
-                  overlay.sunArrow = last?.sunArrow || null;
-                  overlay.satArrow = last?.satArrow || null;
-                  overlay.normalArrow = last?.normalArrow || null;
-                  const nextPinned = new Set();
-                  pinnedVectorKeysRef.current.forEach((key) => {
-                    if (getArrowByVectorKey(key)) nextPinned.add(key);
-                  });
-                  pinnedVectorKeysRef.current = nextPinned;
-                  hoveredVectorKeyRef.current = null;
-                  setVectorHoverScale(null);
-                  setMarkerHoverState(null);
-                  hideVectorTooltip();
-                  maybeUpdatePinnedTooltips([]);
-                  if (cameraModeRef.current.center === 'vector') {
-                    controls.target.copy(last?.marker?.position || new THREE.Vector3(0, 0, 0));
-                  }
-                  return;
-                }
-              }
-            }
-          }
-
-          const intersects = raycaster.intersectObject(mesh, false);
-          if (intersects.length === 0) return;
-
-          const hitPoint = intersects[0].point.clone();
-          const normal = hitPoint.clone().normalize();
-          const upRef = Math.abs(normal.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-          const tangent = upRef.clone().cross(normal).normalize();
-          const bitangent = normal.clone().cross(tangent).normalize();
-
-          if (mode !== 'vector' || !allowMultipleVectorsRef.current) {
+          if (clearExisting) {
             clearClickOverlay(overlayScene, clickOverlayRef);
             pinnedVectorKeysRef.current = new Set();
             maybeUpdatePinnedTooltips([]);
@@ -1346,66 +1281,23 @@ function SphereView({
             setMarkerHoverState(null);
             hideVectorTooltip();
           }
-          const origin = hitPoint.clone().add(normal.clone().multiplyScalar(0.004));
 
-          if (mode === 'plotPoint') {
-            const crossSize = 0.065;
-            const crossRadius = 0.0065;
-            const diagA = tangent.clone().add(bitangent).normalize();
-            const diagB = tangent.clone().sub(bitangent).normalize();
-
-            const makeCrossArm = (dir) => {
-              const arm = new THREE.Mesh(
-                new THREE.CylinderGeometry(crossRadius, crossRadius, crossSize * 2, 12),
-                new THREE.MeshBasicMaterial({
-                  color: 0xff3030,
-                  depthTest: false,
-                  depthWrite: false,
-                })
-              );
-              arm.position.copy(origin.clone().add(normal.clone().multiplyScalar(0.004)));
-              arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-              arm.renderOrder = 999;
-              return arm;
-            };
-
-            const plotCross = new THREE.Group();
-            plotCross.add(makeCrossArm(diagA));
-            plotCross.add(makeCrossArm(diagB));
-            overlayScene.add(plotCross);
-
-            const uv = intersects[0].uv;
-            if (uv && interactionRef.current.onSurfacePointSelect) {
-              const gridSize = 681;
-              const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
-              const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
-              const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
-              const lat = THREE.MathUtils.radToDeg(Math.asin(localHit.y));
-              const lon = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
-              interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
-            }
-            clickOverlayRef.current = { marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross, vectors: [] };
-            return;
-          }
-
-          if (mode === 'plotMultiple') {
-            const uv = intersects[0].uv;
-            if (uv && interactionRef.current.onSurfacePointSelect) {
-              const gridSize = 681;
-              const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
-              const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
-              const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
-              const lat = THREE.MathUtils.radToDeg(Math.asin(localHit.y));
-              const lon = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
-              interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
-            }
-            return;
+          if (notifySelection && uv && interactionRef.current.onSurfacePointSelect) {
+            const gridSize = 681;
+            const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
+            const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
+            const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
+            const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
+            const lonRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+            const lat = Number.isFinite(latRaw) ? latRaw : null;
+            const lon = Number.isFinite(lonRaw) ? lonRaw : null;
+            interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
           }
 
           const marker = new THREE.Mesh(
             new THREE.SphereGeometry(0.042, 20, 20),
             new THREE.MeshBasicMaterial({
-              color: 0xffffff,
+              color: markerColorHex,
               transparent: true,
               opacity: 0.95,
               depthTest: false,
@@ -1413,7 +1305,8 @@ function SphereView({
               toneMapped: false,
             })
           );
-          marker.position.copy(hitPoint.clone().add(normal.clone().multiplyScalar(0.014)));
+          marker.userData.baseColorHex = markerColorHex;
+          marker.position.copy(hitPoint.clone().add(n.clone().multiplyScalar(0.014)));
           marker.renderOrder = 1004;
           overlayScene.add(marker);
 
@@ -1421,12 +1314,12 @@ function SphereView({
           const normalLength = arrowLength * 0.75;
           const getDirectionFromClickToTarget = (target) => {
             const d = target.clone().sub(origin);
-            if (d.lengthSq() < 1e-8) return normal.clone();
+            if (d.lengthSq() < 1e-8) return n.clone();
             return d.normalize();
           };
           const sunDirection = getDirectionFromClickToTarget(sunBody.position);
           const satDirection = getDirectionFromClickToTarget(satelliteBody.position);
-          const normalDirection = normal.clone();
+          const normalDirection = n.clone();
           const sunHeadLength = 0.12;
           const satHeadLength = 0.12;
           const normalHeadLength = 0.1;
@@ -1528,7 +1421,6 @@ function SphereView({
           addGuideLine(normalDirection, 1.1, 0x66ff66);
 
           const vectorLabels = [];
-
           const angleArcs = [];
           const angleLabels = [];
           const createAngleArc = (angleKeySuffix, startDir, endDir, radius, colorHex, labelText, labelColor) => {
@@ -1545,7 +1437,7 @@ function SphereView({
               for (let i = 0; i <= segments; i += 1) {
                 const t = i / segments;
                 const dir = start.clone().applyAxisAngle(axis, angle * t).normalize();
-                points.push(origin.clone().add(dir.multiplyScalar(radius + radiusOffset)).add(normal.clone().multiplyScalar(0.01)));
+                points.push(origin.clone().add(dir.multiplyScalar(radius + radiusOffset)).add(n.clone().multiplyScalar(0.01)));
               }
               const geometryArc = new THREE.BufferGeometry().setFromPoints(points);
               const line = new THREE.Line(
@@ -1595,17 +1487,193 @@ function SphereView({
           overlay.sunArrow = sunArrow;
           overlay.satArrow = satArrow;
           overlay.normalArrow = normalArrow;
-
-          // After placing a vector, center camera target on it immediately.
-          controls.target.copy(marker.position);
           controls.update();
-          if (vectorPlacedRef.current) {
+          if (notifyVectorPlaced && vectorPlacedRef.current) {
             vectorPlacedRef.current({
               x: marker.position.x,
               y: marker.position.y,
               z: marker.position.z,
             });
           }
+        };
+
+        clickHandler = (event) => {
+          const mode = interactionRef.current.mode;
+          if (mode !== 'vector' && mode !== 'plotPoint' && mode !== 'plotMultiple') return;
+          if (mode === 'vector' && geometryModeRef.current !== 'camera') return;
+          if (pointerStateRef.current.wasDragging) {
+            pointerStateRef.current.wasDragging = false;
+            return;
+          }
+          if (!renderer || !camera || !mesh || !scene) return;
+
+          const rect = renderer.domElement.getBoundingClientRect();
+          pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+          raycaster.setFromCamera(pointer, camera);
+
+          if (mode === 'vector') {
+            const hovered = getHoveredVectorInfo(event);
+            if (hovered) {
+              if (pinnedVectorKeysRef.current.has(hovered.key)) {
+                pinnedVectorKeysRef.current.delete(hovered.key);
+              } else {
+                pinnedVectorKeysRef.current.add(hovered.key);
+              }
+              setVectorHoverScale(hoveredVectorKeyRef.current);
+              return;
+            }
+
+            const markerTargets = getMarkerHitTargets();
+            const markerHits = raycaster.intersectObjects(markerTargets, true);
+            if (markerHits && markerHits.length > 0) {
+              let clickedMarker = null;
+              let node = markerHits[0].object;
+              while (node) {
+                if (markerTargets.includes(node)) {
+                  clickedMarker = node;
+                  break;
+                }
+                node = node.parent;
+              }
+              if (clickedMarker) {
+                const overlay = clickOverlayRef.current;
+                const vectors = Array.isArray(overlay.vectors) ? overlay.vectors : [];
+                const targetSet = vectors.find((set) => set.marker === clickedMarker);
+                if (targetSet) {
+                  const removeObjects = [
+                    targetSet.marker,
+                    targetSet.sunArrow,
+                    targetSet.satArrow,
+                    targetSet.normalArrow,
+                    ...(targetSet.angleArcs || []),
+                    ...(targetSet.angleLabels || []),
+                    ...(targetSet.vectorLabels || []),
+                    ...(targetSet.guideLines || []),
+                  ];
+                  removeObjects.forEach((obj) => {
+                    if (!obj) return;
+                    if (overlayScene) overlayScene.remove(obj);
+                    obj.traverse((child) => {
+                      if (child.geometry) child.geometry.dispose();
+                      if (child.material) {
+                        const mats = Array.isArray(child.material) ? child.material : [child.material];
+                        mats.forEach((m) => {
+                          if (m.map) m.map.dispose();
+                          m.dispose();
+                        });
+                      }
+                    });
+                  });
+                  overlay.vectors = vectors.filter((set) => set !== targetSet);
+                  const last = overlay.vectors.length > 0 ? overlay.vectors[overlay.vectors.length - 1] : null;
+                  overlay.marker = last?.marker || null;
+                  overlay.sunArrow = last?.sunArrow || null;
+                  overlay.satArrow = last?.satArrow || null;
+                  overlay.normalArrow = last?.normalArrow || null;
+                  const nextPinned = new Set();
+                  pinnedVectorKeysRef.current.forEach((key) => {
+                    if (getArrowByVectorKey(key)) nextPinned.add(key);
+                  });
+                  pinnedVectorKeysRef.current = nextPinned;
+                  hoveredVectorKeyRef.current = null;
+                  setVectorHoverScale(null);
+                  setMarkerHoverState(null);
+                  hideVectorTooltip();
+                  maybeUpdatePinnedTooltips([]);
+                  return;
+                }
+              }
+            }
+          }
+
+          const intersects = raycaster.intersectObject(mesh, false);
+          if (intersects.length === 0) return;
+
+          const hitPoint = intersects[0].point.clone();
+          const normal = hitPoint.clone().normalize();
+          const upRef = Math.abs(normal.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+          const tangent = upRef.clone().cross(normal).normalize();
+          const bitangent = normal.clone().cross(tangent).normalize();
+
+          if (mode !== 'vector' || !allowMultipleVectorsRef.current) {
+            clearClickOverlay(overlayScene, clickOverlayRef);
+            pinnedVectorKeysRef.current = new Set();
+            maybeUpdatePinnedTooltips([]);
+            setVectorHoverScale(null);
+            setMarkerHoverState(null);
+            hideVectorTooltip();
+          }
+          const origin = hitPoint.clone().add(normal.clone().multiplyScalar(0.004));
+
+          if (mode === 'plotPoint') {
+            const crossSize = 0.065;
+            const crossRadius = 0.0065;
+            const diagA = tangent.clone().add(bitangent).normalize();
+            const diagB = tangent.clone().sub(bitangent).normalize();
+
+            const makeCrossArm = (dir) => {
+              const arm = new THREE.Mesh(
+                new THREE.CylinderGeometry(crossRadius, crossRadius, crossSize * 2, 12),
+                new THREE.MeshBasicMaterial({
+                  color: 0xff3030,
+                  depthTest: false,
+                  depthWrite: false,
+                })
+              );
+              arm.position.copy(origin.clone().add(normal.clone().multiplyScalar(0.004)));
+              arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+              arm.renderOrder = 999;
+              return arm;
+            };
+
+            const plotCross = new THREE.Group();
+            plotCross.add(makeCrossArm(diagA));
+            plotCross.add(makeCrossArm(diagB));
+            overlayScene.add(plotCross);
+
+            const uv = intersects[0].uv;
+            if (uv && interactionRef.current.onSurfacePointSelect) {
+              const gridSize = 681;
+              const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
+              const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
+              const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
+              const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
+              const lonRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+              const lat = Number.isFinite(latRaw) ? latRaw : null;
+              const lon = Number.isFinite(lonRaw) ? lonRaw : null;
+              interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
+            }
+            clickOverlayRef.current = { marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross, vectors: [] };
+            return;
+          }
+
+          if (mode === 'plotMultiple') {
+            const uv = intersects[0].uv;
+            if (uv && interactionRef.current.onSurfacePointSelect) {
+              const gridSize = 681;
+              const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
+              const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
+              const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
+              const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
+              const lonRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+              const lat = Number.isFinite(latRaw) ? latRaw : null;
+              const lon = Number.isFinite(lonRaw) ? lonRaw : null;
+              interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
+            }
+            return;
+          }
+
+          const colorIdx = (Array.isArray(clickOverlayRef.current?.vectors) ? clickOverlayRef.current.vectors.length : 0) % POINT_COLOR_PALETTE.length;
+          addVectorAtWorldPoint({
+            hitPoint,
+            normal,
+            markerColorHex: POINT_COLOR_PALETTE[colorIdx],
+            clearExisting: !allowMultipleVectorsRef.current,
+            notifySelection: true,
+            notifyVectorPlaced: true,
+            uv: intersects[0].uv,
+          });
         };
         renderer.domElement.addEventListener('click', clickHandler);
 
@@ -1621,9 +1689,17 @@ function SphereView({
           if (!sunBody || !satelliteBody) return;
           const incidenceNorm = THREE.MathUtils.clamp(angleRef.current.incidenceDeg / 180, 0, 1);
           const emissionNorm = THREE.MathUtils.clamp(angleRef.current.emissionDeg / 180, 0, 1);
-          const phaseRad = THREE.MathUtils.degToRad(angleRef.current.phaseDeg);
+          const targetPhaseDeg = THREE.MathUtils.clamp(angleRef.current.phaseDeg, 0, 355);
+          if (!Number.isFinite(satOrbitPhaseDegRef.current)) {
+            satOrbitPhaseDegRef.current = targetPhaseDeg;
+          } else {
+            const delta = targetPhaseDeg - satOrbitPhaseDegRef.current;
+            const step = Math.sign(delta) * Math.min(Math.abs(delta), 2.4);
+            satOrbitPhaseDegRef.current += step;
+          }
+          const phaseRad = THREE.MathUtils.degToRad(satOrbitPhaseDegRef.current);
           // Sun direction is fixed by incidence. Satellite rotates around Sun direction by phase.
-          // At phase = 0, they are colinear by construction.
+          // Update phase incrementally so the path follows the circular orbit with no chord shortcuts.
           const incidenceRad = THREE.MathUtils.degToRad(angleRef.current.incidenceDeg);
           const sunDirection = new THREE.Vector3(Math.sin(incidenceRad), 0, -Math.cos(incidenceRad)).normalize();
           const satDirection = sunDirection.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), phaseRad).normalize();
@@ -1635,15 +1711,7 @@ function SphereView({
         };
         updateSunSatelliteWorldPositions();
 
-        const getVectorCameraTarget = () => {
-          const marker = clickOverlayRef.current?.marker;
-          return marker ? marker.position.clone() : new THREE.Vector3(0, 0, 0);
-        };
-
         const getDefaultCameraTarget = () => {
-          if (cameraModeRef.current.center === 'vector') {
-            return getVectorCameraTarget();
-          }
           if (cameraModeRef.current.center === 'spacecraft' && satelliteBody) {
             return satelliteBody.position.clone();
           }
@@ -1702,9 +1770,59 @@ function SphereView({
               starsFar.rotation.x += 0.000015;
             }
             updateSunSatelliteWorldPositions();
-            satelliteBody.position.lerp(satTargetPos, 0.12);
+            const incomingPoints = Array.isArray(incomingPointsRef.current) ? incomingPointsRef.current : [];
+            const syncKey = incomingPoints
+              .map((p) => `${p?.x ?? 'x'}:${p?.y ?? 'y'}:${p?.lat ?? 'lat'}:${p?.lon ?? 'lon'}:${p?.colorIndex ?? 'c'}`)
+              .join('|');
+            satelliteBody.position.copy(satTargetPos);
             satelliteBody.lookAt(0, 0, 0);
-            sunBody.position.lerp(sunTargetPos, 0.1);
+            sunBody.position.copy(sunTargetPos);
+            if (interactionRef.current.mode === 'vector' && syncKey !== lastSyncedPointsKeyRef.current) {
+              lastSyncedPointsKeyRef.current = syncKey;
+              clearClickOverlay(overlayScene, clickOverlayRef);
+              pinnedVectorKeysRef.current = new Set();
+              maybeUpdatePinnedTooltips([]);
+              setVectorHoverScale(null);
+              setMarkerHoverState(null);
+              hideVectorTooltip();
+
+              const gridSize = 681;
+              incomingPoints.slice(0, MAX_SYNCED_VECTORS).forEach((point, index) => {
+                if (point?.x == null || point?.y == null) return;
+                let local;
+                if (Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
+                  const latRad = THREE.MathUtils.degToRad(point.lat);
+                  const lonRad = THREE.MathUtils.degToRad(point.lon);
+                  local = new THREE.Vector3(
+                    Math.sin(lonRad) * Math.cos(latRad),
+                    Math.sin(latRad),
+                    Math.cos(lonRad) * Math.cos(latRad)
+                  );
+                } else {
+                  const u = THREE.MathUtils.clamp(point.x / (gridSize - 1), 0, 1);
+                  const v = THREE.MathUtils.clamp(point.y / (gridSize - 1), 0, 1);
+                  const phi = v * Math.PI;
+                  const theta = u * Math.PI * 2;
+                  local = new THREE.Vector3(
+                    -Math.cos(theta) * Math.sin(phi),
+                    Math.cos(phi),
+                    Math.sin(theta) * Math.sin(phi)
+                  );
+                }
+                const worldPoint = mesh.localToWorld(local.clone());
+                const normal = worldPoint.clone().sub(mesh.getWorldPosition(new THREE.Vector3())).normalize();
+                const colorIndex = point.colorIndex !== undefined ? point.colorIndex : index;
+                const markerColorHex = POINT_COLOR_PALETTE[colorIndex % POINT_COLOR_PALETTE.length] || 0xff0000;
+                addVectorAtWorldPoint({
+                  hitPoint: worldPoint,
+                  normal,
+                  markerColorHex,
+                  clearExisting: false,
+                  notifySelection: false,
+                  notifyVectorPlaced: false,
+                });
+              });
+            }
             if (sunPointLight) sunPointLight.position.copy(sunBody.position);
             if (sunGlow) sunGlow.position.copy(sunBody.position);
             const presetPose = getPresetCameraPose();
@@ -1841,15 +1959,6 @@ function SphereView({
                   controls.target.copy(overheadTarget);
                   camera.position.copy(overheadPos);
                   camera.lookAt(controls.target);
-                } else if (cameraModeRef.current.center === 'vector') {
-                  controls.enableDamping = true;
-                  pendingSpacecraftAutoZoomRef.current = false;
-                  controls.minDistance = 0.02;
-                  controls.maxDistance = 12;
-                  controls.minPolarAngle = 0.02;
-                  controls.maxPolarAngle = Math.PI - 0.02;
-                  const vectorTarget = getVectorCameraTarget();
-                  controls.target.copy(vectorTarget);
                 } else if (cameraModeRef.current.center === 'spacecraft' && satelliteBody) {
                   controls.enableDamping = true;
                   controls.minDistance = 0.02;
@@ -1956,6 +2065,7 @@ function SphereView({
       resizeCleanupRef.current?.();
       resizeCleanupRef.current = null;
       if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
+      if (controls && controlsStartHandler) controls.removeEventListener('start', controlsStartHandler);
       if (controls) controls.dispose();
       if (renderer && clickHandler) renderer.domElement.removeEventListener('click', clickHandler);
       if (renderer && pointerDownHandler) renderer.domElement.removeEventListener('pointerdown', pointerDownHandler);
@@ -2089,61 +2199,7 @@ function SphereView({
       group.remove(child);
     }
 
-    if (!Array.isArray(multiplePoints) || multiplePoints.length === 0) return;
-    const colorValues = [0xff0000, 0xffa500, 0xffff00, 0x00ff00, 0x0000ff, 0x800080];
-    const gridSize = 681;
-    const crossSize = 0.055;
-    const crossRadius = 0.005;
-
-    multiplePoints.forEach((point, index) => {
-      if (point?.x == null || point?.y == null) return;
-      let local;
-      if (Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
-        const latRad = THREE.MathUtils.degToRad(point.lat);
-        const lonRad = THREE.MathUtils.degToRad(point.lon);
-        local = new THREE.Vector3(
-          Math.sin(lonRad) * Math.cos(latRad),
-          Math.sin(latRad),
-          Math.cos(lonRad) * Math.cos(latRad)
-        );
-      } else {
-        const u = THREE.MathUtils.clamp(point.x / (gridSize - 1), 0, 1);
-        const v = THREE.MathUtils.clamp(1 - (point.y / (gridSize - 1)), 0, 1);
-        const phi = v * Math.PI;
-        const theta = u * Math.PI * 2;
-        local = new THREE.Vector3(
-          -Math.cos(theta) * Math.sin(phi),
-          Math.cos(phi),
-          Math.sin(theta) * Math.sin(phi)
-        );
-      }
-      const worldPoint = mesh.localToWorld(local.clone());
-      const normal = worldPoint.clone().sub(mesh.getWorldPosition(new THREE.Vector3())).normalize();
-      const upRef = Math.abs(normal.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-      const tangent = upRef.clone().cross(normal).normalize();
-      const bitangent = normal.clone().cross(tangent).normalize();
-      const diagA = tangent.clone().add(bitangent).normalize();
-      const diagB = tangent.clone().sub(bitangent).normalize();
-      const origin = worldPoint.clone().add(normal.clone().multiplyScalar(0.02));
-      const colorIndex = point.colorIndex !== undefined ? point.colorIndex : index;
-      const color = colorValues[colorIndex] || 0xff0000;
-
-      const makeArm = (dir) => {
-        const arm = new THREE.Mesh(
-          new THREE.CylinderGeometry(crossRadius, crossRadius, crossSize * 2, 10),
-          new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false })
-        );
-        arm.position.copy(origin);
-        arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-        arm.renderOrder = 999;
-        return arm;
-      };
-
-      const cross = new THREE.Group();
-      cross.add(makeArm(diagA));
-      cross.add(makeArm(diagB));
-      group.add(cross);
-    });
+    // Keep this group empty: vectors are now synced as full overlays, not cross markers.
   }, [multiplePoints]);
 
   const handleZoomIn = () => {
@@ -2457,3 +2513,4 @@ const zoomButtonStyle3d = {
 };
 
 export default SphereView;
+
