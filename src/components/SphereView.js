@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -13,6 +13,15 @@ import { CASSINI_GLB_BASE64 } from '../assets/cassiniModelBase64';
 
 const POINT_COLOR_PALETTE = [0xff0000, 0xffa500, 0xffff00, 0x00ff00, 0x0000ff, 0x800080];
 const MAX_SYNCED_VECTORS = 5;
+const VECTOR_LEFT_SHIFT_DEG = 0;
+const IMAGE_GRID_ROTATE_LEFT_DEG = 130;
+const GRID_ROTATE_LEFT_3D_DEG = IMAGE_GRID_ROTATE_LEFT_DEG + 3;
+const LAT_LABEL_LON_OFFSET_DEG = 18;
+const DATA_LON_OFFSET_DEG = GRID_ROTATE_LEFT_3D_DEG - VECTOR_LEFT_SHIFT_DEG;
+const normalizeLongitudeDeg = (lonDeg) => {
+  if (!Number.isFinite(lonDeg)) return null;
+  return ((((lonDeg + 180) % 360) + 360) % 360) - 180;
+};
 
 function SphereView({
   minHeight = 400,
@@ -32,6 +41,7 @@ function SphereView({
   showVectorLabels = true,
   showExtendedVectorLines = false,
   allowMultipleVectors = false,
+  showThroughSurface = true,
   showAtmosphere = true,
   interactionMode = 'vector', // 'vector' | 'plotPoint'
   onSurfacePointSelect,
@@ -86,6 +96,7 @@ function SphereView({
   const showVectorLabelsRef = useRef(showVectorLabels !== false);
   const showExtendedVectorLinesRef = useRef(!!showExtendedVectorLines);
   const allowMultipleVectorsRef = useRef(!!allowMultipleVectors);
+  const showThroughSurfaceRef = useRef(showThroughSurface !== false);
   const showAtmosphereRef = useRef(!!showAtmosphere);
   const titanYawRadRef = useRef(0);
   const obliquityRadRef = useRef(0);
@@ -242,6 +253,10 @@ function SphereView({
   useEffect(() => {
     allowMultipleVectorsRef.current = !!allowMultipleVectors;
   }, [allowMultipleVectors]);
+
+  useEffect(() => {
+    showThroughSurfaceRef.current = showThroughSurface !== false;
+  }, [showThroughSurface]);
 
   useEffect(() => {
     showAtmosphereRef.current = !!showAtmosphere;
@@ -405,10 +420,10 @@ function SphereView({
                 vec3 sunDir = normalize(sunDirectionWorld);
                 float ndv = max(dot(normalDir, viewDir), 0.0);
                 float ndlRaw = dot(normalDir, sunDir);
-                float sunlit = smoothstep(-0.08, 0.55, ndlRaw);
+                float sunlit = smoothstep(-0.62, 0.72, ndlRaw);
                 float rim = pow(1.0 - ndv, 2.6);
-                float nightsideDarkness = 1.0 - smoothstep(-0.85, -0.10, ndlRaw);
-                float alpha = mix(0.08, 0.92, rim) * mix(0.18, 1.0, sunlit) * mix(0.35, 1.0, 1.0 - nightsideDarkness);
+                float nightsideDarkness = 1.0 - smoothstep(-1.0, 0.00, ndlRaw);
+                float alpha = mix(0.08, 0.92, rim) * mix(0.16, 1.0, sunlit) * mix(0.10, 1.0, 1.0 - nightsideDarkness);
                 vec3 centerColorNight = vec3(0.05, 0.03, 0.01);
                 vec3 centerColorDay = vec3(0.72, 0.56, 0.20);
                 vec3 edgeColorNight = vec3(0.12, 0.08, 0.03);
@@ -416,7 +431,7 @@ function SphereView({
                 vec3 centerColor = mix(centerColorNight, centerColorDay, sunlit);
                 vec3 edgeColor = mix(edgeColorNight, edgeColorDay, sunlit);
                 vec3 color = mix(centerColor, edgeColor, rim);
-                color *= mix(0.12, 1.0, sunlit);
+                color *= mix(0.04, 1.0, sunlit);
                 gl_FragColor = vec4(color, alpha);
               }
             `,
@@ -458,12 +473,12 @@ function SphereView({
                 vec3 sunDir = normalize(sunDirectionWorld);
                 float rim = pow(1.0 - max(dot(normalDir, viewDir), 0.0), 2.2);
                 float ndlRaw = dot(normalDir, sunDir);
-                float sunlit = smoothstep(-0.05, 0.55, ndlRaw);
-                float nightsideDarkness = 1.0 - smoothstep(-0.85, -0.10, ndlRaw);
+                float sunlit = smoothstep(-0.56, 0.68, ndlRaw);
+                float nightsideDarkness = 1.0 - smoothstep(-1.0, 0.00, ndlRaw);
                 vec3 glowNight = vec3(0.02, 0.03, 0.05);
                 vec3 glowDay = vec3(0.62, 0.72, 0.82);
                 vec3 color = mix(glowNight, glowDay, sunlit) * rim;
-                float alpha = rim * mix(0.02, 0.16, sunlit) * mix(0.12, 1.0, 1.0 - nightsideDarkness);
+                float alpha = rim * mix(0.02, 0.16, sunlit) * mix(0.02, 1.0, 1.0 - nightsideDarkness);
                 gl_FragColor = vec4(color, alpha);
               }
             `,
@@ -524,13 +539,16 @@ function SphereView({
             ));
           }
           gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lonLineMaterial.clone()));
-          const label = createTextSprite(`${lonDeg}°`, '#ffb56a');
+          const lonLabelRaw = normalizeLongitudeDeg(lonDeg + 180);
+          const lonLabelDeg = lonLabelRaw === -180 ? 180 : lonLabelRaw;
+          const label = createTextSprite(`${lonLabelDeg}°`, '#ffb56a');
           if (label) {
             label.position.set(
               Math.sin(lon) * labelR,
               0,
               Math.cos(lon) * labelR
             );
+            label.scale.set(0.40, 0.10, 1);
             labelGroup.add(label);
           }
         });
@@ -548,14 +566,19 @@ function SphereView({
           gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latLineMaterial.clone()));
           const label = createTextSprite(`${latDeg}°`, '#8fe7ff');
           if (label) {
+            const latLabelLon = THREE.MathUtils.degToRad(LAT_LABEL_LON_OFFSET_DEG);
             label.position.set(
-              0,
+              Math.sin(latLabelLon) * Math.cos(lat) * labelR,
               Math.sin(lat) * labelR,
-              Math.cos(lat) * labelR
+              Math.cos(latLabelLon) * Math.cos(lat) * labelR
             );
+            label.scale.set(0.40, 0.10, 1);
             labelGroup.add(label);
           }
         });
+        const gridRotateRad = THREE.MathUtils.degToRad(-GRID_ROTATE_LEFT_3D_DEG);
+        gridGroup.rotation.y = gridRotateRad;
+        labelGroup.rotation.y = gridRotateRad;
         gridGroup.visible = latLonGridEnabledRef.current;
         labelGroup.visible = latLonGridEnabledRef.current;
         latLonGridRef.current = gridGroup;
@@ -1033,17 +1056,28 @@ function SphereView({
           return Array.isArray(vectors) ? vectors : [];
         };
 
+        const isVectorSetCameraVisible = (vectorSet) => {
+          if (!vectorSet?.marker || !camera) return false;
+          return !isPointOccludedByTitan(camera.position, vectorSet.marker.position, 1.0);
+        };
+
         const getVectorHitTargets = () => {
           const targets = [];
           getOverlayVectors().forEach((vectorSet) => {
+            if (!isVectorSetCameraVisible(vectorSet)) return;
             [vectorSet.sunArrow, vectorSet.satArrow, vectorSet.normalArrow].forEach((arrow) => {
               if (!arrow) return;
               if (arrow.line) targets.push(arrow.line);
               if (arrow.cone) targets.push(arrow.cone);
               if (arrow.userData?.shaft) targets.push(arrow.userData.shaft);
             });
-            if (Array.isArray(vectorSet.angleArcs)) {
-              vectorSet.angleArcs.forEach((arc) => { if (arc) targets.push(arc); });
+            if (showAngleArcsRef.current) {
+              if (Array.isArray(vectorSet.angleArcs)) {
+                vectorSet.angleArcs.forEach((arc) => { if (arc) targets.push(arc); });
+              }
+              if (Array.isArray(vectorSet.angleLabels)) {
+                vectorSet.angleLabels.forEach((label) => { if (label) targets.push(label); });
+              }
             }
           });
           return targets;
@@ -1052,12 +1086,13 @@ function SphereView({
         const getMarkerHitTargets = () => {
           const markers = [];
           getOverlayVectors().forEach((vectorSet) => {
+            if (!isVectorSetCameraVisible(vectorSet)) return;
             if (vectorSet.marker) markers.push(vectorSet.marker);
           });
           return markers;
         };
 
-        const getArrowByVectorKey = (vectorKey) => {
+        const getObjectByVectorKey = (vectorKey) => {
           if (!vectorKey) return null;
           const vectors = getOverlayVectors();
           for (let i = 0; i < vectors.length; i += 1) {
@@ -1067,17 +1102,38 @@ function SphereView({
               const arrow = arrows[j];
               if (arrow?.cone?.userData?.vectorKey === vectorKey) return arrow;
             }
+            const arc = (vectorSet.angleArcs || []).find((obj) => obj?.userData?.vectorKey === vectorKey);
+            if (arc) return arc;
+            const label = (vectorSet.angleLabels || []).find((obj) => obj?.userData?.vectorKey === vectorKey);
+            if (label) return label;
+          }
+          return null;
+        };
+
+        const getVectorSetByVectorKey = (vectorKey) => {
+          if (!vectorKey) return null;
+          const vectors = getOverlayVectors();
+          for (let i = 0; i < vectors.length; i += 1) {
+            const vectorSet = vectors[i];
+            const arrows = [vectorSet.sunArrow, vectorSet.satArrow, vectorSet.normalArrow];
+            const arrowMatch = arrows.find((arrow) => arrow?.cone?.userData?.vectorKey === vectorKey);
+            if (arrowMatch) return vectorSet;
+            const arcMatch = (vectorSet.angleArcs || []).find((obj) => obj?.userData?.vectorKey === vectorKey);
+            if (arcMatch) return vectorSet;
+            const labelMatch = (vectorSet.angleLabels || []).find((obj) => obj?.userData?.vectorKey === vectorKey);
+            if (labelMatch) return vectorSet;
           }
           return null;
         };
 
         const setVectorHoverScale = (hoverKey) => {
           getOverlayVectors().forEach((vectorSet) => {
+            const visible = isVectorSetCameraVisible(vectorSet);
             [vectorSet.sunArrow, vectorSet.satArrow, vectorSet.normalArrow].forEach((arrow) => {
               if (!arrow) return;
               const key = arrow?.cone?.userData?.vectorKey || '';
               const isPinned = pinnedVectorKeysRef.current.has(key);
-              const scale = (key === hoverKey || isPinned) ? 1.08 : 1.0;
+              const scale = (visible && (key === hoverKey || isPinned)) ? 1.08 : 1.0;
               arrow.scale.setScalar(scale);
             });
           });
@@ -1091,9 +1147,9 @@ function SphereView({
             const baseColor = Number.isFinite(marker.userData?.baseColorHex)
               ? marker.userData.baseColorHex
               : 0xffffff;
-            marker.scale.setScalar(isHovered ? 1.35 : 1);
-            marker.material.color.setHex(isHovered ? 0xff4040 : baseColor);
-            marker.material.opacity = isHovered ? 1 : 0.95;
+            marker.scale.setScalar(isHovered ? 1.2 : 1);
+            marker.material.color.setHex(isHovered ? 0xff7a7a : baseColor);
+            marker.material.opacity = isHovered ? 0.7 : 0.95;
             marker.material.needsUpdate = true;
           });
         };
@@ -1162,6 +1218,20 @@ function SphereView({
             }
           }
           setMarkerHoverState(hoveredMarker);
+          if (hoveredMarker) {
+            hoveredVectorKeyRef.current = null;
+            setVectorHoverScale(null);
+            maybeUpdateTooltip({
+              visible: true,
+              text: 'Click to remove',
+              x: (event.clientX - rect.left) + 12,
+              y: (event.clientY - rect.top) + 12,
+              color: '#ff6666',
+              pinned: false,
+              key: `marker:${hoveredMarker.uuid || 'hover'}`,
+            });
+            return;
+          }
           const info = getHoveredVectorInfo(event);
           if (!info) {
             hoveredVectorKeyRef.current = null;
@@ -1307,6 +1377,7 @@ function SphereView({
           hitPoint,
           normal,
           markerColorHex = 0xffffff,
+          colorIndex = null,
           clearExisting = false,
           notifySelection = false,
           notifyVectorPlaced = false,
@@ -1333,16 +1404,32 @@ function SphereView({
             const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
             const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
             const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
-            const lonRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+            const lonDisplayRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+            const lonRaw = normalizeLongitudeDeg(
+              lonDisplayRaw - 180 + angleRef.current.phaseDeg + DATA_LON_OFFSET_DEG
+            );
             const lat = Number.isFinite(latRaw) ? latRaw : null;
             const lon = Number.isFinite(lonRaw) ? lonRaw : null;
-            interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
+            interactionRef.current.onSurfacePointSelect({
+              x,
+              y,
+              lat,
+              lon,
+              local: { x: localHit.x, y: localHit.y, z: localHit.z },
+            });
           }
 
+          const resolvedColorIndex = Number.isFinite(colorIndex)
+            ? ((((Math.round(colorIndex) % POINT_COLOR_PALETTE.length) + POINT_COLOR_PALETTE.length) % POINT_COLOR_PALETTE.length))
+            : null;
+          const resolvedMarkerColorHex = Number.isFinite(resolvedColorIndex)
+            ? (POINT_COLOR_PALETTE[resolvedColorIndex] || markerColorHex)
+            : markerColorHex;
+
           const marker = new THREE.Mesh(
-            new THREE.SphereGeometry(0.042, 20, 20),
+            new THREE.SphereGeometry(0.048, 20, 20),
             new THREE.MeshBasicMaterial({
-              color: markerColorHex,
+              color: resolvedMarkerColorHex,
               transparent: true,
               opacity: 0.95,
               depthTest: false,
@@ -1350,9 +1437,10 @@ function SphereView({
               toneMapped: false,
             })
           );
-          marker.userData.baseColorHex = markerColorHex;
+          marker.userData.baseColorHex = resolvedMarkerColorHex;
+          marker.userData.colorIndex = resolvedColorIndex;
           marker.position.copy(hitPoint.clone().add(n.clone().multiplyScalar(0.014)));
-          marker.renderOrder = 1004;
+          marker.renderOrder = 1012;
           overlayScene.add(marker);
 
           const arrowLength = 0.68;
@@ -1371,6 +1459,12 @@ function SphereView({
           const sunArrow = new THREE.ArrowHelper(sunDirection, origin, arrowLength, 0xffc94a, sunHeadLength, 0.06);
           const satArrow = new THREE.ArrowHelper(satDirection, origin, arrowLength, 0x66ccff, satHeadLength, 0.06);
           const normalArrow = new THREE.ArrowHelper(normalDirection, origin, normalLength, 0x66ff66, normalHeadLength, 0.05);
+          sunArrow.userData.baseDirection = sunDirection.clone();
+          sunArrow.userData.baseLength = arrowLength;
+          satArrow.userData.baseDirection = satDirection.clone();
+          satArrow.userData.baseLength = arrowLength;
+          normalArrow.userData.baseDirection = normalDirection.clone();
+          normalArrow.userData.baseLength = normalLength;
           const vectorId = vectorIdCounterRef.current;
           vectorIdCounterRef.current += 1;
 
@@ -1477,6 +1571,8 @@ function SphereView({
             if (axis.lengthSq() < 1e-8) return;
             axis.normalize();
             const segments = 28;
+            const midDir = start.clone().applyAxisAngle(axis, angle * 0.5).normalize();
+            const labelPos = origin.clone().add(midDir.multiplyScalar(radius + 0.055)).add(n.clone().multiplyScalar(0.015));
             [-0.006, 0, 0.006].forEach((radiusOffset) => {
               const points = [];
               for (let i = 0; i <= segments; i += 1) {
@@ -1500,10 +1596,22 @@ function SphereView({
               line.userData.vectorKey = `v${vectorId}:angle:${angleKeySuffix}`;
               line.userData.vectorLabel = labelText;
               line.userData.vectorColor = labelColor;
+              line.userData.tooltipAnchorWorld = labelPos.clone();
               line.visible = showAngleArcsRef.current;
               overlayScene.add(line);
               angleArcs.push(line);
             });
+            const sprite = createTextSprite(labelText, labelColor);
+            sprite.position.copy(labelPos);
+            sprite.scale.set(0.32, 0.122, 1);
+            sprite.renderOrder = 1009;
+            sprite.userData.vectorKey = `v${vectorId}:angle:${angleKeySuffix}`;
+            sprite.userData.vectorLabel = labelText;
+            sprite.userData.vectorColor = labelColor;
+            sprite.userData.tooltipAnchorWorld = labelPos.clone();
+            sprite.visible = showAngleArcsRef.current;
+            overlayScene.add(sprite);
+            angleLabels.push(sprite);
           };
 
           const incidenceDeg = THREE.MathUtils.radToDeg(normalDirection.angleTo(sunDirection));
@@ -1517,6 +1625,7 @@ function SphereView({
           if (!Array.isArray(overlay.vectors)) overlay.vectors = [];
           const vectorSet = {
             id: vectorId,
+            colorIndex: resolvedColorIndex,
             marker,
             sunArrow,
             satArrow,
@@ -1558,17 +1667,6 @@ function SphereView({
           raycaster.setFromCamera(pointer, camera);
 
           if (mode === 'vector') {
-            const hovered = getHoveredVectorInfo(event);
-            if (hovered) {
-              if (pinnedVectorKeysRef.current.has(hovered.key)) {
-                pinnedVectorKeysRef.current.delete(hovered.key);
-              } else {
-                pinnedVectorKeysRef.current.add(hovered.key);
-              }
-              setVectorHoverScale(hoveredVectorKeyRef.current);
-              return;
-            }
-
             const markerTargets = getMarkerHitTargets();
             const markerHits = raycaster.intersectObjects(markerTargets, true);
             if (markerHits && markerHits.length > 0) {
@@ -1586,6 +1684,22 @@ function SphereView({
                 const vectors = Array.isArray(overlay.vectors) ? overlay.vectors : [];
                 const targetSet = vectors.find((set) => set.marker === clickedMarker);
                 if (targetSet) {
+                  if (interactionRef.current.onSurfacePointSelect && mesh && targetSet.marker) {
+                    const localHit = mesh.worldToLocal(targetSet.marker.position.clone()).normalize();
+                    const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
+                    const lonDisplayRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+                    const lonRaw = normalizeLongitudeDeg(
+                      lonDisplayRaw - 180 + angleRef.current.phaseDeg + DATA_LON_OFFSET_DEG
+                    );
+                    const lat = Number.isFinite(latRaw) ? latRaw : null;
+                    const lon = Number.isFinite(lonRaw) ? lonRaw : null;
+                    interactionRef.current.onSurfacePointSelect({
+                      remove: true,
+                      lat,
+                      lon,
+                      local: { x: localHit.x, y: localHit.y, z: localHit.z },
+                    });
+                  }
                   const removeObjects = [
                     targetSet.marker,
                     targetSet.sunArrow,
@@ -1618,7 +1732,7 @@ function SphereView({
                   overlay.normalArrow = last?.normalArrow || null;
                   const nextPinned = new Set();
                   pinnedVectorKeysRef.current.forEach((key) => {
-                    if (getArrowByVectorKey(key)) nextPinned.add(key);
+                    if (getObjectByVectorKey(key)) nextPinned.add(key);
                   });
                   pinnedVectorKeysRef.current = nextPinned;
                   hoveredVectorKeyRef.current = null;
@@ -1629,6 +1743,17 @@ function SphereView({
                   return;
                 }
               }
+            }
+
+            const hovered = getHoveredVectorInfo(event);
+            if (hovered) {
+              if (pinnedVectorKeysRef.current.has(hovered.key)) {
+                pinnedVectorKeysRef.current.delete(hovered.key);
+              } else {
+                pinnedVectorKeysRef.current.add(hovered.key);
+              }
+              setVectorHoverScale(hoveredVectorKeyRef.current);
+              return;
             }
           }
 
@@ -1684,10 +1809,19 @@ function SphereView({
               const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
               const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
               const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
-              const lonRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+              const lonDisplayRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+              const lonRaw = normalizeLongitudeDeg(
+                lonDisplayRaw - 180 + angleRef.current.phaseDeg + DATA_LON_OFFSET_DEG
+              );
               const lat = Number.isFinite(latRaw) ? latRaw : null;
               const lon = Number.isFinite(lonRaw) ? lonRaw : null;
-              interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
+              interactionRef.current.onSurfacePointSelect({
+                x,
+                y,
+                lat,
+                lon,
+                local: { x: localHit.x, y: localHit.y, z: localHit.z },
+              });
             }
             clickOverlayRef.current = { marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross, vectors: [] };
             return;
@@ -1701,19 +1835,42 @@ function SphereView({
               const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
               const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
               const latRaw = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(localHit.y, -1, 1)));
-              const lonRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+              const lonDisplayRaw = THREE.MathUtils.radToDeg(Math.atan2(localHit.x, localHit.z));
+              const lonRaw = normalizeLongitudeDeg(
+                lonDisplayRaw - 180 + angleRef.current.phaseDeg + DATA_LON_OFFSET_DEG
+              );
               const lat = Number.isFinite(latRaw) ? latRaw : null;
               const lon = Number.isFinite(lonRaw) ? lonRaw : null;
-              interactionRef.current.onSurfacePointSelect({ x, y, lat, lon });
+              interactionRef.current.onSurfacePointSelect({
+                x,
+                y,
+                lat,
+                lon,
+                local: { x: localHit.x, y: localHit.y, z: localHit.z },
+              });
             }
             return;
           }
 
-          const colorIdx = (Array.isArray(clickOverlayRef.current?.vectors) ? clickOverlayRef.current.vectors.length : 0) % POINT_COLOR_PALETTE.length;
+          const existingVectors = Array.isArray(clickOverlayRef.current?.vectors) ? clickOverlayRef.current.vectors : [];
+          const usedColorIndices = new Set(
+            existingVectors
+              .map((set) => set?.colorIndex)
+              .filter((idx) => Number.isFinite(idx))
+              .map((idx) => ((((Math.round(idx) % POINT_COLOR_PALETTE.length) + POINT_COLOR_PALETTE.length) % POINT_COLOR_PALETTE.length)))
+          );
+          let colorIdx = 0;
+          while (usedColorIndices.has(colorIdx) && colorIdx < POINT_COLOR_PALETTE.length) {
+            colorIdx += 1;
+          }
+          if (colorIdx >= POINT_COLOR_PALETTE.length) {
+            colorIdx = existingVectors.length % POINT_COLOR_PALETTE.length;
+          }
           addVectorAtWorldPoint({
             hitPoint,
             normal,
             markerColorHex: POINT_COLOR_PALETTE[colorIdx],
+            colorIndex: colorIdx,
             clearExisting: !allowMultipleVectorsRef.current,
             notifySelection: true,
             notifyVectorPlaced: true,
@@ -1799,7 +1956,12 @@ function SphereView({
           return null;
         };
 
-        const moveCameraAlongOrbit = (desiredPosition, desiredTarget) => {
+        const moveCameraAlongOrbit = (desiredPosition, desiredTarget, options = {}) => {
+          const {
+            maxStepDeg = 3.0,
+            radiusLerp = 0.18,
+            targetLerp = 0.22,
+          } = options;
           const orbitCenter = desiredTarget.clone();
           const currentOffset = camera.position.clone().sub(orbitCenter);
           const desiredOffset = desiredPosition.clone().sub(orbitCenter);
@@ -1811,7 +1973,7 @@ function SphereView({
 
           let nextDir = desiredDir.clone();
           if (Number.isFinite(angleToTarget) && angleToTarget > 1e-5) {
-            const maxStepRad = THREE.MathUtils.degToRad(3.0);
+            const maxStepRad = THREE.MathUtils.degToRad(maxStepDeg);
             const stepRad = Math.min(angleToTarget, maxStepRad);
             let axis = new THREE.Vector3().crossVectors(currentDir, desiredDir);
             if (axis.lengthSq() < 1e-10) {
@@ -1824,10 +1986,135 @@ function SphereView({
             nextDir = currentDir.clone().applyAxisAngle(axis, stepRad).normalize();
           }
 
-          const nextRadius = THREE.MathUtils.lerp(currentRadius, desiredRadius, 0.18);
-          controls.target.lerp(desiredTarget, 0.22);
+          const nextRadius = THREE.MathUtils.lerp(currentRadius, desiredRadius, radiusLerp);
+          controls.target.lerp(desiredTarget, targetLerp);
           camera.position.copy(orbitCenter.clone().addScaledVector(nextDir, nextRadius));
           camera.lookAt(controls.target);
+        };
+
+        const keepCameraOutsideTitan = () => {
+          if (!camera) return;
+          const minTitanDistance = 1.18;
+          const dist = camera.position.length();
+          if (dist >= minTitanDistance) return;
+          if (dist > 1e-6) {
+            camera.position.setLength(minTitanDistance);
+            return;
+          }
+          const fallbackDir = camera.position.clone().sub(controls?.target || new THREE.Vector3(0, 0, 0));
+          if (fallbackDir.lengthSq() < 1e-8) fallbackDir.set(0, 0, 1);
+          fallbackDir.normalize();
+          camera.position.copy(fallbackDir.multiplyScalar(minTitanDistance));
+        };
+
+        const applyMaterialVisibilityMode = (obj, { opacityScale = 1, depthTest = false } = {}) => {
+          if (!obj) return;
+          const scale = THREE.MathUtils.clamp(opacityScale, 0.02, 1);
+          obj.traverse((child) => {
+            if (!child.material) return;
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((m) => {
+              if (!m.userData) m.userData = {};
+              if (!Number.isFinite(m.userData.baseOpacity)) {
+                m.userData.baseOpacity = Number.isFinite(m.opacity) ? m.opacity : 1;
+              }
+              const nextOpacity = THREE.MathUtils.clamp(m.userData.baseOpacity * scale, 0.02, 1);
+              m.depthTest = !!depthTest;
+              m.depthWrite = false;
+              m.transparent = nextOpacity < 0.999;
+              m.opacity = nextOpacity;
+              m.needsUpdate = true;
+            });
+          });
+        };
+
+        const getLineOcclusionRatio = (cameraPos, start, end, samples = 12) => {
+          if (!start || !end) return 0;
+          let occluded = 0;
+          for (let i = 0; i <= samples; i += 1) {
+            const t = i / samples;
+            const p = start.clone().lerp(end, t);
+            if (isPointOccludedByTitan(cameraPos, p, 1.0)) occluded += 1;
+          }
+          return occluded / (samples + 1);
+        };
+
+        const getGeometryOcclusionRatio = (cameraPos, lineObj, stride = 5) => {
+          const posAttr = lineObj?.geometry?.attributes?.position;
+          if (!posAttr || !Number.isFinite(posAttr.count) || posAttr.count < 2) return 0;
+          let sampled = 0;
+          let occluded = 0;
+          for (let i = 0; i < posAttr.count; i += stride) {
+            const p = new THREE.Vector3().fromBufferAttribute(posAttr, i);
+            sampled += 1;
+            if (isPointOccludedByTitan(cameraPos, p, 1.0)) occluded += 1;
+          }
+          if (sampled <= 0) return 0;
+          return occluded / sampled;
+        };
+
+        const applyOverlayOcclusion = (cameraPos) => {
+          const overlay = clickOverlayRef.current;
+          if (!overlay || !Array.isArray(overlay.vectors)) return;
+          const showThrough = showThroughSurfaceRef.current;
+          const depthTest = !showThrough;
+          overlay.vectors.forEach((vectorSet) => {
+            const markerPos = vectorSet?.marker?.position?.clone();
+            const markerOccluded = markerPos ? isPointOccludedByTitan(cameraPos, markerPos, 1.0) : false;
+            const markerScale = showThrough && markerOccluded ? 0.08 : 1;
+            applyMaterialVisibilityMode(vectorSet.marker, { opacityScale: markerScale, depthTest });
+
+            const arrowDefs = [
+              {
+                arrow: vectorSet.sunArrow,
+                dir: vectorSet.sunArrow?.userData?.baseDirection?.clone?.(),
+                len: Number.isFinite(vectorSet.sunArrow?.userData?.baseLength) ? vectorSet.sunArrow.userData.baseLength : 0.68,
+              },
+              {
+                arrow: vectorSet.satArrow,
+                dir: vectorSet.satArrow?.userData?.baseDirection?.clone?.(),
+                len: Number.isFinite(vectorSet.satArrow?.userData?.baseLength) ? vectorSet.satArrow.userData.baseLength : 0.68,
+              },
+              {
+                arrow: vectorSet.normalArrow,
+                dir: vectorSet.normalArrow?.userData?.baseDirection?.clone?.(),
+                len: Number.isFinite(vectorSet.normalArrow?.userData?.baseLength) ? vectorSet.normalArrow.userData.baseLength : (0.68 * 0.75),
+              },
+            ];
+            arrowDefs.forEach(({ arrow, dir, len }) => {
+              if (!arrow || !dir) return;
+              const start = arrow.position.clone();
+              const end = start.clone().add(dir.clone().multiplyScalar(len));
+              const ratio = getLineOcclusionRatio(cameraPos, start, end, 13);
+              const scale = showThrough ? (1 - (ratio * 0.92)) : 1;
+              applyMaterialVisibilityMode(arrow.line, { opacityScale: scale, depthTest });
+              applyMaterialVisibilityMode(arrow.cone, { opacityScale: scale, depthTest });
+              applyMaterialVisibilityMode(arrow.userData?.shaft, { opacityScale: scale, depthTest });
+            });
+
+            (vectorSet.guideLines || []).forEach((guide) => {
+              const pos = guide?.geometry?.attributes?.position;
+              if (!pos || pos.count < 2) return;
+              const start = new THREE.Vector3().fromBufferAttribute(pos, 0);
+              const end = new THREE.Vector3().fromBufferAttribute(pos, pos.count - 1);
+              const ratio = getLineOcclusionRatio(cameraPos, start, end, 14);
+              const scale = showThrough ? (1 - (ratio * 0.94)) : 1;
+              applyMaterialVisibilityMode(guide, { opacityScale: scale, depthTest });
+            });
+
+            (vectorSet.angleArcs || []).forEach((arc) => {
+              const ratio = getGeometryOcclusionRatio(cameraPos, arc, 4);
+              const scale = showThrough ? (1 - (ratio * 0.94)) : 1;
+              applyMaterialVisibilityMode(arc, { opacityScale: scale, depthTest });
+            });
+
+            (vectorSet.angleLabels || []).forEach((labelSprite) => {
+              const pos = labelSprite?.position;
+              const ratio = pos ? (isPointOccludedByTitan(cameraPos, pos, 1.0) ? 1 : 0) : 0;
+              const scale = showThrough ? (1 - (ratio * 0.9)) : 1;
+              applyMaterialVisibilityMode(labelSprite, { opacityScale: scale, depthTest });
+            });
+          });
         };
 
         introStateRef.current = {
@@ -1848,7 +2135,7 @@ function SphereView({
             updateSunSatelliteWorldPositions();
             const incomingPoints = Array.isArray(incomingPointsRef.current) ? incomingPointsRef.current : [];
             const syncKey = incomingPoints
-              .map((p) => `${p?.x ?? 'x'}:${p?.y ?? 'y'}:${p?.lat ?? 'lat'}:${p?.lon ?? 'lon'}:${p?.colorIndex ?? 'c'}`)
+              .map((p) => `${p?.x ?? 'x'}:${p?.y ?? 'y'}:${p?.lat ?? 'lat'}:${p?.lon ?? 'lon'}:${p?.local?.x ?? 'lx'}:${p?.local?.y ?? 'ly'}:${p?.local?.z ?? 'lz'}:${p?.colorIndex ?? 'c'}:${Math.round(angleRef.current.phaseDeg)}`)
               .join('|');
             satelliteBody.position.copy(satTargetPos);
             satelliteBody.lookAt(0, 0, 0);
@@ -1871,11 +2158,19 @@ function SphereView({
 
               const gridSize = 681;
               incomingPoints.slice(0, MAX_SYNCED_VECTORS).forEach((point, index) => {
-                if (point?.x == null || point?.y == null) return;
+                const hasLocal = Number.isFinite(point?.local?.x) && Number.isFinite(point?.local?.y) && Number.isFinite(point?.local?.z);
+                const hasGeo = Number.isFinite(point?.lat) && Number.isFinite(point?.lon);
+                const hasPixel = point?.x != null && point?.y != null;
+                if (!hasLocal && !hasGeo && !hasPixel) return;
                 let local;
-                if (Number.isFinite(point.lat) && Number.isFinite(point.lon)) {
+                if (hasLocal) {
+                  local = new THREE.Vector3(point.local.x, point.local.y, point.local.z).normalize();
+                } else if (hasGeo) {
                   const latRad = THREE.MathUtils.degToRad(point.lat);
-                  const lonRad = THREE.MathUtils.degToRad(point.lon);
+                  const lonForDisplay = normalizeLongitudeDeg(
+                    point.lon + 180 - angleRef.current.phaseDeg - DATA_LON_OFFSET_DEG
+                  );
+                  const lonRad = THREE.MathUtils.degToRad(Number.isFinite(lonForDisplay) ? lonForDisplay : point.lon);
                   local = new THREE.Vector3(
                     Math.sin(lonRad) * Math.cos(latRad),
                     Math.sin(latRad),
@@ -1900,6 +2195,7 @@ function SphereView({
                   hitPoint: worldPoint,
                   normal,
                   markerColorHex,
+                  colorIndex,
                   clearExisting: false,
                   notifySelection: false,
                   notifyVectorPlaced: false,
@@ -1936,16 +2232,7 @@ function SphereView({
             material.transparent = true;
             material.emissive.setHex(0x505050);
             material.emissiveIntensity = titanInside ? 0.45 : 0.08;
-            const overlayMarker = clickOverlayRef.current?.marker;
-            let overlayOpacity = titanInside ? 0.72 : 1.0;
-            if (!titanInside && overlayMarker) {
-              const camDir = cameraPos.clone().normalize();
-              const markerDir = overlayMarker.position.clone().normalize();
-              const clearlyBackside = camDir.dot(markerDir) < -0.78;
-              const occluded = clearlyBackside && isPointOccludedByTitan(cameraPos, overlayMarker.position, 1.0);
-              overlayOpacity = occluded ? 0.72 : 1.0;
-            }
-            setOverlayOpacity(clickOverlayRef.current, overlayOpacity);
+            applyOverlayOcclusion(cameraPos);
             if (sunBody) {
               const sunInside = cameraPos.distanceTo(sunBody.position) < (sunVisualRadius * 1.05);
               makeObjectSemiTransparent(sunBody, sunInside ? insideFadeOpacity : normalOpacity);
@@ -1966,14 +2253,17 @@ function SphereView({
                 position: defaultCameraOffset.clone(),
                 target: getDefaultCameraTarget(),
               };
-              const introOffset = new THREE.Vector3(0, 3.2, 17.5).multiplyScalar(1 - introEase);
+              const introOffset = new THREE.Vector3(0, 4.3, 20.5).multiplyScalar(1 - introEase);
               introOffset.applyAxisAngle(
                 new THREE.Vector3(0, 1, 0),
                 (1 - introEase) * THREE.MathUtils.degToRad(220)
               );
-              camera.position.copy(finalPose.position.clone().add(introOffset));
-              controls.target.set(0, 0, 0).lerp(finalPose.target, introEase);
-              camera.lookAt(controls.target);
+              const desiredIntroPosition = finalPose.position.clone().add(introOffset);
+              moveCameraAlongOrbit(
+                desiredIntroPosition,
+                finalPose.target,
+                { maxStepDeg: 6.5, radiusLerp: 0.2, targetLerp: 0.24 }
+              );
               controls.enableRotate = false;
 
               const spin = (1 - introEase) * (Math.PI * 2.2);
@@ -2069,6 +2359,8 @@ function SphereView({
               }
             }
 
+            // Keep camera outside Titan through intro and all camera mode transitions.
+            keepCameraOutsideTitan();
             controls.update();
             if (renderer) {
               const rw = renderer.domElement.clientWidth || 1;
@@ -2076,15 +2368,21 @@ function SphereView({
               const nextPinnedTooltips = [];
               const keysToRemove = [];
               Array.from(pinnedVectorKeysRef.current).forEach((key) => {
-                const arrow = getArrowByVectorKey(key);
-                if (!arrow?.cone) {
+                const target = getObjectByVectorKey(key);
+                if (!target) {
                   keysToRemove.push(key);
                   return;
                 }
-                const world = arrow.cone.getWorldPosition(new THREE.Vector3());
+                const vectorSet = getVectorSetByVectorKey(key);
+                if (vectorSet && !isVectorSetCameraVisible(vectorSet)) {
+                  return;
+                }
+                const world = target.userData?.tooltipAnchorWorld
+                  ? target.userData.tooltipAnchorWorld.clone()
+                  : target.getWorldPosition(new THREE.Vector3());
                 const projected = world.clone().project(camera);
-                const label = arrow.cone.userData?.vectorLabel || '';
-                const color = arrow.cone.userData?.vectorColor || '#66ccff';
+                const label = target.userData?.vectorLabel || '';
+                const color = target.userData?.vectorColor || '#66ccff';
                 if (!label) return;
                 nextPinnedTooltips.push({
                   key,
@@ -2106,7 +2404,7 @@ function SphereView({
             else renderer.render(scene, camera);
             if (overlayScene) {
               renderer.autoClear = false;
-              renderer.clearDepth();
+              if (showThroughSurfaceRef.current) renderer.clearDepth();
               renderer.render(overlayScene, camera);
               renderer.autoClear = true;
             }
@@ -2448,40 +2746,6 @@ function clearClickOverlay(scene, clickOverlayRef) {
   overlay.vectors = [];
 }
 
-function setOverlayOpacity(overlay, opacity) {
-  if (!overlay) return;
-  const clamped = Math.max(0.1, Math.min(1, opacity));
-  const objects = [overlay.plotCross];
-  if (Array.isArray(overlay.vectors)) {
-    overlay.vectors.forEach((vectorSet) => {
-      objects.push(
-        vectorSet.marker,
-        vectorSet.sunArrow,
-        vectorSet.satArrow,
-        vectorSet.normalArrow,
-        ...(vectorSet.angleArcs || []),
-        ...(vectorSet.angleLabels || []),
-        ...(vectorSet.vectorLabels || []),
-        ...(vectorSet.guideLines || []),
-      );
-    });
-  } else {
-    objects.push(overlay.marker, overlay.sunArrow, overlay.satArrow, overlay.normalArrow);
-  }
-  objects.forEach((obj) => {
-    if (!obj) return;
-    obj.traverse((child) => {
-      if (!child.material) return;
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
-      mats.forEach((m) => {
-        m.transparent = clamped < 1;
-        m.opacity = clamped;
-        m.needsUpdate = true;
-      });
-    });
-  });
-}
-
 function createTextSprite(text, color = '#d7f2ff') {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -2594,4 +2858,6 @@ const zoomButtonStyle3d = {
 };
 
 export default SphereView;
+
+
 
