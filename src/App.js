@@ -1058,6 +1058,10 @@ function App() {
     else setIrGridEnabled2d(enabled);
   };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
+  const methaneImageSetting = Number(sliders.methaneAbundance) < 50 ? 0.25 : 1;
+  const imageFolderName = hazePropertiesModel === 'doose'
+    ? `${hazeFolderName}_meth${methaneImageSetting}`
+    : hazeFolderName;
 
   // Processed spectral data for checking if a point has spectral plot data
   const processedSpectralData = useMemo(() => {
@@ -1112,13 +1116,13 @@ function App() {
         }
 
         const requestedAlbedo = FIXED_ALBEDO;
-        const result = await loadPds4Image(phaseAngle, imageTypeToLoad, hazeFolderName, requestedAlbedo);
+        const result = await loadPds4Image(phaseAngle, imageTypeToLoad, imageFolderName, requestedAlbedo);
         setCurrentImage(result.url);
 
         preloadAdjacentImages(
           phaseAngle,
           imageTypeToLoad,
-          result?.actualFolder || hazeFolderName,
+          result?.actualFolder || imageFolderName,
           2,
           result?.actualAlbedo ?? requestedAlbedo
         );
@@ -1136,7 +1140,7 @@ function App() {
         clearTimeout(imageLoadTimerRef.current);
       }
     };
-  }, [sliders.phaseAngle, compositeType, hazeFolderName, imageType]);
+  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType]);
 
   // Update geo values live when phase angle changes and there is an active selection.
   useEffect(() => {

@@ -36,18 +36,22 @@ export const getXmlFilename = (phaseAngle, albedo = 0.1) => {
   return `2012_A${albedo}_p${paddedPhase}_colorCCD.xml`;
 };
 
-/**
- * Canonical `public/assets/dt/` folder names: dooseA0.1_haze1, dooseA0.2_haze1,
- * dooseA0.2_haze0.52, dooseA0.2_haze2, tomasko_1.0.
- * Maps legacy names from the UI (doose_1.0, doose_0.5, …) to those folders.
- */
 function canonicalDtFolder(hazeFolder, albedo, compositeType) {
   const geo = compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase';
   if (geo || !hazeFolder || !hazeFolder.startsWith('doose')) return hazeFolder;
-  if (hazeFolder === 'doose_0.5') return 'dooseA0.2_haze0.52';
+  if (hazeFolder === 'doose_0.0_meth0.25') return 'haze0_methane1';
+  if (hazeFolder === 'doose_0.0_meth1') return 'haze0_methane1';
+  if (hazeFolder === 'doose_0.5_meth0.25') return 'haze0.5_methane1';
+  if (hazeFolder === 'doose_0.5_meth1') return 'haze0.5_methane1';
+  if (hazeFolder === 'doose_1.0_meth0.25') return 'haze1_methane0.25';
+  if (hazeFolder === 'doose_1.0_meth1') return 'haze1_methane1';
+  if (hazeFolder === 'doose_2.0_meth0.25') return 'dooseA0.2_haze2';
+  if (hazeFolder === 'doose_2.0_meth1') return 'dooseA0.2_haze2';
+  if (hazeFolder === 'doose_0.0') return 'haze0_methane1';
+  if (hazeFolder === 'doose_0.5') return 'haze0.5_methane1';
   if (hazeFolder === 'doose_2.0') return 'dooseA0.2_haze2';
   if (hazeFolder === 'doose_1.0') {
-    if (albedo === 0.1) return 'dooseA0.1_haze1';
+    if (albedo === 0.1) return 'haze1_methane1';
     if (albedo === 0.2) return 'dooseA0.2_haze1';
     return 'dooseA0.1_haze1';
   }
@@ -61,6 +65,10 @@ const FOLDER_ALBEDO_SUPPORT = {
   'dooseA0.2_haze0.52': [0.2],
   'dooseA0.2_haze2': [0.2],
   'tomasko_1.0': [0.1],
+  'haze0.5_methane1': [0.1],
+  'haze0_methane1': [0.1],
+  'haze1_methane1': [0.1],
+  'haze1_methane0.25': [0.1],
 };
 
 function getFolderAlbedoOrder(folder, requestedAlbedo) {
