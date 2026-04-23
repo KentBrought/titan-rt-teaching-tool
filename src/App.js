@@ -29,16 +29,42 @@ const isFiniteNumber = (value) => Number.isFinite(value);
 const toFiniteOrNull = (value) => (Number.isFinite(value) ? value : null);
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
-const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointCoordinates = true }) => {
+const GeoValuesDisplay = memo(({
+  geoValues,
+  plotMultiple,
+  loadingGeo,
+  showPointCoordinates = true,
+  onClearAllPoints = null,
+  onRemovePoint = null
+}) => {
   const colors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
   const colorValues = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
   if (!geoValues) return null;
 
   return (
-    <div className="geo-values-box" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <h3 style={{ fontSize: '18px', marginBottom: '15px', color: '#e0e0e0' }}>
-        {plotMultiple ? 'Selected Points' : 'Selected Point'}
-      </h3>
+    <div className="geo-values-box" style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, maxHeight: '100%' }}>
+      <div style={{ marginBottom: '10px' }}>
+        <h3 style={{ fontSize: '18px', marginBottom: '6px', color: '#e0e0e0' }}>
+          {plotMultiple ? 'Selected Points' : 'Selected Point'}
+        </h3>
+        {plotMultiple && Array.isArray(geoValues) && geoValues.length > 0 && typeof onClearAllPoints === 'function' && (
+          <button
+            type="button"
+            onClick={onClearAllPoints}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '6px',
+              border: '1px solid #ff6b6b',
+              backgroundColor: '#241515',
+              color: '#ffb3b3',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            Clear all
+          </button>
+        )}
+      </div>
       <div className="geo-values-scroll" style={{ flex: '1 1 auto', overflowY: 'auto' }}>
         {Array.isArray(geoValues) ? (
           // Multiple positions mode
@@ -50,9 +76,35 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
             return (
               <div key={`${values.x}-${values.y}-${index}`}>
                 <div style={{ marginBottom: '10px' }}>
-                  <h4 style={{ marginBottom: '5px', fontSize: '16px', color: '#e0e0e0' }}>
-                    Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
-                  </h4>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <h4 style={{ marginBottom: '5px', fontSize: '16px', color: '#e0e0e0' }}>
+                      Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
+                    </h4>
+                    {typeof onRemovePoint === 'function' && (
+                      <button
+                        type="button"
+                        onClick={() => onRemovePoint(index)}
+                        style={{
+                          padding: '3px 7px',
+                          borderRadius: '6px',
+                          border: '1px solid #ff9b9b',
+                          backgroundColor: '#231717',
+                          color: '#ffd5d5',
+                          fontSize: '11px',
+                          lineHeight: 1.05,
+                          cursor: 'pointer',
+                          marginBottom: '5px',
+                          display: 'inline-flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      >
+                        <span>Remove</span>
+                        <span>Point</span>
+                      </button>
+                    )}
+                  </div>
                   {showPointCoordinates && (
                     <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
                       (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{values.x}, {values.y}</span>)
@@ -117,6 +169,8 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
   if (prevProps.plotMultiple !== nextProps.plotMultiple) return false;
   if (prevProps.loadingGeo !== nextProps.loadingGeo) return false;
   if (prevProps.showPointCoordinates !== nextProps.showPointCoordinates) return false;
+  if (prevProps.onClearAllPoints !== nextProps.onClearAllPoints) return false;
+  if (prevProps.onRemovePoint !== nextProps.onRemovePoint) return false;
 
   // Deep comparison for geoValues
   const prev = prevProps.geoValues;
@@ -279,11 +333,15 @@ function App() {
   const [multiplePositions, setMultiplePositions] = useState([]); // Store multiple positions for plot multiple mode
   const geoValuesBoxRef = useRef(null);
   const geoValuesContainerRef = useRef(null);
+  const rightControlsColumnRef = useRef(null);
+  const quickStartBoxRef = useRef(null);
+  const optionsBoxRef = useRef(null);
   const atmosphericComponentsSectionRef = useRef(null);
   const atmosphericComponentsContentRef = useRef(null);
   const togglesBoxRef = useRef(null);
   const irColorImageRef = useRef(null);
   const prevGeoValuesRef = useRef(null);
+  const phaseGeoFetchTimerRef = useRef(null);
   const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
@@ -304,6 +362,7 @@ function App() {
   const [showVectorLabels3d, setShowVectorLabels3d] = useState(true);
   const [showVectorGuideLines3d, setShowVectorGuideLines3d] = useState(false);
   const [showVectorsThroughTitan3d, setShowVectorsThroughTitan3d] = useState(true);
+  const previousIrDisplayModeRef = useRef('2d');
   const [tutorialMode, setTutorialMode] = useState(null);
   /** Left-panel vertical profile: gases vs T/P/haze (dropdown next to plot title) */
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
@@ -323,6 +382,22 @@ function App() {
     setGeometryInteractionMode3d(mode);
   };
 
+  const handleCameraPresetSelection3d = useCallback((preset) => {
+    if (preset !== 'cassini' && preset !== 'sun') return;
+    setCameraPreset3d(preset);
+    // Cassini/Sun perspective always uses Titan-centered orbit target.
+    setCameraCenter3d('titan');
+  }, []);
+
+  const handleCameraCenterSelection3d = useCallback((center) => {
+    if (center !== 'titan' && center !== 'spacecraft' && center !== 'overhead') return;
+    setCameraCenter3d(center);
+    // Non-titan centered views are mutually exclusive with perspective presets.
+    if (center !== 'titan') {
+      setCameraPreset3d('');
+    }
+  }, []);
+
   const handleGeometryChangeFrom3d = useCallback((geometry) => {
     if (!geometry || typeof geometry !== 'object') return;
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -336,7 +411,8 @@ function App() {
       let changed = false;
 
       if (Number.isFinite(geometry.phaseDeg)) {
-        const phaseSlider = Math.round(clamp(geometry.phaseDeg, 0, 355) / 5);
+        const phaseDegNorm = normalize360(geometry.phaseDeg);
+        const phaseSlider = Math.round(clamp(phaseDegNorm, 0, 355) / 5);
         if (next.phaseAngle !== phaseSlider) {
           next.phaseAngle = phaseSlider;
           changed = true;
@@ -583,6 +659,8 @@ function App() {
         const next = prev.map((pos) => {
           const match = geoByPixel.get(`${pos.x},${pos.y}`);
           if (!match) return pos;
+          const alreadyHasLatLon = Number.isFinite(pos?.lat) && Number.isFinite(pos?.lon);
+          if (alreadyHasLatLon) return pos;
           const nextLat = toFiniteOrNull(match.lat);
           const nextLon = toFiniteOrNull(match.lon);
           if (pos.lat === nextLat && pos.lon === nextLon) return pos;
@@ -631,11 +709,45 @@ function App() {
     }
 
     if (bestIndex < 0) return null;
+    // If the nearest match is too far away in geolocation space, the point is not visible
+    // in this phase/projection and should not be mapped into 2D.
+    const MAX_LAT_LON_MATCH_ERROR_DEG = 0.75;
+    if (bestScore > (MAX_LAT_LON_MATCH_ERROR_DEG * MAX_LAT_LON_MATCH_ERROR_DEG)) return null;
     return {
       x: bestIndex % numSamples,
       y: Math.floor(bestIndex / numSamples),
     };
   }, []);
+
+  const remapPointToCurrent2dPhase = useCallback(async (point, phaseAngleDeg) => {
+    if (!point) return null;
+    const pointLat = toFiniteOrNull(point.lat);
+    const pointLon = toFiniteOrNull(point.lon);
+    const hasLatLon = Number.isFinite(pointLat) && Number.isFinite(pointLon);
+
+    if (!hasLatLon) {
+      if (point.x == null || point.y == null) return null;
+      return point;
+    }
+
+    const nearest = await findNearestGeoPixelByLatLon(pointLat, pointLon, phaseAngleDeg);
+    if (!nearest) return null;
+
+    if (point.x === nearest.x && point.y === nearest.y) return point;
+
+    return {
+      ...point,
+      x: nearest.x,
+      y: nearest.y,
+      position: {
+        ...(point.position || {}),
+        naturalX: nearest.x,
+        naturalY: nearest.y,
+        displayX: nearest.x,
+        displayY: nearest.y,
+      },
+    };
+  }, [findNearestGeoPixelByLatLon]);
 
   // Cache for geo cube data (by phase angle)
   const geoCubeDataRef = useRef(null);
@@ -842,6 +954,39 @@ function App() {
     }
   };
 
+  const handleClearAllSelectedPoints = useCallback(() => {
+    setMultiplePositions([]);
+    setSelectedCasesByPoint({});
+    setGeoValues(null);
+  }, []);
+
+  const handleRemoveSelectedPoint = useCallback((pointIndex) => {
+    if (!Number.isInteger(pointIndex) || pointIndex < 0) return;
+    setMultiplePositions((prev) => {
+      if (!Array.isArray(prev) || pointIndex >= prev.length) return prev;
+      const newPositions = prev.filter((_, idx) => idx !== pointIndex);
+
+      setSelectedCasesByPoint((prevCases) => {
+        const nextCases = {};
+        Object.keys(prevCases || {}).forEach((key) => {
+          const idx = Number.parseInt(key, 10);
+          if (!Number.isFinite(idx) || idx === pointIndex) return;
+          const nextIdx = idx > pointIndex ? idx - 1 : idx;
+          nextCases[nextIdx] = { ...prevCases[key] };
+        });
+        return nextCases;
+      });
+
+      if (newPositions.length === 0) {
+        setGeoValues(null);
+        return [];
+      }
+
+      fetchMultipleGeoValues(newPositions);
+      return newPositions;
+    });
+  }, [fetchMultipleGeoValues]);
+
   const handleSpherePlotPoint = useCallback(async (point) => {
     if (!point) return;
     const isRemove = Boolean(point.remove);
@@ -870,7 +1015,13 @@ function App() {
 
     if (targetX == null || targetY == null) return;
 
-    if (selectionMode === 'plotMultiplePoints' || selectionMode === 'multipleVectorSelection') {
+    // In 3D vector workflows, treat clicks as multi-point selections so every placed
+    // surface point contributes to the spectral plot (matching 2D multi-point behavior).
+    if (
+      selectionMode === 'plotMultiplePoints' ||
+      selectionMode === 'multipleVectorSelection' ||
+      selectionMode === 'vectorSelection'
+    ) {
       setMultiplePositions(prev => {
         const findByLocalOrPixel = (pos) => {
           if (targetLocal && pos?.local && Number.isFinite(pos.local.x) && Number.isFinite(pos.local.y) && Number.isFinite(pos.local.z)) {
@@ -1220,7 +1371,7 @@ function App() {
       } finally {
         setLoadingImage(false);
       }
-    }, 50); // 50ms debounce - fast enough for responsive feel, slow enough to reduce requests
+    }, 120); // Debounce to keep 3D drag responsive while phase-linked assets update
 
     // Cleanup function
     return () => {
@@ -1230,60 +1381,143 @@ function App() {
     };
   }, [sliders.phaseAngle, compositeType, imageFolderName, imageType]);
 
-  // Update geo values live when phase angle changes and there is an active selection.
+  // Update geo values when phase angle changes and there is an active selection.
+  // Debounced to avoid lag while dragging phase in 3D edit mode.
   useEffect(() => {
-    if (toggles.plotMultiple && multiplePositions.length > 0) {
-      fetchMultipleGeoValues(multiplePositions);
-    } else if (!toggles.plotMultiple && clickedPosition) {
-      fetchGeoValues(clickedPosition.x, clickedPosition.y);
+    if (phaseGeoFetchTimerRef.current) {
+      clearTimeout(phaseGeoFetchTimerRef.current);
     }
+    phaseGeoFetchTimerRef.current = setTimeout(() => {
+      if (toggles.plotMultiple && multiplePositions.length > 0) {
+        fetchMultipleGeoValues(multiplePositions);
+      } else if (!toggles.plotMultiple && clickedPosition) {
+        fetchGeoValues(clickedPosition.x, clickedPosition.y);
+      }
+    }, 140);
+    return () => {
+      if (phaseGeoFetchTimerRef.current) {
+        clearTimeout(phaseGeoFetchTimerRef.current);
+      }
+    };
   }, [sliders.phaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
 
-  // Set fixed height on geo-values-box to prevent it from changing
+  // When returning from 3D to 2D, remap selected points by lat/lon into the current phase image.
+  // Any points not visible in this phase/projection are removed.
   useEffect(() => {
-    const setFixedHeight = () => {
-      if (geoValuesContainerRef.current && geoValuesBoxRef.current) {
-        const container = geoValuesContainerRef.current;
-        const compositeSelector = container.querySelector('.composite-selector');
-        const geoBox = geoValuesBoxRef.current;
+    const previousMode = previousIrDisplayModeRef.current;
+    previousIrDisplayModeRef.current = irDisplayMode;
+    if (!(previousMode === '3d' && irDisplayMode === '2d')) return;
 
-        if (compositeSelector) {
-          const containerHeight = container.offsetHeight;
-          const compositeHeight = compositeSelector.offsetHeight;
-          const gap = 20; // gap between elements
-          const calculatedHeight = containerHeight - compositeHeight - gap;
+    let cancelled = false;
+    const remapSelections = async () => {
+      const phaseAngle = sliders.phaseAngle * 5;
 
-          // Set fixed height (only if it's positive)
-          if (calculatedHeight > 0) {
-            geoBox.style.height = `${calculatedHeight}px`;
-            geoBox.style.maxHeight = `${calculatedHeight}px`;
-            geoBox.style.minHeight = `${calculatedHeight}px`;
-            geoBox.style.flex = '0 0 auto';
-            geoBox.style.overflow = 'hidden';
-          }
-        } else {
-          // When composite-selector doesn't exist, let geo-values-box take full height
-          geoBox.style.height = '100%';
-          geoBox.style.maxHeight = '100%';
-          geoBox.style.minHeight = '0';
-          geoBox.style.flex = '1 1 auto';
-          geoBox.style.overflow = 'hidden';
+      if (toggles.plotMultiple) {
+        if (!Array.isArray(multiplePositions) || multiplePositions.length === 0) return;
+
+        const mapped = await Promise.all(
+          multiplePositions.map((point) => remapPointToCurrent2dPhase(point, phaseAngle))
+        );
+        if (cancelled) return;
+
+        const filtered = mapped.filter((point) => point !== null);
+        const changed = (
+          filtered.length !== multiplePositions.length ||
+          filtered.some((point, idx) => !multiplePositions[idx] || point.x !== multiplePositions[idx].x || point.y !== multiplePositions[idx].y)
+        );
+
+        if (filtered.length === 0) {
+          setMultiplePositions([]);
+          setGeoValues(null);
+          setSelectedCasesByPoint({});
+          return;
         }
+
+        if (changed) {
+          setMultiplePositions(filtered);
+          fetchMultipleGeoValues(filtered, phaseAngle);
+        }
+        return;
+      }
+
+      if (!clickedPosition) return;
+      const mappedPoint = await remapPointToCurrent2dPhase(clickedPosition, phaseAngle);
+      if (cancelled) return;
+
+      if (!mappedPoint) {
+        setClickedPosition(null);
+        setGeoValues(null);
+        return;
+      }
+
+      const changed = mappedPoint.x !== clickedPosition.x || mappedPoint.y !== clickedPosition.y;
+      if (changed) {
+        setClickedPosition(mappedPoint);
+        fetchGeoValues(mappedPoint.x, mappedPoint.y, phaseAngle);
       }
     };
 
-    // Set height initially and on resize
+    remapSelections();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    clickedPosition,
+    fetchGeoValues,
+    fetchMultipleGeoValues,
+    irDisplayMode,
+    multiplePositions,
+    remapPointToCurrent2dPhase,
+    sliders.phaseAngle,
+    toggles.plotMultiple
+  ]);
+
+  // Limit selected-points panel height so it scrolls instead of continuously growing.
+  // Max height matches: Quick Start preset box + IR/Geometry options box + gap between them.
+  useEffect(() => {
+    const setGeoValuesMaxHeight = () => {
+      const geoBox = geoValuesBoxRef.current;
+      if (!geoBox) return;
+
+      const quickStartBox = quickStartBoxRef.current;
+      const optionsBox = optionsBoxRef.current;
+      const rightColumn = rightControlsColumnRef.current;
+      if (!quickStartBox || !optionsBox) {
+        geoBox.style.height = 'auto';
+        geoBox.style.maxHeight = '100%';
+        geoBox.style.minHeight = '0';
+        geoBox.style.flex = '0 1 auto';
+        geoBox.style.overflow = 'hidden';
+        return;
+      }
+
+      const rightColumnStyle = rightColumn ? window.getComputedStyle(rightColumn) : null;
+      const gapValue = rightColumnStyle?.rowGap || rightColumnStyle?.gap || '20px';
+      const parsedGap = Number.parseFloat(gapValue);
+      const gap = Number.isFinite(parsedGap) ? parsedGap : 20;
+      const targetMaxHeight = Math.round(quickStartBox.offsetHeight + optionsBox.offsetHeight + gap);
+
+      if (targetMaxHeight > 0) {
+        geoBox.style.height = `${targetMaxHeight}px`;
+        geoBox.style.maxHeight = `${targetMaxHeight}px`;
+        geoBox.style.minHeight = '0';
+        geoBox.style.flex = '0 1 auto';
+        geoBox.style.overflow = 'hidden';
+      }
+    };
+
+    // Set max height initially and on resize/content changes
     const timeoutId = setTimeout(() => {
-      requestAnimationFrame(setFixedHeight);
+      requestAnimationFrame(setGeoValuesMaxHeight);
     }, 0);
 
-    window.addEventListener('resize', setFixedHeight);
+    window.addEventListener('resize', setGeoValuesMaxHeight);
 
     return () => {
       clearTimeout(timeoutId);
-      window.removeEventListener('resize', setFixedHeight);
+      window.removeEventListener('resize', setGeoValuesMaxHeight);
     };
-  }, [geoValues, imageType]); // Re-run when geoValues appears/disappears or imageType changes
+  }, [geoValues, imageType, irDisplayMode, tutorialMode, toggles, selectedCasesByPoint, multiplePositions]); // Re-run when panel content/structure changes
 
   // Auto-scroll geo values box to bottom when new points are added
   useEffect(() => {
@@ -1778,20 +2012,22 @@ function App() {
                     </div>
                     <div ref={geoValuesContainerRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '200px', maxWidth: '250px', alignSelf: 'stretch' }}>
 {geoValues && (
-                        <div ref={geoValuesBoxRef} style={{ flex: imageType === 'irColor' ? '1 1 auto' : '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                        <div ref={geoValuesBoxRef} style={{ flex: imageType === 'irColor' ? '1 1 auto' : '1 1 auto', display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '100%', minHeight: 0 }}>
                           <GeoValuesDisplay
                             geoValues={geoValues}
                             plotMultiple={toggles.plotMultiple}
                             loadingGeo={loadingGeo}
                             showPointCoordinates={irDisplayMode !== '3d'}
+                            onClearAllPoints={handleClearAllSelectedPoints}
+                            onRemovePoint={handleRemoveSelectedPoint}
                           />
                         </div>
                       )}
                     </div>
                     {/* Quick Start */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '250px', maxWidth: '300px', alignSelf: 'stretch' }}>
+                    <div ref={rightControlsColumnRef} style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '250px', maxWidth: '300px', alignSelf: 'stretch' }}>
                       {/* Quick Start Presets */}
-                      <div className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
+                      <div ref={quickStartBoxRef} className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
                         <select
                           aria-label="Quick Start presets"
                           title="Quick Start — pre-configured presets to explore Titan's atmosphere"
@@ -1814,7 +2050,7 @@ function App() {
                         </select>
                       </div>
                       {/* IR/Geometry Options */}
-                      <div className="control-box sliders-box" style={{ flex: '1', display: 'flex', flexDirection: 'column', maxHeight: `${panelMatchHeightPx}px` }}>
+                      <div ref={optionsBoxRef} className="control-box sliders-box" style={{ flex: '1', display: 'flex', flexDirection: 'column', maxHeight: `${panelMatchHeightPx}px` }}>
                         <h2>
                           <Tooltip content={
                             <>
@@ -2037,7 +2273,7 @@ function App() {
                                     name="cameraPreset3d"
                                     value="cassini"
                                     checked={cameraPreset3d === 'cassini'}
-                                    onChange={(e) => setCameraPreset3d(e.target.value)}
+                                    onChange={(e) => handleCameraPresetSelection3d(e.target.value)}
                                   />
                                   <span>Cassini's Perspective</span>
                                 </label>
@@ -2047,10 +2283,57 @@ function App() {
                                     name="cameraPreset3d"
                                     value="sun"
                                     checked={cameraPreset3d === 'sun'}
-                                    onChange={(e) => setCameraPreset3d(e.target.value)}
+                                    onChange={(e) => handleCameraPresetSelection3d(e.target.value)}
                                   />
                                   <span>Sun's Perspective</span>
                                 </label>
+                              </div>
+                              <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCameraCenterSelection3d('spacecraft')}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    border: cameraCenter3d === 'spacecraft' ? '1px solid #66ccff' : '1px solid #4a4a4a',
+                                    backgroundColor: cameraCenter3d === 'spacecraft' ? '#19364a' : '#1a1a1a',
+                                    color: '#e0e0e0',
+                                    fontSize: '12px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Spacecraft Centered
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCameraCenterSelection3d('titan')}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    border: cameraCenter3d === 'titan' ? '1px solid #66ccff' : '1px solid #4a4a4a',
+                                    backgroundColor: cameraCenter3d === 'titan' ? '#19364a' : '#1a1a1a',
+                                    color: '#e0e0e0',
+                                    fontSize: '12px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Titan Centered
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCameraCenterSelection3d('overhead')}
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    border: cameraCenter3d === 'overhead' ? '1px solid #66ccff' : '1px solid #4a4a4a',
+                                    backgroundColor: cameraCenter3d === 'overhead' ? '#19364a' : '#1a1a1a',
+                                    color: '#e0e0e0',
+                                    fontSize: '12px',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Overhead View
+                                </button>
                               </div>
                             </div>
                             <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
@@ -2074,7 +2357,7 @@ function App() {
                                     checked={geometryInteractionMode3d === 'camera'}
                                     onChange={(e) => handleGeometryInteractionModeChange(e.target.value)}
                                   />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Camera Orbit</span>
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Free Camera Orbit Only</span>
                                 </label>
                                 <label className="radio-label">
                                   <input
@@ -2084,7 +2367,7 @@ function App() {
                                     checked={geometryInteractionMode3d === 'editTitan'}
                                     onChange={(e) => handleGeometryInteractionModeChange(e.target.value)}
                                   />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Edit Titan</span>
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Rotate Titan</span>
                                 </label>
                                 <label className="radio-label">
                                   <input
@@ -2094,56 +2377,12 @@ function App() {
                                     checked={geometryInteractionMode3d === 'editCassini'}
                                     onChange={(e) => handleGeometryInteractionModeChange(e.target.value)}
                                   />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Edit Cassini</span>
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Edit Cassini's Placement</span>
                                 </label>
                               </div>
                             </div>
-                            <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
-                            <div style={{ marginTop: '0' }}>
-                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
-                                <Tooltip content={
-                                  <>
-                                    <strong>Camera Center</strong>
-                                    Sets the orbit/look target to Titan's center or the spacecraft location.
-                                  </>
-                                }>
-                                  Camera Center
-                                </Tooltip>
-                              </h3>
-                              <div className="radio-group">
-                                <label className="radio-label">
-                                  <input
-                                    type="radio"
-                                    name="cameraCenter3d"
-                                    value="titan"
-                                    checked={cameraCenter3d === 'titan'}
-                                    onChange={(e) => setCameraCenter3d(e.target.value)}
-                                  />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Titan Center</span>
-                                </label>
-                                <label className="radio-label">
-                                  <input
-                                    type="radio"
-                                    name="cameraCenter3d"
-                                    value="spacecraft"
-                                    checked={cameraCenter3d === 'spacecraft'}
-                                    onChange={(e) => setCameraCenter3d(e.target.value)}
-                                  />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Spacecraft</span>
-                                </label>
-                                <label className="radio-label">
-                                  <input
-                                    type="radio"
-                                    name="cameraCenter3d"
-                                    value="overhead"
-                                    checked={cameraCenter3d === 'overhead'}
-                                    onChange={(e) => setCameraCenter3d(e.target.value)}
-                                  />
-                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Overhead</span>
-                                </label>
-                              </div>
-                              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '12px', marginBottom: '12px' }}></div>
-                              <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>View Aids</h3>
+                            <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '12px', marginBottom: '12px' }}></div>
+                            <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>View Aids</h3>
                               <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <input
                                   type="checkbox"
@@ -2187,7 +2426,6 @@ function App() {
                                 />
                                 <span>See Vectors Through Titan</span>
                               </label>
-                            </div>
                           </>
                         )}
                         <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
@@ -2413,7 +2651,7 @@ function App() {
                         </div>
                       ) : spectralData ? (
                         <>
-                          <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', position: 'relative' }}>
+                          <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', position: 'relative', display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
                             {loadingSpectral && (
                               <div className="loading-indicator">
                                 <div className="loading-spinner"></div>
@@ -2441,28 +2679,9 @@ function App() {
                                 spectralUnits={toggles.spectralUnits}
                                 spectralResolution={spectralResolution}
                                 albedo={FIXED_ALBEDO}
+                                spectralLoading={loadingSpectral}
                               />
                             </ErrorBoundary>
-                            {geoValues && (
-                              <div style={{ fontSize: '12px', color: '#666', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-                                {Array.isArray(geoValues) ? (
-                                  `Multiple points selected (${geoValues.length})`
-                                ) : (
-                                  <>
-                                    Using geo-extracted angles:
-                                    Inc={isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'},
-                                    Emi={isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}
-                                    {Number.isFinite(geoValues.materialClass) ? (
-                                      <>
-                                        {' | '}
-                                        Surface: {getSurfaceMaterialLabel(geoValues.materialClass)}
-                                        {' | '}Spectrum albedo={geoValues.surfaceAlbedo}
-                                      </>
-                                    ) : null}
-                                  </>
-                                )}
-                              </div>
-                            )}
                           </div>
                           {!geoValues && !Object.values(transmissionToggles).some(v => v) && (
                             <div style={{

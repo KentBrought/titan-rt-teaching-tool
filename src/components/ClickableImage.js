@@ -20,6 +20,8 @@ const ClickableImage = ({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [overlayRevision, setOverlayRevision] = useState(0);
+  const [hoveredMarker, setHoveredMarker] = useState(null); // { type: 'single' } | { type: 'multiple', index }
+  const [markerTooltip, setMarkerTooltip] = useState({ visible: false, x: 0, y: 0 });
   const imageRef = useRef(null);
   const containerRef = useRef(null);
   const imageContainerRef = useRef(null);
@@ -257,16 +259,61 @@ const ClickableImage = ({
   };
 
   const handleImageHover = (e) => {
-    if (!onImageHover) return;
     const newPosition = calculateCoordinates(e);
-    if (newPosition) {
-      onImageHover(newPosition.naturalX, newPosition.naturalY, newPosition);
-    } else {
-      onImageHover(null, null, null);
+    const setHoverVisuals = () => {
+      if (!newPosition || !containerRef.current) {
+        setHoveredMarker(null);
+        setMarkerTooltip({ visible: false, x: 0, y: 0 });
+        return;
+      }
+
+      const markerHitRadiusPx = 11;
+      let hovered = null;
+
+      if (plotMultiple) {
+        const idx = multiplePositions.findIndex((pos) => {
+          const markerPos = pos?.position;
+          if (!markerPos || !Number.isFinite(markerPos.displayX) || !Number.isFinite(markerPos.displayY)) return false;
+          const dx = markerPos.displayX - newPosition.displayX;
+          const dy = markerPos.displayY - newPosition.displayY;
+          return ((dx * dx) + (dy * dy)) <= (markerHitRadiusPx * markerHitRadiusPx);
+        });
+        if (idx >= 0) hovered = { type: 'multiple', index: idx };
+      } else if (clickPosition && Number.isFinite(clickPosition.displayX) && Number.isFinite(clickPosition.displayY)) {
+        const dx = clickPosition.displayX - newPosition.displayX;
+        const dy = clickPosition.displayY - newPosition.displayY;
+        if (((dx * dx) + (dy * dy)) <= (markerHitRadiusPx * markerHitRadiusPx)) hovered = { type: 'single' };
+      }
+
+      if (!hovered) {
+        setHoveredMarker(null);
+        setMarkerTooltip({ visible: false, x: 0, y: 0 });
+        return;
+      }
+
+      const rect = containerRef.current.getBoundingClientRect();
+      setHoveredMarker(hovered);
+      setMarkerTooltip({
+        visible: true,
+        x: (e.clientX - rect.left),
+        y: (e.clientY - rect.top),
+      });
+    };
+
+    setHoverVisuals();
+
+    if (onImageHover) {
+      if (newPosition) {
+        onImageHover(newPosition.naturalX, newPosition.naturalY, newPosition);
+      } else {
+        onImageHover(null, null, null);
+      }
     }
   };
 
   const handleImageLeave = () => {
+    setHoveredMarker(null);
+    setMarkerTooltip({ visible: false, x: 0, y: 0 });
     if (onImageHover) {
       onImageHover(null, null, null);
     }
@@ -451,7 +498,11 @@ const ClickableImage = ({
                   <div
                     key={index}
                     className="click-marker"
-                    style={markerWarp.style}
+                    style={{
+                      ...markerWarp.style,
+                      transform: `${markerWarp.style.transform} scale(${hoveredMarker?.type === 'multiple' && hoveredMarker?.index === index ? 1.18 : 1})`,
+                      transition: 'transform 120ms ease',
+                    }}
                   >
                     <svg width="20" height="20" viewBox="0 0 20 20">
                       <line x1={markerWarp.lines.a.x1} y1={markerWarp.lines.a.y1} x2={markerWarp.lines.a.x2} y2={markerWarp.lines.a.y2} stroke={color} strokeWidth="3" strokeLinecap="round"/>
@@ -469,7 +520,11 @@ const ClickableImage = ({
               return (
               <div
                 className="click-marker"
-                style={markerWarp.style}
+                style={{
+                  ...markerWarp.style,
+                  transform: `${markerWarp.style.transform} scale(${hoveredMarker?.type === 'single' ? 1.18 : 1})`,
+                  transition: 'transform 120ms ease',
+                }}
               >
                 <svg width="20" height="20" viewBox="0 0 20 20">
                   <line x1={markerWarp.lines.a.x1} y1={markerWarp.lines.a.y1} x2={markerWarp.lines.a.x2} y2={markerWarp.lines.a.y2} stroke="red" strokeWidth="3" strokeLinecap="round"/>
@@ -553,6 +608,29 @@ const ClickableImage = ({
               })()}
             </svg>
           )}
+        </div>
+      )}
+      {markerTooltip.visible && (
+        <div
+          style={{
+            position: 'absolute',
+            left: markerTooltip.x,
+            top: markerTooltip.y,
+            transform: 'translate(-50%, -135%)',
+            pointerEvents: 'none',
+            backgroundColor: 'rgba(12, 12, 12, 0.92)',
+            color: '#ffb3b3',
+            border: '1px solid rgba(255, 90, 90, 0.9)',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            fontSize: '12px',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            zIndex: 35,
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.45)',
+          }}
+        >
+          Click to remove
         </div>
       )}
     </div>

@@ -176,7 +176,8 @@ const SpectralPlot = ({
   transmissionToggles = {},
   spectralUnits = false,
   albedo = 0.1,
-  spectralResolution = 'high'
+  spectralResolution = 'high',
+  spectralLoading = false
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
@@ -385,6 +386,14 @@ const SpectralPlot = ({
               type: 'scattergl',
               mode: 'lines+markers',
               name: traceName,
+              meta: {
+                pointIndex,
+                simLat: Number.isFinite(geoValue?.lat) ? geoValue.lat : null,
+                simLon: Number.isFinite(geoValue?.lon) ? geoValue.lon : null,
+                simIncidence: Number.isFinite(actual?.incidence) ? actual.incidence : null,
+                simEmission: Number.isFinite(actual?.emission) ? actual.emission : null,
+                simPhase: Number.isFinite(phase) ? phase : null,
+              },
               line: {
                 color: lineColor,
                 width: 2,
@@ -598,20 +607,20 @@ const SpectralPlot = ({
 
   if (!spectralData) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center', height: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ padding: '20px', textAlign: 'center', height: '100%', minHeight: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <p>Loading spectral data...</p>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 0, height: '600px', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+    <div style={{ padding: 0, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       {/* Plot */}
-      <div style={{ flex: 1, border: '1px solid #444', borderRadius: '8px', height: '500px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
+      <div style={{ flex: '1 1 auto', minHeight: '320px', border: '1px solid #444', borderRadius: '8px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
         <Plot
           data={plotData}
           layout={plotLayout}
-          style={{ width: '100%', height: '500px', maxWidth: '100%' }}
+          style={{ width: '100%', height: '100%', maxWidth: '100%' }}
           useResizeHandler={true}
           config={{
             displayModeBar: true,
@@ -625,12 +634,12 @@ const SpectralPlot = ({
 
       {/* Info */}
       <div style={{
-        marginTop: '15px',
-        padding: '10px',
+        marginTop: '10px',
+        padding: '8px',
         backgroundColor: '#2a2a2a',
         borderRadius: '4px',
         border: '1px solid #4a9d4a',
-        fontSize: '14px',
+        fontSize: '13px',
         color: '#e0e0e0',
         width: '100%',
         maxWidth: '100%',
@@ -639,6 +648,7 @@ const SpectralPlot = ({
         {(() => {
           // Check if cases are selected
           let hasSelectedCases = false;
+          const pointColors = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
           if (geoValues) {
             if (plotMultiple && Array.isArray(geoValues)) {
               hasSelectedCases = geoValues.some((_, idx) => {
@@ -656,6 +666,80 @@ const SpectralPlot = ({
           );
 
           const showAngles = geoValues && hasSelectedCases;
+          const pointsWithSpectrum = (plotMultiple && Array.isArray(geoValues))
+            ? new Set(
+              (plotData || [])
+                .filter((trace) =>
+                  !trace?.yaxis &&
+                  Array.isArray(trace?.x) && trace.x.length > 0 &&
+                  Array.isArray(trace?.y) && trace.y.length > 0 &&
+                  Number.isFinite(trace?.meta?.pointIndex)
+                )
+                .map((trace) => trace.meta.pointIndex)
+            )
+            : new Set();
+          const pointSimMetaByIndex = (plotMultiple && Array.isArray(geoValues))
+            ? (() => {
+              const map = new Map();
+              (plotData || []).forEach((trace) => {
+                if (trace?.yaxis) return;
+                if (!Array.isArray(trace?.x) || trace.x.length === 0) return;
+                if (!Array.isArray(trace?.y) || trace.y.length === 0) return;
+                const idx = trace?.meta?.pointIndex;
+                if (!Number.isFinite(idx) || map.has(idx)) return;
+                map.set(idx, trace.meta || {});
+              });
+              return map;
+            })()
+            : new Map();
+          const multiPointSummaries = (plotMultiple && Array.isArray(geoValues))
+            ? geoValues.map((gv, idx) => {
+              const colorIndex = Number.isFinite(gv?.colorIndex) ? gv.colorIndex : idx;
+              const colorName = pointColors[colorIndex] || `#${idx + 1}`;
+              const simMeta = pointSimMetaByIndex.get(idx);
+              const nearestFromData = processedData
+                ? getActualAngles(
+                  processedData,
+                  Number.isFinite(gv?.incidence) ? gv.incidence : NaN,
+                  Number.isFinite(gv?.emis) ? gv.emis : NaN,
+                  Number.isFinite(gv?.azimuth) ? gv.azimuth : NaN,
+                )
+                : null;
+              const latVal = Number.isFinite(simMeta?.simLat) ? simMeta.simLat : gv?.lat;
+              const lonVal = Number.isFinite(simMeta?.simLon) ? simMeta.simLon : gv?.lon;
+              const incVal = Number.isFinite(simMeta?.simIncidence) ? simMeta.simIncidence : nearestFromData?.incidence;
+              const emiVal = Number.isFinite(simMeta?.simEmission) ? simMeta.simEmission : nearestFromData?.emission;
+              const phaseFallback = (
+                Number.isFinite(nearestFromData?.incidence) && Number.isFinite(nearestFromData?.emission)
+                  ? (nearestFromData.incidence + nearestFromData.emission)
+                  : NaN
+              );
+              const phaseVal = Number.isFinite(simMeta?.simPhase) ? simMeta.simPhase : phaseFallback;
+              const lat = Number.isFinite(latVal) ? latVal.toFixed(2) : 'N/A';
+              const lon = Number.isFinite(lonVal) ? lonVal.toFixed(2) : 'N/A';
+              const inc = Number.isFinite(incVal) ? incVal.toFixed(1) : 'N/A';
+              const emi = Number.isFinite(emiVal) ? emiVal.toFixed(1) : 'N/A';
+              const phase = Number.isFinite(phaseVal) ? phaseVal.toFixed(1) : 'N/A';
+              const pxX = Number.isFinite(gv?.x) ? gv.x : 'N/A';
+              const pxY = Number.isFinite(gv?.y) ? gv.y : 'N/A';
+              const status = spectralLoading
+                ? 'updating'
+                : (pointsWithSpectrum.has(idx) ? 'loaded' : 'no spectrum');
+              return {
+                key: `summary-${idx}`,
+                idx,
+                colorName,
+                lat,
+                lon,
+                inc,
+                emi,
+                phase,
+                pxX,
+                pxY,
+                status,
+              };
+            })
+            : [];
 
           return (
             <>
@@ -670,7 +754,7 @@ const SpectralPlot = ({
                       null
                     ) : showAngles ? (
                       plotMultiple && Array.isArray(geoValues) && geoValues.length > 1 ? (
-                        'Multiple points selected'
+                        `Multiple points selected (${geoValues.length})`
                       ) : (
                         <>Incidence: {(actualAngles.incidence ?? 0).toFixed(2)}°, Emission: {(actualAngles.emission ?? 0).toFixed(2)}°, Azimuth: {(actualAngles.azimuth ?? 0).toFixed(2)}°, Albedo: {albedo}</>
                       )
@@ -678,6 +762,27 @@ const SpectralPlot = ({
                       null
                     )
                   }
+                  {plotMultiple && multiPointSummaries.length > 0 && (
+                    <div style={{ marginTop: '4px', maxHeight: '96px', overflowY: 'auto' }}>
+                      {multiPointSummaries.map((summary) => (
+                        <div
+                          key={summary.key}
+                          style={{
+                            margin: 0,
+                            fontSize: '11px',
+                            lineHeight: 1.25,
+                            color: '#c9d8e7',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                          title={`P${summary.idx + 1} (${summary.colorName}); lat: ${summary.lat}; lon: ${summary.lon}; i: ${summary.inc}; e: ${summary.emi}; p: ${summary.phase}; px: (${summary.pxX},${summary.pxY}); ${summary.status}`}
+                        >
+                          P{summary.idx + 1} ({summary.colorName}); lat: {summary.lat}; lon: {summary.lon}; i: {summary.inc}; e: {summary.emi}; p: {summary.phase}; px: ({summary.pxX},{summary.pxY}); {summary.status}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {!hasSelectedCases && (
                     <span style={{ color: '#ff6b6b', marginLeft: '10px' }}>
                       ⚠️ Please select at least one case to display
@@ -699,3 +804,4 @@ const SpectralPlot = ({
 };
 
 export default SpectralPlot;
+
