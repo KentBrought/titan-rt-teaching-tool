@@ -53,9 +53,11 @@ const GeoValuesDisplay = memo(({ geoValues, plotMultiple, loadingGeo, showPointC
                   <h4 style={{ marginBottom: '5px', fontSize: '16px', color: '#e0e0e0' }}>
                     Point {index + 1} (<span style={{ color: colorValue }}>{colorNames}</span>)
                   </h4>
-                  <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
-                    (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{values.x}, {values.y}</span>)
-                  </p>
+                  {showPointCoordinates && (
+                    <p style={{ fontSize: '12px', color: '#999', marginBottom: '10px' }}>
+                      (<span style={{ color: '#007acc', fontWeight: 'bold' }}>{values.x}, {values.y}</span>)
+                    </p>
+                  )}
                 </div>
                 {values.error ? (
                   <p style={{ color: '#ff6b6b' }}>Error: {values.error}</p>
@@ -290,8 +292,8 @@ function App() {
   }, []);
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
-  const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
-  const [cameraPreset3d, setCameraPreset3d] = useState(''); // '' | 'cassini' | 'sun'
+  const [selectionMode, setSelectionMode] = useState('plotPoint'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
+  const [cameraPreset3d, setCameraPreset3d] = useState('cassini'); // '' | 'cassini' | 'sun'
   const [cameraCenter3d, setCameraCenter3d] = useState('titan'); // 'titan' | 'spacecraft' | 'overhead'
   const [geometryInteractionMode3d, setGeometryInteractionMode3d] = useState('camera'); // 'camera' | 'editTitan' | 'editCassini'
   const [irGridEnabled2d, setIrGridEnabled2d] = useState(false);
@@ -301,7 +303,7 @@ function App() {
   const [showAngleArcs3d, setShowAngleArcs3d] = useState(false);
   const [showVectorLabels3d, setShowVectorLabels3d] = useState(true);
   const [showVectorGuideLines3d, setShowVectorGuideLines3d] = useState(false);
-  const [allowMultipleVectors3d, setAllowMultipleVectors3d] = useState(false);
+  const [showVectorsThroughTitan3d, setShowVectorsThroughTitan3d] = useState(true);
   const [tutorialMode, setTutorialMode] = useState(null);
   /** Left-panel vertical profile: gases vs T/P/haze (dropdown next to plot title) */
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
@@ -478,6 +480,13 @@ function App() {
         materialClass,
         surfaceAlbedo,
       });
+      const nextLat = toFiniteOrNull(values?.lat);
+      const nextLon = toFiniteOrNull(values?.lon);
+      setClickedPosition((prev) => {
+        if (!prev || prev.x !== x || prev.y !== y) return prev;
+        if (prev.lat === nextLat && prev.lon === nextLon) return prev;
+        return { ...prev, lat: nextLat, lon: nextLon };
+      });
       console.log('Extracted geo values:', values);
     } catch (error) {
       if (currentRequestId !== geoValuesRequestIdRef.current) {
@@ -567,6 +576,21 @@ function App() {
 
       const validGeoValues = allGeoValues.filter(v => v !== null);
       setGeoValues(validGeoValues.length > 0 ? validGeoValues : null);
+      setMultiplePositions((prev) => {
+        if (!Array.isArray(prev) || prev.length === 0 || validGeoValues.length === 0) return prev;
+        const geoByPixel = new Map(validGeoValues.map((entry) => [`${entry.x},${entry.y}`, entry]));
+        let changed = false;
+        const next = prev.map((pos) => {
+          const match = geoByPixel.get(`${pos.x},${pos.y}`);
+          if (!match) return pos;
+          const nextLat = toFiniteOrNull(match.lat);
+          const nextLon = toFiniteOrNull(match.lon);
+          if (pos.lat === nextLat && pos.lon === nextLon) return pos;
+          changed = true;
+          return { ...pos, lat: nextLat, lon: nextLon };
+        });
+        return changed ? next : prev;
+      });
     } catch (error) {
       if (currentRequestId !== geoValuesRequestIdRef.current) {
         return;
@@ -820,18 +844,47 @@ function App() {
 
   const handleSpherePlotPoint = useCallback(async (point) => {
     if (!point) return;
+    const isRemove = Boolean(point.remove);
     const phaseAngle = sliders.phaseAngle * 5;
     let targetX = point.x;
     let targetY = point.y;
+    const targetLat = toFiniteOrNull(point.lat);
+    const targetLon = toFiniteOrNull(point.lon);
+    const targetLocal = point.local && Number.isFinite(point.local.x) && Number.isFinite(point.local.y) && Number.isFinite(point.local.z)
+      ? { x: point.local.x, y: point.local.y, z: point.local.z }
+      : null;
+
+    // Prefer geolocation mapping over raw UV pixel mapping so 3D selections align with
+    // the current phase image projection in 2D.
+    if (Number.isFinite(targetLat) && Number.isFinite(targetLon)) {
+      try {
+        const nearest = await findNearestGeoPixelByLatLon(targetLat, targetLon, phaseAngle);
+        if (nearest) {
+          targetX = nearest.x;
+          targetY = nearest.y;
+        }
+      } catch (error) {
+        console.warn('Could not map 3D lat/lon back to 2D pixel:', error);
+      }
+    }
 
     if (targetX == null || targetY == null) return;
 
     if (selectionMode === 'plotMultiplePoints' || selectionMode === 'multipleVectorSelection') {
       setMultiplePositions(prev => {
-        const existingIndex = prev.findIndex(pos =>
-          Math.abs((pos.x ?? -9999) - targetX) <= 3 &&
-          Math.abs((pos.y ?? -9999) - targetY) <= 3
-        );
+        const findByLocalOrPixel = (pos) => {
+          if (targetLocal && pos?.local && Number.isFinite(pos.local.x) && Number.isFinite(pos.local.y) && Number.isFinite(pos.local.z)) {
+            const dx = pos.local.x - targetLocal.x;
+            const dy = pos.local.y - targetLocal.y;
+            const dz = pos.local.z - targetLocal.z;
+            return ((dx * dx) + (dy * dy) + (dz * dz)) <= (0.03 * 0.03);
+          }
+          return (
+            Math.abs((pos.x ?? -9999) - targetX) <= 3 &&
+            Math.abs((pos.y ?? -9999) - targetY) <= 3
+          );
+        };
+        const existingIndex = prev.findIndex(findByLocalOrPixel);
 
         if (existingIndex >= 0) {
           const newPositions = prev.filter((_, idx) => idx !== existingIndex);
@@ -857,6 +910,7 @@ function App() {
           return newPositions;
         }
 
+        if (isRemove) return prev;
         if (prev.length >= MAX_SELECTED_POINTS) return prev;
 
         const usedColorIndices = prev.map(pos => pos.colorIndex !== undefined ? pos.colorIndex : prev.indexOf(pos));
@@ -868,8 +922,9 @@ function App() {
         const newPositions = [...prev, {
           x: targetX,
           y: targetY,
-          lat: toFiniteOrNull(point.lat),
-          lon: toFiniteOrNull(point.lon),
+          lat: targetLat,
+          lon: targetLon,
+          local: targetLocal,
           position: {
             naturalX: targetX,
             naturalY: targetY,
@@ -892,11 +947,26 @@ function App() {
       return;
     }
 
+    if (isRemove) {
+      const shouldRemove =
+        (clickedPosition && targetLocal && clickedPosition.local && Number.isFinite(clickedPosition.local.x) && Number.isFinite(clickedPosition.local.y) && Number.isFinite(clickedPosition.local.z)
+          ? (((clickedPosition.local.x - targetLocal.x) ** 2) + ((clickedPosition.local.y - targetLocal.y) ** 2) + ((clickedPosition.local.z - targetLocal.z) ** 2)) <= (0.03 * 0.03)
+          : (clickedPosition && Math.abs((clickedPosition.x ?? -9999) - targetX) <= 3 && Math.abs((clickedPosition.y ?? -9999) - targetY) <= 3));
+      if (shouldRemove) {
+        setClickedPosition(null);
+        setGeoValues(null);
+      }
+      return;
+    }
+
     setToggles(prev => ({ ...prev, plotMultiple: false }));
     setMultiplePositions([]);
     setClickedPosition({
       x: targetX,
       y: targetY,
+      lat: targetLat,
+      lon: targetLon,
+      local: targetLocal,
       position: {
         naturalX: targetX,
         naturalY: targetY,
@@ -906,11 +976,17 @@ function App() {
       }
     });
     await fetchGeoValues(targetX, targetY, phaseAngle);
-  }, [fetchGeoValues, fetchMultipleGeoValues, selectionMode, sliders.phaseAngle]);
+  }, [clickedPosition, fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, sliders.phaseAngle]);
 
   const syncedSelectionPointsFor3d = useMemo(() => {
-    if (toggles.plotMultiple) return Array.isArray(multiplePositions) ? multiplePositions : [];
-    return clickedPosition ? [clickedPosition] : [];
+    const hasGeoOrLocal = (point) => (
+      (Number.isFinite(point?.lat) && Number.isFinite(point?.lon)) ||
+      (Number.isFinite(point?.local?.x) && Number.isFinite(point?.local?.y) && Number.isFinite(point?.local?.z))
+    );
+    if (toggles.plotMultiple) {
+      return Array.isArray(multiplePositions) ? multiplePositions.filter(hasGeoOrLocal) : [];
+    }
+    return clickedPosition && hasGeoOrLocal(clickedPosition) ? [clickedPosition] : [];
   }, [toggles.plotMultiple, multiplePositions, clickedPosition]);
 
   // Tutorial mode presets
@@ -1566,6 +1642,8 @@ function App() {
                             const next = prev === '2d' ? '3d' : '2d';
                             if (next === '3d') {
                               setSelectionMode(toggles.plotMultiple ? 'multipleVectorSelection' : 'vectorSelection');
+                            } else {
+                              setSelectionMode(toggles.plotMultiple ? 'plotMultiplePoints' : 'plotPoint');
                             }
                             return next;
                           });
@@ -1637,7 +1715,8 @@ function App() {
                                 showAngleArcs={showAngleArcs3d}
                                 showVectorLabels={showVectorLabels3d}
                                 showExtendedVectorLines={showVectorGuideLines3d}
-                                allowMultipleVectors={allowMultipleVectors3d || selectionMode === 'multipleVectorSelection'}
+                                allowMultipleVectors={selectionMode === 'multipleVectorSelection'}
+                                showThroughSurface={showVectorsThroughTitan3d}
                                 showAtmosphere={toggles.showAtmosphere}
                                 interactionMode={
                                   selectionMode === 'plotPoint'
@@ -1951,7 +2030,7 @@ function App() {
                                 <Tooltip content={
                                   <>
                                     <strong>3D Camera Presets</strong>
-                                    Switches the camera to perspective views (Cassini or Sun) that stay synced as the slider geometry changes.
+                                    Switches the camera to perspective views (Cassini's Perspective or Sun's Perspective) that stay synced as the slider geometry changes.
                                   </>
                                 }>
                                   3D Perspective Presets
@@ -1966,7 +2045,7 @@ function App() {
                                     checked={cameraPreset3d === 'cassini'}
                                     onChange={(e) => setCameraPreset3d(e.target.value)}
                                   />
-                                  <span>Perspective (Cassini)</span>
+                                  <span>Cassini's Perspective</span>
                                 </label>
                                 <label className="radio-label">
                                   <input
@@ -1976,7 +2055,7 @@ function App() {
                                     checked={cameraPreset3d === 'sun'}
                                     onChange={(e) => setCameraPreset3d(e.target.value)}
                                   />
-                                  <span>Perspective (Sun)</span>
+                                  <span>Sun's Perspective</span>
                                 </label>
                               </div>
                             </div>
@@ -2109,10 +2188,10 @@ function App() {
                               <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
                                 <input
                                   type="checkbox"
-                                  checked={allowMultipleVectors3d}
-                                  onChange={(e) => setAllowMultipleVectors3d(e.target.checked)}
+                                  checked={showVectorsThroughTitan3d}
+                                  onChange={(e) => setShowVectorsThroughTitan3d(e.target.checked)}
                                 />
-                                <span>Add Multiple Vectors</span>
+                                <span>See Vectors Through Titan</span>
                               </label>
                             </div>
                           </>

@@ -320,11 +320,14 @@ const ClickableImage = ({
   };
 
   const latLines = [-60, -30, 0, 30, 60];
-  const lonLines = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
+  const lonLabelSteps = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
+  const GRID_ROTATE_LEFT_DEG = 130;
+  const normalizeLongitudeDeg = (lonDeg) => ((((lonDeg + 180) % 360) + 360) % 360) - 180;
+  const phaseWrapped = ((((phaseAngleDeg % 360) + 360) % 360));
+  const lonLines = lonLabelSteps.map((labelDeg) => normalizeLongitudeDeg(labelDeg + GRID_ROTATE_LEFT_DEG));
   const getProjectedPoint = (latDeg, lonDeg, radius, cx, cy) => {
     const lat = (latDeg * Math.PI) / 180;
-    const phaseWrapped = ((((phaseAngleDeg % 360) + 360) % 360));
-    const lonShifted = ((((lonDeg + 180 - phaseWrapped) + 540) % 360) - 180);
+    const lonShifted = normalizeLongitudeDeg(lonDeg + 180 - phaseWrapped - GRID_ROTATE_LEFT_DEG);
     const lon = (lonShifted * Math.PI) / 180;
     const visible = (Math.cos(lat) * Math.cos(lon)) >= 0;
     if (!visible) return null;
@@ -351,6 +354,23 @@ const ClickableImage = ({
       if (p) points.push(p);
     }
     return buildPath(points);
+  };
+
+  const getWarpedMarkerStyle = (position) => {
+    const safeX = Number.isFinite(position?.displayX) ? position.displayX : 0;
+    const safeY = Number.isFinite(position?.displayY) ? position.displayY : 0;
+    return {
+      style: {
+        left: `${safeX}px`,
+        top: `${safeY}px`,
+        transform: 'translate(-50%, -50%)',
+        transformOrigin: '50% 50%',
+      },
+      lines: {
+        a: { x1: 2, y1: 2, x2: 18, y2: 18 },
+        b: { x1: 18, y1: 2, x2: 2, y2: 18 },
+      },
+    };
   };
 
   return (
@@ -426,18 +446,16 @@ const ClickableImage = ({
               const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : index;
               const color = colors[colorIndex] || 'red';
               if (pos.position) {
+                const markerWarp = getWarpedMarkerStyle(pos.position);
                 return (
                   <div
                     key={index}
                     className="click-marker"
-                    style={{
-                      left: `${pos.position.displayX}px`,
-                      top: `${pos.position.displayY}px`
-                    }}
+                    style={markerWarp.style}
                   >
                     <svg width="20" height="20" viewBox="0 0 20 20">
-                      <line x1="2" y1="2" x2="18" y2="18" stroke={color} strokeWidth="3" strokeLinecap="round"/>
-                      <line x1="18" y1="2" x2="2" y2="18" stroke={color} strokeWidth="3" strokeLinecap="round"/>
+                      <line x1={markerWarp.lines.a.x1} y1={markerWarp.lines.a.y1} x2={markerWarp.lines.a.x2} y2={markerWarp.lines.a.y2} stroke={color} strokeWidth="3" strokeLinecap="round"/>
+                      <line x1={markerWarp.lines.b.x1} y1={markerWarp.lines.b.y1} x2={markerWarp.lines.b.x2} y2={markerWarp.lines.b.y2} stroke={color} strokeWidth="3" strokeLinecap="round"/>
                     </svg>
                   </div>
                 );
@@ -446,20 +464,20 @@ const ClickableImage = ({
             })
           ) : (
             // Single marker
-            clickPosition && (
+            clickPosition && (() => {
+              const markerWarp = getWarpedMarkerStyle(clickPosition);
+              return (
               <div
                 className="click-marker"
-                style={{
-                  left: `${clickPosition.displayX}px`,
-                  top: `${clickPosition.displayY}px`
-                }}
+                style={markerWarp.style}
               >
                 <svg width="20" height="20" viewBox="0 0 20 20">
-                  <line x1="2" y1="2" x2="18" y2="18" stroke="red" strokeWidth="3" strokeLinecap="round"/>
-                  <line x1="18" y1="2" x2="2" y2="18" stroke="red" strokeWidth="3" strokeLinecap="round"/>
+                  <line x1={markerWarp.lines.a.x1} y1={markerWarp.lines.a.y1} x2={markerWarp.lines.a.x2} y2={markerWarp.lines.a.y2} stroke="red" strokeWidth="3" strokeLinecap="round"/>
+                  <line x1={markerWarp.lines.b.x1} y1={markerWarp.lines.b.y1} x2={markerWarp.lines.b.x2} y2={markerWarp.lines.b.y2} stroke="red" strokeWidth="3" strokeLinecap="round"/>
                 </svg>
               </div>
-            )
+              );
+            })()
           )}
           {showLatLonGrid && imageRef.current && (
             <svg
@@ -501,10 +519,10 @@ const ClickableImage = ({
                         </g>
                       );
                     })}
-                    {lonLines.map((lon) => {
+                    {lonLines.map((lon, idx) => {
                       const path = buildLonPath(lon, r, cx, cy);
                       const topPoint = getProjectedPoint(70, lon, r, cx, cy);
-                      const lonLabel = lon === -180 ? 180 : lon;
+                      const lonLabel = lonLabelSteps[idx] === -180 ? 180 : lonLabelSteps[idx];
                       return (
                         <g key={`lon-${lon}`}>
                           {path && (
