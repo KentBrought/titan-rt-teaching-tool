@@ -219,7 +219,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('tab1');
   const [sliders, setSliders] = useState({
     hazeAbundance: 50,
-    methaneAbundance: 50,
+    methaneAbundance: 100,
     incidenceAngle: 45,
     emissionAngle: 45,
     phaseAngle: 0,
@@ -285,6 +285,9 @@ function App() {
   const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
+  useEffect(() => {
+    setHazePropertiesModel((m) => (m === 'tomasko' ? 'doose' : m));
+  }, []);
   const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('vectorSelection'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
@@ -302,6 +305,12 @@ function App() {
   const [tutorialMode, setTutorialMode] = useState(null);
   /** Left-panel vertical profile: gases vs T/P/haze (dropdown next to plot title) */
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
+
+  useEffect(() => {
+    if (verticalProfileView === 'haze') {
+      setVerticalProfileView('gases');
+    }
+  }, [verticalProfileView]);
 
   const handleSliderChange = (name, value) => {
     const numericValue = parseFloat(value);
@@ -911,10 +920,10 @@ function App() {
       description: "See how methane affects Titan's spectrum",
       sliders: {
         hazeAbundance: 50,
-        methaneAbundance: 75,
+        methaneAbundance: 100,
         phaseAngle: 20
       },
-      hazePropertiesModel: 'tomasko',
+      hazePropertiesModel: 'doose',
       selectedCases: { standard: true, no_ch4: true, no_haze: false },
       transmissionToggles: { ch4: true, haze: false, co: false, c2h6: false, c2h2: false },
       clickPosition: { x: 32, y: 32 },
@@ -925,7 +934,7 @@ function App() {
       description: "Compare spectra with and without haze",
       sliders: {
         hazeAbundance: 100,
-        methaneAbundance: 50,
+        methaneAbundance: 100,
         phaseAngle: 40
       },
       hazePropertiesModel: 'doose',
@@ -939,10 +948,10 @@ function App() {
       description: "Compare multiple locations on Titan",
       sliders: {
         hazeAbundance: 50,
-        methaneAbundance: 50,
+        methaneAbundance: 100,
         phaseAngle: 10
       },
-      hazePropertiesModel: 'tomasko',
+      hazePropertiesModel: 'doose',
       selectedCasesByPoint: {
         0: { standard: true, no_ch4: false, no_haze: false },
         1: { standard: true, no_ch4: false, no_haze: false },
@@ -963,7 +972,7 @@ function App() {
       setTutorialMode(null);
       setSliders({
         hazeAbundance: 50,
-        methaneAbundance: 50,
+        methaneAbundance: 100,
         incidenceAngle: 45,
         emissionAngle: 45,
         phaseAngle: 0,
@@ -1058,7 +1067,8 @@ function App() {
     else setIrGridEnabled2d(enabled);
   };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
-  const methaneImageSetting = Number(sliders.methaneAbundance) < 50 ? 0.25 : 1;
+  const methaneImageSetting =
+    hazeAbundanceSetting < 1 ? 1 : (sliders.methaneAbundance >= 50 ? 1 : 0);
   const imageFolderName = hazePropertiesModel === 'doose'
     ? `${hazeFolderName}_meth${methaneImageSetting}`
     : hazeFolderName;
@@ -1070,24 +1080,27 @@ function App() {
 
   // For each selected point, whether it has associated spectral plot data (so we show/hide atmospheric components per point)
   const hasSpectralDataForSelection = useMemo(() => {
-    const albedo = FIXED_ALBEDO;
     if (!processedSpectralData) {
       return toggles.plotMultiple ? [] : false;
     }
     if (toggles.plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
       return geoValues.map((gv) => {
         if (gv && gv.error) return false;
-        const inc = gv?.incidence ?? 0;
-        const emi = gv?.emis ?? 0;
-        const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard', albedo);
+        const albedo = Number.isFinite(gv?.surfaceAlbedo) ? gv.surfaceAlbedo : FIXED_ALBEDO;
+        const inc = Number.isFinite(gv?.incidence) ? gv.incidence : NaN;
+        const emi = Number.isFinite(gv?.emis) ? gv.emis : NaN;
+        const az = Number.isFinite(gv?.azimuth) ? gv.azimuth : NaN;
+        const result = createSpectralPlotData(processedSpectralData, inc, emi, az, 'standard', albedo);
         return result && result.wavelengths && result.wavelengths.length > 0;
       });
     }
     if (!toggles.plotMultiple && geoValues) {
       if (geoValues.error) return false;
+      const albedo = Number.isFinite(geoValues.surfaceAlbedo) ? geoValues.surfaceAlbedo : FIXED_ALBEDO;
       const inc = Number.isFinite(geoValues.incidence) ? geoValues.incidence : NaN;
       const emi = Number.isFinite(geoValues.emis) ? geoValues.emis : NaN;
-      const result = createSpectralPlotData(processedSpectralData, inc, emi, 0, 'standard', albedo);
+      const az = Number.isFinite(geoValues.azimuth) ? geoValues.azimuth : NaN;
+      const result = createSpectralPlotData(processedSpectralData, inc, emi, az, 'standard', albedo);
       return result && result.wavelengths && result.wavelengths.length > 0;
     }
     return toggles.plotMultiple ? [] : false;
@@ -1434,28 +1447,21 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const albedo = activeAlbedoValue;
-
-    if (albedo === 0.1 && spectralDataOld) {
+    if (spectralDataOld) {
       setSpectralData(spectralDataOld);
     } else if (spectralDataNew) {
       setSpectralData(spectralDataNew);
-    } else if (spectralDataOld) {
-      setSpectralData(spectralDataOld);
     }
 
-    if (spectralDataOld || spectralDataNew) {
-      const activeData = (albedo === 0.1 && spectralDataOld) ? spectralDataOld : (spectralDataNew || spectralDataOld);
-      if (activeData) {
-        const inc = activeData.inc || [];
-        const emi = activeData.emi || [];
-        const daz = activeData.daz || [];
-        setAngleOptions({ inc, emi, daz });
-      }
+    const activeData = spectralDataOld || spectralDataNew;
+    if (activeData) {
+      const inc = activeData.inc || [];
+      const emi = activeData.emi || [];
+      const daz = activeData.daz || [];
+      setAngleOptions({ inc, emi, daz });
     }
-  }, [activeAlbedoValue, spectralDataOld, spectralDataNew]);
+  }, [spectralDataOld, spectralDataNew]);
 
-  // Lazy-load multi-albedo spectral library only when needed.
   useEffect(() => {
     if (activeAlbedoValue === 0.1 || spectralDataNew) return;
 
@@ -1510,52 +1516,38 @@ function App() {
                     <div className="skinny-plot">
                       <div className="skinny-plot-header">
                         <div className="skinny-plot-header-top">
-                          <h3>
-                            <Tooltip content={
-                              verticalProfileView === 'gases' ? (
-                                <>
-                                  <strong>Gas Abundance</strong>
-                                  Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude.
-                                  CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
-                                  Adjusting the methane abundance slider scales the CH₄ profile, helping you understand how methane concentration
-                                  affects Titan&apos;s atmospheric composition and radiative transfer properties.
-                                </>
-                              ) : verticalProfileView === 'temperature_pressure' ? (
-                                <>
-                                  <strong>Temperature and pressure</strong>
-                                  HASI L4 in situ temperature and pressure vs altitude on dual horizontal axes (linear K
-                                  below, log Pa above). Dotted lines mark radiative-transfer model layer interfaces.
-                                </>
-                              ) : (
-                                <>
-                                  <strong>Haze profile</strong>
-                                  Haze optical depth τ from the radiative-transfer model (<code>layers.tau.haze</code>) at
-                                  three wavelength bins (~0.93, ~2.0, ~5.1 µm), for the Doose / Tomasko haze scenario and
-                                  haze abundance selected in the main panel — same configuration as the spectra and IR images.
-                                </>
-                              )
-                            }>
-                              {verticalProfileView === 'gases' && 'Gas Abundance'}
-                              {verticalProfileView === 'temperature_pressure' && 'Temperature & pressure'}
-                              {verticalProfileView === 'haze' && 'Haze profile'}
-                            </Tooltip>
-                          </h3>
-                          <select
-                            id="vertical-profile-select"
-                            className="skinny-plot-select"
-                            aria-label="Atmospheric profile type"
-                            value={verticalProfileView}
-                            onChange={(e) => setVerticalProfileView(e.target.value)}
-                          >
-                            <option value="gases">Gas abundances</option>
-                            <option value="temperature_pressure">Temperature &amp; pressure</option>
-                            <option value="haze">Haze profile</option>
-                          </select>
+                          <Tooltip content={
+                            verticalProfileView === 'gases' ? (
+                              <>
+                                <strong>Gas Abundance</strong>
+                                Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude.
+                                CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
+                                The CH₄ profile uses a fixed abundance scale; the separate Methane control only picks IR image folders when haze is at maximum.
+                              </>
+                            ) : (
+                              <>
+                                <strong>Temperature and pressure</strong>
+                                HASI L4 in situ temperature and pressure vs altitude on dual horizontal axes (linear K
+                                below, log Pa above). Dotted lines mark radiative-transfer model layer interfaces.
+                              </>
+                            )
+                          }>
+                            <select
+                              id="vertical-profile-select"
+                              className="skinny-plot-select"
+                              aria-label="Atmospheric profile type"
+                              value={verticalProfileView}
+                              onChange={(e) => setVerticalProfileView(e.target.value)}
+                            >
+                              <option value="gases">Gas abundances</option>
+                              <option value="temperature_pressure">Temperature &amp; pressure</option>
+                            </select>
+                          </Tooltip>
                         </div>
                       </div>
                       <div className="skinny-plot-content">
                         <GasAbundancePlot
-                          methaneAbundance={sliders.methaneAbundance}
+                          methaneAbundance={100}
                           profile={verticalProfileView}
                           hazeScenarioKey={hazeFolderName}
                         />
@@ -1722,17 +1714,9 @@ function App() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: '250px', maxWidth: '300px', alignSelf: 'stretch' }}>
                       {/* Quick Start Presets */}
                       <div className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
-                        <h2>
-                          <Tooltip content={
-                            <>
-                              <strong>Quick Start</strong>
-                              Pre-configured presets to help you explore Titan's atmosphere.
-                            </>
-                          }>
-                            Quick Start
-                          </Tooltip>
-                        </h2>
                         <select
+                          aria-label="Quick Start presets"
+                          title="Quick Start — pre-configured presets to explore Titan's atmosphere"
                           value={tutorialMode || ''}
                           onChange={(e) => applyTutorialMode(e.target.value ? parseInt(e.target.value) : null)}
                           style={{
@@ -1770,7 +1754,8 @@ function App() {
                         <div className="slider-group">
                           {irDisplayMode !== '3d' && (
                           <>
-                          {/* Haze Model Section */}
+                          {false && (
+                          <>
                           <div style={{ marginBottom: '0', display: 'flex', flexDirection: 'column' }}>
                             <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal', textAlign: 'left', color: '#ccc', display: 'block', width: '100%' }}>
                               <Tooltip content={
@@ -1796,6 +1781,7 @@ function App() {
                                 />
                                 <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Doose</span>
                               </label>
+                              {false && (
                               <label className="radio-label">
                                 <input
                                   type="radio"
@@ -1806,9 +1792,12 @@ function App() {
                                 />
                                 <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Tomasko</span>
                               </label>
+                              )}
                             </div>
                           </div>
                           <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                          </>
+                          )}
 
                           <label style={{ color: '#ccc' }}>
                             <Tooltip content={
@@ -1830,9 +1819,14 @@ function App() {
                               step="1"
                               value={sliders.hazeAbundance / 50}
                               onChange={(e) => {
-                                const stepValue = parseInt(e.target.value);
+                                const stepValue = parseInt(e.target.value, 10);
                                 const sliderValue = stepValue * 50;
-                                handleSliderChange('hazeAbundance', sliderValue);
+                                const newHaze = getHazeAbundanceValue(sliderValue);
+                                setSliders((prev) => ({
+                                  ...prev,
+                                  hazeAbundance: sliderValue,
+                                  ...(newHaze < 1 ? { methaneAbundance: 100 } : {}),
+                                }));
                               }}
                             />
                             <span>{hazeAbundanceSetting}</span>
@@ -1841,25 +1835,30 @@ function App() {
                           <label style={{ color: '#ccc' }}>
                             <Tooltip content={
                               <>
-                                <strong>Methane Abundance</strong>
-                                Adjusts the methane (CH₄) concentration in Titan's atmosphere, scaling the vertical profile
-                                from 50% (slider at 0) to 150% (slider at 100) of the baseline value. Methane is a major
-                                atmospheric constituent that affects both radiative transfer and spectral features.
-                                Changing methane abundance modifies how light is absorbed at specific wavelengths,
-                                particularly in the near-infrared, which directly impacts the spectral reflectance curves
-                                shown in the spectral plot.
+                                <strong>Methane</strong>
+                                Only applies when haze abundance is 1.0. Chooses the <code>meth</code> suffix in the Doose
+                                image folder name: 0 → meth0, 1 → meth1. The gas profile plot keeps methane scaling at full.
                               </>
                             }>
-                              Methane abundance
+                              Methane
                             </Tooltip>
                             <input
                               type="range"
                               min="0"
-                              max="100"
-                              value={sliders.methaneAbundance}
-                              onChange={(e) => handleSliderChange('methaneAbundance', e.target.value)}
+                              max="1"
+                              step="1"
+                              disabled={hazeAbundanceSetting < 1}
+                              value={sliders.methaneAbundance >= 50 ? 1 : 0}
+                              onChange={(e) => {
+                                const bit = parseInt(e.target.value, 10);
+                                handleSliderChange('methaneAbundance', bit === 1 ? 100 : 0);
+                              }}
                             />
-                            <span>{sliders.methaneAbundance}</span>
+                            <span>
+                              {hazeAbundanceSetting < 1
+                                ? '1'
+                                : (sliders.methaneAbundance >= 50 ? '1' : '0')}
+                            </span>
                           </label>
 
                           </>
@@ -2291,19 +2290,25 @@ function App() {
 
                   <div className="spectral-row">
                     <div className="spectral-plot" style={{ position: 'relative' }}>
-                      <h2>
+                      <h2 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '12px' }}>
                         <Tooltip variant="green" content={
                           <>
                             <strong>Spectral Plot</strong>
-                            Displays the spectral reflectance (or radiance) as a function of wavelength for the selected
-                            location(s) on Titan. This plot shows how different wavelengths of light interact with
-                            Titan's atmosphere and surface. The spectral shape reveals information about atmospheric
-                            composition (methane, haze, other gases), surface composition, and viewing geometry.
-                            Click on the IR image to select a location and generate its spectral signature.
+                            Curves come from the classic Tomasko GUI spectral library (Doose haze, VIMS windows, Lambertian
+                            ground albedos in the dataset). See the linked readme for how those runs were produced.
+                            Click the IR image to select a location; the map can pick among the albedo cases in that library.
                           </>
                         }>
                           Spectral Plot
                         </Tooltip>
+                        <a
+                          href={`${process.env.PUBLIC_URL || ''}/assets/dt/tomasko_1.0/readme.txt`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: '14px', fontWeight: 'normal', color: '#66ccff' }}
+                        >
+                          Classic Titan spectra (readme)
+                        </a>
                       </h2>
                       {loading ? (
                         <div style={{

@@ -228,7 +228,6 @@ const createSpectralPlotDataNewFormat = (processedData, incidenceAngle, emission
   // Get the albedo key
   const albedoKey = `albedo_${albedo}`;
   
-  // Check if albedo data exists
   if (!data[albedoKey]) {
     const fallbackKey = 'albedo_0.1';
     if (!data[fallbackKey]) {
@@ -236,7 +235,6 @@ const createSpectralPlotDataNewFormat = (processedData, incidenceAngle, emission
       return { wavelengths: [], intensities: [] };
     }
   }
-  
   const albedoData = data[albedoKey] || data['albedo_0.1'];
   
   // Get spectral values for the case type
