@@ -290,7 +290,7 @@ function App() {
     showAtmosphere: true,
   });
 
-  const [spectralResolutionIndex, setSpectralResolutionIndex] = useState(3);
+  const [spectralResolutionIndex, setSpectralResolutionIndex] = useState(1);
   const spectralResolution = SPECTRAL_RESOLUTION_LEVELS[spectralResolutionIndex];
 
   const [materialAlbedoMap, setMaterialAlbedoMap] = useState(null);
