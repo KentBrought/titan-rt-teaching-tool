@@ -1143,8 +1143,7 @@ function App() {
     else setIrGridEnabled2d(enabled);
   };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
-  const methaneImageSetting =
-    hazeAbundanceSetting < 1 ? 1 : (sliders.methaneAbundance >= 50 ? 1 : 0);
+  const methaneImageSetting = sliders.methaneAbundance >= 50 ? 1 : 0;
   const imageFolderName = hazePropertiesModel === 'doose'
     ? `${hazeFolderName}_meth${methaneImageSetting}`
     : hazeFolderName;
@@ -1598,7 +1597,7 @@ function App() {
                                 <strong>Gas Abundance</strong>
                                 Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude.
                                 CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
-                                The CH₄ profile uses a fixed abundance scale; the separate Methane control only picks IR image folders when haze is at maximum.
+                                The CH₄ profile uses a fixed abundance scale; the separate Methane control picks the <code>meth</code> suffix for Doose IR image folders.
                               </>
                             ) : (
                               <>
@@ -1900,11 +1899,9 @@ function App() {
                               onChange={(e) => {
                                 const stepValue = parseInt(e.target.value, 10);
                                 const sliderValue = stepValue * 50;
-                                const newHaze = getHazeAbundanceValue(sliderValue);
                                 setSliders((prev) => ({
                                   ...prev,
                                   hazeAbundance: sliderValue,
-                                  ...(newHaze < 1 ? { methaneAbundance: 100 } : {}),
                                 }));
                               }}
                             />
@@ -1915,8 +1912,8 @@ function App() {
                             <Tooltip content={
                               <>
                                 <strong>Methane</strong>
-                                Only applies when haze abundance is 1.0. Chooses the <code>meth</code> suffix in the Doose
-                                image folder name: 0 → meth0, 1 → meth1. The gas profile plot keeps methane scaling at full.
+                                Chooses the <code>meth</code> suffix in the Doose image folder name: 0 → meth0, 1 → meth1.
+                                For some haze levels both map to the same image set; the gas profile plot keeps methane scaling at full.
                               </>
                             }>
                               Methane
@@ -1926,7 +1923,6 @@ function App() {
                               min="0"
                               max="1"
                               step="1"
-                              disabled={hazeAbundanceSetting < 1}
                               value={sliders.methaneAbundance >= 50 ? 1 : 0}
                               onChange={(e) => {
                                 const bit = parseInt(e.target.value, 10);
@@ -1934,9 +1930,7 @@ function App() {
                               }}
                             />
                             <span>
-                              {hazeAbundanceSetting < 1
-                                ? '1'
-                                : (sliders.methaneAbundance >= 50 ? '1' : '0')}
+                              {sliders.methaneAbundance >= 50 ? '1' : '0'}
                             </span>
                           </label>
 
