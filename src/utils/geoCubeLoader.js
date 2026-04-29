@@ -95,6 +95,60 @@ const toFiniteInRangeOrNull = (value, min, max) => {
   return value;
 };
 
+const normalizeLongitudeDeg = (lonDeg) => {
+  if (!Number.isFinite(lonDeg)) return null;
+  return ((((lonDeg + 180) % 360) + 360) % 360) - 180;
+};
+
+const estimateLatLonFromGrid = (geoData, x, y, maxRadius = 24) => {
+  if (!geoData) return { lat: null, lon: null };
+  const centerX = Math.max(0, Math.min(680, Math.round(x)));
+  const centerY = Math.max(0, Math.min(680, Math.round(y)));
+
+  for (let radius = 0; radius <= maxRadius; radius += 1) {
+    let weightedLat = 0;
+    let weightedLonCos = 0;
+    let weightedLonSin = 0;
+    let weightTotal = 0;
+
+    const minX = Math.max(0, centerX - radius);
+    const maxX = Math.min(680, centerX + radius);
+    const minY = Math.max(0, centerY - radius);
+    const maxY = Math.min(680, centerY + radius);
+
+    for (let yy = minY; yy <= maxY; yy += 1) {
+      for (let xx = minX; xx <= maxX; xx += 1) {
+        const lat = toFiniteInRangeOrNull(getGeoValue(geoData, xx, yy, 0), -90, 90);
+        const lonRaw = toFiniteInRangeOrNull(getGeoValue(geoData, xx, yy, 1), -360, 360);
+        const lon = normalizeLongitudeDeg(lonRaw);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+        const dx = xx - centerX;
+        const dy = yy - centerY;
+        const distance = Math.sqrt((dx * dx) + (dy * dy));
+        const w = 1 / (1 + distance);
+
+        weightedLat += lat * w;
+        const lonRad = lon * (Math.PI / 180);
+        weightedLonCos += Math.cos(lonRad) * w;
+        weightedLonSin += Math.sin(lonRad) * w;
+        weightTotal += w;
+      }
+    }
+
+    if (weightTotal > 0) {
+      const lat = weightedLat / weightTotal;
+      const lon = Math.atan2(weightedLonSin, weightedLonCos) * (180 / Math.PI);
+      return {
+        lat: toFiniteInRangeOrNull(lat, -90, 90),
+        lon: toFiniteInRangeOrNull(normalizeLongitudeDeg(lon), -180, 180),
+      };
+    }
+  }
+
+  return { lat: null, lon: null };
+};
+
 /**
  * Get or load parsed geo cube data for a phase angle (with caching)
  * @param {number} phaseAngle - Phase angle in degrees
@@ -142,10 +196,15 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
     const incidence = toFiniteInRangeOrNull(rawIncidence, 0, 180);
     const emis = toFiniteInRangeOrNull(rawEmis, 0, 180);
     const azimuth = toFiniteInRangeOrNull(rawAzimuth, -360, 360);
+    const estimatedLatLon = (!Number.isFinite(lat) || !Number.isFinite(lon))
+      ? estimateLatLonFromGrid(geoData, x, y)
+      : { lat: null, lon: null };
+    const resolvedLat = Number.isFinite(lat) ? lat : estimatedLatLon.lat;
+    const resolvedLon = Number.isFinite(lon) ? lon : estimatedLatLon.lon;
     
     return {
-      lat,
-      lon,
+      lat: resolvedLat,
+      lon: resolvedLon,
       phase,
       incidence,
       emis,

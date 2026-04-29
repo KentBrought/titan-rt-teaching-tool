@@ -176,7 +176,8 @@ const SpectralPlot = ({
   transmissionToggles = {},
   spectralUnits = false,
   albedo = 0.1,
-  spectralResolution = 'low',
+  spectralResolution = 'high',
+  selectedPhaseAngle = null,
   spectralLoading = false
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
@@ -354,7 +355,9 @@ const SpectralPlot = ({
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
             // Get actual angles for this point
             const actual = getActualAngles(processedData, pointIncidence, pointEmission, pointAzimuth);
-            const phase = geoValue.phase ?? (actual.incidence + actual.emission);
+            const phase = Number.isFinite(selectedPhaseAngle)
+              ? selectedPhaseAngle
+              : (geoValue.phase ?? (actual.incidence + actual.emission));
             const materialTag = formatSurfaceMaterial(geoValue?.materialClass, pointAlbedo);
             const traceName = `${caseName}${materialTag ? ` [${materialTag}]` : ''} (${formatAngles(actual.incidence, actual.emission, phase)})`;
 
@@ -454,7 +457,9 @@ const SpectralPlot = ({
             };
             const caseName = nameMap[caseType] || caseType.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
             const actual = getActualAngles(processedData, incidenceAngle, emissionAngle, azimuthAngle);
-            const phase = geoValues.phase ?? (actual.incidence + actual.emission);
+            const phase = Number.isFinite(selectedPhaseAngle)
+              ? selectedPhaseAngle
+              : (geoValues.phase ?? (actual.incidence + actual.emission));
             const materialTag = formatSurfaceMaterial(geoValues?.materialClass, surfaceAlbedo);
             const traceName = `${caseName}${materialTag ? ` [${materialTag}]` : ''} (${formatAngles(actual.incidence, actual.emission, phase)})`;
             traces.push({
@@ -540,7 +545,7 @@ const SpectralPlot = ({
     }
 
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins, spectralResolution]);
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins, spectralResolution, selectedPhaseAngle]);
 
   // Update actualAngles in a separate effect to avoid infinite loop
   useEffect(() => {
@@ -709,12 +714,15 @@ const SpectralPlot = ({
               const lonVal = Number.isFinite(simMeta?.simLon) ? simMeta.simLon : gv?.lon;
               const incVal = Number.isFinite(simMeta?.simIncidence) ? simMeta.simIncidence : nearestFromData?.incidence;
               const emiVal = Number.isFinite(simMeta?.simEmission) ? simMeta.simEmission : nearestFromData?.emission;
-              const phaseFallback = (
-                Number.isFinite(nearestFromData?.incidence) && Number.isFinite(nearestFromData?.emission)
-                  ? (nearestFromData.incidence + nearestFromData.emission)
-                  : NaN
-              );
-              const phaseVal = Number.isFinite(simMeta?.simPhase) ? simMeta.simPhase : phaseFallback;
+              const phaseVal = Number.isFinite(selectedPhaseAngle)
+                ? selectedPhaseAngle
+                : Number.isFinite(simMeta?.simPhase)
+                  ? simMeta.simPhase
+                  : (
+                    Number.isFinite(nearestFromData?.incidence) && Number.isFinite(nearestFromData?.emission)
+                      ? (nearestFromData.incidence + nearestFromData.emission)
+                      : NaN
+                  );
               const lat = Number.isFinite(latVal) ? latVal.toFixed(2) : 'N/A';
               const lon = Number.isFinite(lonVal) ? lonVal.toFixed(2) : 'N/A';
               const inc = Number.isFinite(incVal) ? incVal.toFixed(1) : 'N/A';

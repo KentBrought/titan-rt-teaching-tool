@@ -33,6 +33,7 @@ const GeoValuesDisplay = memo(({
   geoValues,
   plotMultiple,
   loadingGeo,
+  currentPhaseAngle,
   showPointCoordinates = true,
   onClearAllPoints = null,
   onRemovePoint = null
@@ -117,7 +118,7 @@ const GeoValuesDisplay = memo(({
                   <div style={{ fontSize: '14px', color: '#ccc' }}>
                     <p><strong>Latitude:</strong> {isFiniteNumber(values.lat) ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
                     <p><strong>Longitude:</strong> {isFiniteNumber(values.lon) ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                    <p><strong>Phase:</strong> {isFiniteNumber(values.phase) ? `${values.phase.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}°` : 'N/A'}</p>
                     <p><strong>Incidence:</strong> {isFiniteNumber(values.incidence) ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
                     <p><strong>Emis:</strong> {isFiniteNumber(values.emis) ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
                     {Number.isFinite(values.materialClass) && (
@@ -149,7 +150,7 @@ const GeoValuesDisplay = memo(({
               <div style={{ fontSize: '14px', color: '#ccc' }}>
                 <p><strong>Latitude:</strong> {isFiniteNumber(geoValues.lat) ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</p>
                 <p><strong>Longitude:</strong> {isFiniteNumber(geoValues.lon) ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</p>
-                <p><strong>Phase:</strong> {isFiniteNumber(geoValues.phase) ? `${geoValues.phase.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}°` : 'N/A'}</p>
                 <p><strong>Incidence:</strong> {isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
                 <p><strong>Emis:</strong> {isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
                 {Number.isFinite(geoValues.materialClass) && (
@@ -169,6 +170,7 @@ const GeoValuesDisplay = memo(({
   if (prevProps.plotMultiple !== nextProps.plotMultiple) return false;
   if (prevProps.loadingGeo !== nextProps.loadingGeo) return false;
   if (prevProps.showPointCoordinates !== nextProps.showPointCoordinates) return false;
+  if (prevProps.currentPhaseAngle !== nextProps.currentPhaseAngle) return false;
   if (prevProps.onClearAllPoints !== nextProps.onClearAllPoints) return false;
   if (prevProps.onRemovePoint !== nextProps.onRemovePoint) return false;
 
@@ -290,7 +292,7 @@ function App() {
     showAtmosphere: true,
   });
 
-  const [spectralResolutionIndex, setSpectralResolutionIndex] = useState(1);
+  const [spectralResolutionIndex, setSpectralResolutionIndex] = useState(3);
   const spectralResolution = SPECTRAL_RESOLUTION_LEVELS[spectralResolutionIndex];
 
   const [materialAlbedoMap, setMaterialAlbedoMap] = useState(null);
@@ -941,7 +943,7 @@ function App() {
           fetchMultipleGeoValues(newPositions);
           return newPositions;
         }
-        // Max 6 positions reached
+        // Max 5 positions reached
         return prev;
       });
     } else {
@@ -1019,8 +1021,7 @@ function App() {
     // surface point contributes to the spectral plot (matching 2D multi-point behavior).
     if (
       selectionMode === 'plotMultiplePoints' ||
-      selectionMode === 'multipleVectorSelection' ||
-      selectionMode === 'vectorSelection'
+      selectionMode === 'multipleVectorSelection'
     ) {
       setMultiplePositions(prev => {
         const findByLocalOrPixel = (pos) => {
@@ -1058,6 +1059,8 @@ function App() {
           } else {
             fetchMultipleGeoValues(newPositions, phaseAngle);
           }
+          setClickedPosition(null);
+          setToggles(prevToggles => ({ ...prevToggles, plotMultiple: true }));
           return newPositions;
         }
 
@@ -1091,10 +1094,10 @@ function App() {
           [newArrayIndex]: { standard: true, no_ch4: false, no_haze: false }
         }));
         fetchMultipleGeoValues(newPositions, phaseAngle);
+        setClickedPosition(null);
+        setToggles(prevToggles => ({ ...prevToggles, plotMultiple: true }));
         return newPositions;
       });
-      setClickedPosition(null);
-      setToggles(prev => ({ ...prev, plotMultiple: true }));
       return;
     }
 
@@ -2017,6 +2020,7 @@ function App() {
                             geoValues={geoValues}
                             plotMultiple={toggles.plotMultiple}
                             loadingGeo={loadingGeo}
+                            currentPhaseAngle={sliders.phaseAngle * 5}
                             showPointCoordinates={irDisplayMode !== '3d'}
                             onClearAllPoints={handleClearAllSelectedPoints}
                             onRemovePoint={handleRemoveSelectedPoint}
@@ -2678,6 +2682,7 @@ function App() {
                                 transmissionToggles={transmissionToggles}
                                 spectralUnits={toggles.spectralUnits}
                                 spectralResolution={spectralResolution}
+                                selectedPhaseAngle={sliders.phaseAngle * 5}
                                 albedo={FIXED_ALBEDO}
                                 spectralLoading={loadingSpectral}
                               />
