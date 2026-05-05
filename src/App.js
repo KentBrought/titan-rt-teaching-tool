@@ -2608,25 +2608,15 @@ function App() {
 
                   <div className="spectral-row">
                     <div className="spectral-plot" style={{ position: 'relative' }}>
-                      <h2 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '12px' }}>
+                      <h2>
                         <Tooltip variant="green" content={
                           <>
                             <strong>Spectral Plot</strong>
-                            Curves come from the classic Tomasko GUI spectral library (Doose haze, VIMS windows, Lambertian
-                            ground albedos in the dataset). See the linked readme for how those runs were produced.
-                            Click the IR image to select a location; the map can pick among the albedo cases in that library.
+                            Click the IR image to select a location; modeled reflectance uses the loaded spectral library and your selected viewing geometry.
                           </>
                         }>
                           Spectral Plot
                         </Tooltip>
-                        <a
-                          href={`${process.env.PUBLIC_URL || ''}/assets/dt/tomasko_1.0/readme.txt`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: '14px', fontWeight: 'normal', color: '#66ccff' }}
-                        >
-                          Classic Titan spectra (readme)
-                        </a>
                       </h2>
                       {loading ? (
                         <div style={{
