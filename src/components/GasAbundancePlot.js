@@ -3,22 +3,16 @@ import Plot from 'react-plotly.js';
 
 const ATMOSPHERE_URL = '/data/atmosphere_vertical_profiles.json';
 const HASI_URL = '/data/hasi_atmosphere_profile.json';
-const RT_HAZE_URL = '/data/rt_model_haze_tau.json';
 const GAS_URL = '/data/gas_profiles.json';
+const INIT_MODEL_URL = '/data/init_gui_model.json';
 
-const HAZE_CHANNELS = ['3', '68', '255'];
+const HAZE_CHANNELS = [3, 68, 255];
 const HAZE_TRACE_COLORS = ['#81c784', '#aed581', '#dce775'];
 
-/** True when RT JSON has τ_haze arrays for the scenario, aligned to layer centers. */
-function canRenderHazePlot(data, scenarioKey) {
-  if (!data?.layer_center_km?.length) return false;
-  const block = data.models?.[scenarioKey];
-  if (!block?.tau_haze) return false;
-  const n = data.layer_center_km.length;
-  return HAZE_CHANNELS.every((ch) => {
-    const arr = block.tau_haze[ch];
-    return Array.isArray(arr) && arr.length === n;
-  });
+function canRenderFallbackHaze(atmData) {
+  if (!atmData?.altitude_km?.length) return false;
+  if (!atmData?.haze_relative?.length) return false;
+  return atmData.altitude_km.length === atmData.haze_relative.length;
 }
 
 const plotConfig = {
@@ -34,7 +28,6 @@ const baseLayout = {
   hovermode: 'closest'
 };
 
-/** Horizontal lines at model layer interfaces (altitude = y) */
 function layerBoundaryShapes(boundariesKm, xAxisId = 'x') {
   if (!boundariesKm?.length) return [];
   return boundariesKm.map((b) => ({
@@ -50,24 +43,20 @@ function layerBoundaryShapes(boundariesKm, xAxisId = 'x') {
   }));
 }
 
-/**
- * Gas abundances + vertical profiles (T, P, haze) vs altitude.
- * Dropdown in App selects `profile` (gases | temperature_pressure | haze). HASI T+P share one dual-axis plot.
- * Haze uses RT model export rt_model_haze_tau.json (layers.tau.haze); `hazeScenarioKey` matches App haze folder id.
- */
 const GasAbundancePlot = ({
   methaneAbundance = 50,
   profile = 'gases',
-  hazeScenarioKey = 'tomasko_1.0'
+  hazeScenarioKey = 'tomasko_1.0',
+  hazeScale = 1
 }) => {
   const [gasData, setGasData] = useState(null);
   const [atmData, setAtmData] = useState(null);
   const [hasiData, setHasiData] = useState(null);
-  const [rtHazeData, setRtHazeData] = useState(null);
+  const [initModelData, setInitModelData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gasError, setGasError] = useState(false);
   const [hasiError, setHasiError] = useState(false);
-  const [rtHazeError, setRtHazeError] = useState(false);
+  const [modelError, setModelError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,13 +64,13 @@ const GasAbundancePlot = ({
       setLoading(true);
       setGasError(false);
       setHasiError(false);
-      setRtHazeError(false);
+      setModelError(false);
       try {
-        const [gasRes, atmRes, hasiRes, rtHazeRes] = await Promise.all([
+        const [gasRes, atmRes, hasiRes, modelRes] = await Promise.all([
           fetch(GAS_URL),
           fetch(ATMOSPHERE_URL),
           fetch(HASI_URL),
-          fetch(RT_HAZE_URL)
+          fetch(INIT_MODEL_URL)
         ]);
         if (!cancelled) {
           if (gasRes.ok) setGasData(await gasRes.json());
@@ -89,14 +78,22 @@ const GasAbundancePlot = ({
           if (atmRes.ok) setAtmData(await atmRes.json());
           if (hasiRes.ok) setHasiData(await hasiRes.json());
           else setHasiError(true);
-          if (rtHazeRes.ok) setRtHazeData(await rtHazeRes.json());
-          else setRtHazeError(true);
+          if (modelRes.ok) {
+            const modelText = await modelRes.text();
+            try {
+              setInitModelData(JSON.parse(modelText));
+            } catch {
+              setInitModelData(JSON.parse(modelText.replace(/\bNaN\b/g, 'null')));
+            }
+          } else {
+            setModelError(true);
+          }
         }
       } catch {
         if (!cancelled) {
           setGasError(true);
           setHasiError(true);
-          setRtHazeError(true);
+          setModelError(true);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -114,14 +111,14 @@ const GasAbundancePlot = ({
     if (profile === 'temperature_pressure' && hasiData?.altitude_km?.length) {
       return Math.max(...hasiData.altitude_km);
     }
-    if (profile === 'haze' && rtHazeData?.layer_center_km?.length) {
-      return Math.max(...rtHazeData.layer_center_km);
+    if (profile === 'haze' && initModelData?.layers?.z?.length) {
+      return Math.max(...initModelData.layers.z);
     }
     if (atmData?.altitude_km) {
       return Math.max(...atmData.altitude_km);
     }
     return 50;
-  }, [profile, gasData, atmData, hasiData, rtHazeData]);
+  }, [profile, gasData, atmData, hasiData, initModelData]);
 
   const yAxisDtick = maxAltitude > 120 ? 100 : 10;
 
@@ -217,14 +214,19 @@ const GasAbundancePlot = ({
     const altHasi = hasiData?.altitude_km;
     const commonYHasi =
       altHasi?.length > 0
-        ? {
-            title: { text: 'Altitude (km)', font: { size: 11, color: '#ccc' }, standoff: 5 },
-            showgrid: true,
-            gridcolor: 'rgba(255,255,255,0.1)',
-            tickfont: { size: 9, color: '#999' },
-            range: [0, Math.max(...altHasi, 50)],
-            dtick: yAxisDtick
-          }
+        ? (() => {
+            const altMin = Math.min(...altHasi);
+            const altMax = Math.max(...altHasi);
+            const tpDtick = altMax > 120 ? 100 : 10;
+            return {
+              title: { text: 'Altitude (km)', font: { size: 11, color: '#ccc' }, standoff: 5 },
+              showgrid: true,
+              gridcolor: 'rgba(255,255,255,0.1)',
+              tickfont: { size: 9, color: '#999' },
+              range: [altMin, altMax],
+              dtick: tpDtick
+            };
+          })()
         : null;
 
     if (profile === 'temperature_pressure' && hasiData && altHasi?.length) {
@@ -301,52 +303,49 @@ const GasAbundancePlot = ({
       };
     }
 
-    if (profile === 'haze' && canRenderHazePlot(rtHazeData, hazeScenarioKey)) {
-      const layerY = rtHazeData.layer_center_km;
-      const hazBound = rtHazeData.layer_boundaries_km || [];
-      const hzShapes = layerBoundaryShapes(hazBound);
-      const block = rtHazeData.models[hazeScenarioKey];
-      const wlMap = rtHazeData.channel_index_to_um_approx || {};
-
-      const traces = HAZE_CHANNELS.map((ch, i) => {
-        const tauArr = block.tau_haze[ch];
-        if (!tauArr?.length) return null;
-        const um = wlMap[ch];
-        const wlLabel = um != null ? `${Number(um).toFixed(2)} µm` : `ch ${ch}`;
+    if (profile === 'haze' && initModelData?.layers?.tau?.haze?.length && initModelData?.layers?.z?.length) {
+      const rawY = initModelData.layers.z;
+      const hazeTau = initModelData.layers.tau.haze;
+      const reversedY = [...rawY].reverse();
+      const traces = HAZE_CHANNELS.map((channelIndex, i) => {
+        const rawX = hazeTau.map((layer) => (Array.isArray(layer) ? layer[channelIndex] : null));
+        const reversedX = [...rawX].reverse().map((v) => (Number.isFinite(v) ? v * hazeScale : null));
+        const hasFinite = reversedX.some((v) => Number.isFinite(v));
+        if (!hasFinite) return null;
+        const labelMap = { 3: '0.93 µm', 68: '2.00 µm', 255: '5.12 µm' };
         return {
-          x: tauArr,
-          y: layerY,
+          x: reversedX,
+          y: reversedY,
           type: 'scatter',
           mode: 'lines+markers',
-          name: `τ (${wlLabel})`,
+          name: `τ (${labelMap[channelIndex] || `ch ${channelIndex}`})`,
           line: { color: HAZE_TRACE_COLORS[i] || '#aed581', width: 2 },
-          marker: { size: 5, color: HAZE_TRACE_COLORS[i] || '#aed581' },
-          hovertemplate: `τ %{x:.4f}<br>%{y:.1f} km (${wlLabel})<extra></extra>`
+          marker: { size: 4, color: HAZE_TRACE_COLORS[i] || '#aed581' },
+          hovertemplate: `τ %{x:.4f}<br>%{y:.1f} km<extra></extra>`
         };
       }).filter(Boolean);
-
       if (!traces.length) return null;
-
-      const yMax = Math.max(...layerY, 50);
+      const y = reversedY;
+      const yMin = Math.min(...y);
+      const yMax = Math.max(...y);
+      const hazeDtick = yMax > 120 ? 100 : 10;
       return {
         traces,
         layout: {
           ...baseLayout,
-          shapes: hzShapes,
           xaxis: {
-            title: { text: 'Haze optical depth τ (model layers.tau.haze)', font: { size: 10, color: '#ccc' } },
+            title: { text: 'Haze optical depth τ (model)', font: { size: 10, color: '#ccc' } },
             showgrid: true,
             gridcolor: 'rgba(255,255,255,0.1)',
-            tickfont: { size: 9, color: '#999' },
-            exponentformat: 'e'
+            tickfont: { size: 9, color: '#999' }
           },
           yaxis: {
             title: { text: 'Altitude (km)', font: { size: 11, color: '#ccc' }, standoff: 5 },
             showgrid: true,
             gridcolor: 'rgba(255,255,255,0.1)',
             tickfont: { size: 9, color: '#999' },
-            range: [0, yMax],
-            dtick: 10
+            range: [yMin, yMax],
+            dtick: hazeDtick
           },
           showlegend: true,
           legend: {
@@ -361,7 +360,7 @@ const GasAbundancePlot = ({
           },
           annotations: [
             {
-              text: `RT model haze (scenario: ${hazeScenarioKey}); dotted lines: layer interfaces`,
+              text: `Model haze τ by channel (${hazeScenarioKey}, scale ${hazeScale})`,
               xref: 'paper',
               yref: 'paper',
               x: 0,
@@ -377,7 +376,7 @@ const GasAbundancePlot = ({
     }
 
     return null;
-  }, [atmData, profile, hasiData, yAxisDtick, rtHazeData, hazeScenarioKey]);
+  }, [atmData, profile, hasiData, hazeScenarioKey, initModelData, hazeScale]);
 
   if (loading) {
     return (
@@ -450,29 +449,7 @@ const GasAbundancePlot = ({
     );
   }
 
-  if (profile === 'haze' && (rtHazeError || !rtHazeData)) {
-    return (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#ff6b6b',
-          fontSize: '11px',
-          textAlign: 'center',
-          padding: '10px'
-        }}
-      >
-        Could not load model haze data ({RT_HAZE_URL})
-      </div>
-    );
-  }
-
-  if (profile === 'haze' && rtHazeData && !canRenderHazePlot(rtHazeData, hazeScenarioKey)) {
-    const keys = rtHazeData.models ? Object.keys(rtHazeData.models) : [];
-    const keysNote = keys.length ? ` Scenarios in file: ${keys.join(', ')}.` : '';
+  if (profile === 'haze' && modelError && !initModelData) {
     return (
       <div
         style={{
@@ -488,11 +465,7 @@ const GasAbundancePlot = ({
           lineHeight: 1.45
         }}
       >
-        Haze profile uses model data only. Add <code style={{ color: '#bbb' }}>layers.tau.haze</code> for
-        scenario <strong style={{ color: '#ccc' }}>{hazeScenarioKey}</strong> to{' '}
-        <code style={{ color: '#bbb' }}>{RT_HAZE_URL}</code>
-        (see <code style={{ color: '#bbb' }}>scripts/build_rt_model_haze_tau_json.py</code>).
-        {keysNote}
+        Could not load haze profile data from the atmospheric model ({INIT_MODEL_URL}).
       </div>
     );
   }

@@ -366,14 +366,7 @@ function App() {
   const [showVectorsThroughTitan3d, setShowVectorsThroughTitan3d] = useState(true);
   const previousIrDisplayModeRef = useRef('2d');
   const [tutorialMode, setTutorialMode] = useState(null);
-  /** Left-panel vertical profile: gases vs T/P/haze (dropdown next to plot title) */
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
-
-  useEffect(() => {
-    if (verticalProfileView === 'haze') {
-      setVerticalProfileView('gases');
-    }
-  }, [verticalProfileView]);
 
   const handleSliderChange = (name, value) => {
     const numericValue = parseFloat(value);
@@ -1297,6 +1290,7 @@ function App() {
     else setIrGridEnabled2d(enabled);
   };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
+  const hazeProfileScenarioKey = hazePropertiesModel === 'tomasko' ? 'tomasko_1.0' : hazeFolderName;
   const methaneImageSetting = sliders.methaneAbundance >= 50 ? 1 : 0;
   const imageFolderName = hazePropertiesModel === 'doose'
     ? `${hazeFolderName}_meth${methaneImageSetting}`
@@ -1836,11 +1830,18 @@ function App() {
                                 CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
                                 The CH₄ profile uses a fixed abundance scale; the separate Methane control picks the <code>meth</code> suffix for Doose IR image folders.
                               </>
-                            ) : (
+                            ) : verticalProfileView === 'temperature_pressure' ? (
                               <>
                                 <strong>Temperature and pressure</strong>
                                 HASI L4 in situ temperature and pressure vs altitude on dual horizontal axes (linear K
                                 below, log Pa above). Dotted lines mark radiative-transfer model layer interfaces.
+                              </>
+                            ) : (
+                              <>
+                                <strong>Haze profile</strong>
+                                Haze optical depth τ from the radiative-transfer model (<code>layers.tau.haze</code>) at
+                                three wavelength bins (~0.93, ~2.0, ~5.1 µm), for the Doose / Tomasko haze scenario and
+                                haze abundance selected in the main panel — same configuration as the spectra and IR images.
                               </>
                             )
                           }>
@@ -1853,6 +1854,7 @@ function App() {
                             >
                               <option value="gases">Gas abundances</option>
                               <option value="temperature_pressure">Temperature &amp; pressure</option>
+                              <option value="haze">Haze profile</option>
                             </select>
                           </Tooltip>
                         </div>
@@ -1861,7 +1863,8 @@ function App() {
                         <GasAbundancePlot
                           methaneAbundance={100}
                           profile={verticalProfileView}
-                          hazeScenarioKey={hazeFolderName}
+                          hazeScenarioKey={hazeProfileScenarioKey}
+                          hazeScale={hazeAbundanceSetting}
                         />
                       </div>
                     </div>
