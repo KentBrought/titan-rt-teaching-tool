@@ -13,6 +13,11 @@ import Tooltip from './components/Tooltip';
 import SphereView from './components/SphereView';
 import { loadJsonFile, clearDataCache } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
+import {
+  getMonoBandImageObjectUrl,
+  COLOR_CUBE_BAND_CENTERS_UM,
+  COLOR_CUBE_NUM_BANDS,
+} from './utils/colorCubeLoader';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
 import {
@@ -346,11 +351,12 @@ function App() {
   const phaseGeoFetchTimerRef = useRef(null);
   const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
+  const [monoBandIndex, setMonoBandIndex] = useState(0); // 0 .. COLOR_CUBE_NUM_BANDS-1 for grayscale cube slice
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   useEffect(() => {
     setHazePropertiesModel((m) => (m === 'tomasko' ? 'doose' : m));
   }, []);
-  const [imageType, setImageType] = useState('irColor'); // 'irColor', 'incidence', 'emission', 'phase'
+  const [imageType, setImageType] = useState('irColor'); // 'irColor', 'monoBand', 'incidence', 'emission', 'phase'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('plotPoint'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [cameraPreset3d, setCameraPreset3d] = useState('cassini'); // '' | 'cassini' | 'sun'
@@ -752,6 +758,8 @@ function App() {
   const lastHoverPixelRef = useRef({ x: null, y: null });
   // Debounce timer ref for image loading
   const imageLoadTimerRef = useRef(null);
+  const imageLoadRequestIdRef = useRef(0);
+  const monoBlobUrlRef = useRef(null);
 
   // Preload geo cube data when phase angle changes
   useEffect(() => {
@@ -1330,29 +1338,58 @@ function App() {
   }, [processedSpectralData, geoValues, toggles.plotMultiple]);
   // Load image when relevant parameters change (with debouncing for smoother slider interaction)
   useEffect(() => {
-    // Clear any existing timer
     if (imageLoadTimerRef.current) {
       clearTimeout(imageLoadTimerRef.current);
     }
 
-    // Set loading state immediately when phase angle changes
     setLoadingImage(true);
+    const loadId = ++imageLoadRequestIdRef.current;
 
-    // Debounce image loading to avoid excessive requests during slider dragging
+    const revokeMonoBlob = () => {
+      if (monoBlobUrlRef.current) {
+        URL.revokeObjectURL(monoBlobUrlRef.current);
+        monoBlobUrlRef.current = null;
+      }
+    };
+
+    const stale = () => loadId !== imageLoadRequestIdRef.current;
+
     imageLoadTimerRef.current = setTimeout(async () => {
       try {
-        const phaseAngle = sliders.phaseAngle * 5; // Convert slider value to degrees
-        // Determine which image type to load
+        const phaseAngle = sliders.phaseAngle * 5;
+
+        if (imageType === 'monoBand') {
+          const blobUrl = await getMonoBandImageObjectUrl(
+            phaseAngle,
+            monoBandIndex,
+            FIXED_ALBEDO
+          );
+          if (stale()) {
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+            return;
+          }
+          if (!blobUrl) {
+            setCurrentImage(null);
+            return;
+          }
+          revokeMonoBlob();
+          monoBlobUrlRef.current = blobUrl;
+          setCurrentImage(blobUrl);
+          return;
+        }
+
+        revokeMonoBlob();
+
         let imageTypeToLoad;
         if (imageType === 'irColor') {
           imageTypeToLoad = compositeType;
         } else {
-          // For incidence, emission, or phase, use the imageType directly
           imageTypeToLoad = imageType;
         }
 
         const requestedAlbedo = FIXED_ALBEDO;
         const result = await loadPds4Image(phaseAngle, imageTypeToLoad, imageFolderName, requestedAlbedo);
+        if (stale()) return;
         setCurrentImage(result.url);
 
         preloadAdjacentImages(
@@ -1363,20 +1400,23 @@ function App() {
           result?.actualAlbedo ?? requestedAlbedo
         );
       } catch (error) {
-        console.error('Error loading image:', error);
-        setCurrentImage(null);
+        if (!stale()) {
+          console.error('Error loading image:', error);
+          setCurrentImage(null);
+        }
       } finally {
-        setLoadingImage(false);
+        if (!stale()) {
+          setLoadingImage(false);
+        }
       }
-    }, 120); // Debounce to keep 3D drag responsive while phase-linked assets update
+    }, 120);
 
-    // Cleanup function
     return () => {
       if (imageLoadTimerRef.current) {
         clearTimeout(imageLoadTimerRef.current);
       }
     };
-  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType]);
+  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex]);
 
   // Update geo values when phase angle changes and there is an active selection.
   // Debounced to avoid lag while dragging phase in 3D edit mode.
@@ -1912,17 +1952,22 @@ function App() {
                               Click on Titan to visualize vectors from your selected surface location to the Sun and spacecraft,
                               plus the local surface normal vector.
                             </>
+                          ) : imageType === 'monoBand' ? (
+                            <>
+                              <strong>Black &amp; white (single wavelength)</strong>
+                              Use the wavelength slider in IR Image Options to change the displayed wavelength. Click the disk to sample geometry and spectra as usual.
+                            </>
                           ) : (
                             <>
-                              <strong>IR Color</strong>
-                              A false-color composite image of Titan created by combining three infrared wavelengths.
-                              This visualization helps identify different surface and atmospheric features based on their spectral signatures.
-                              Click on locations in this image to extract geophysical values (latitude, longitude, viewing angles) and
-                              generate corresponding spectral plots that show how light interacts with Titan's atmosphere at that location.
+                              <strong>Color composite</strong>
+                              A false-color image from three IR wavelengths. Choose either the 5, 2, 1.3 µm or 2, 1.6, 1.3 µm RGB recipe under IR Image Options.
+                              Click on the disk to extract lat/lon, viewing angles, and spectral plots.
                             </>
                           )
                         }>
-                          {irDisplayMode === '3d' ? 'Observing Geometry' : 'IR Color'}
+                          {irDisplayMode === '3d'
+                            ? 'Observing Geometry'
+                            : (imageType === 'monoBand' ? 'Black & white IR' : 'Color IR')}
                         </Tooltip>
                       </h2>
                       {irDisplayMode === '3d' ? (
@@ -1973,7 +2018,7 @@ function App() {
                           <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
                             <ClickableImage
                               src={currentImage}
-                              alt="Titan IR Color Image"
+                              alt={imageType === 'monoBand' ? 'Titan single-wavelength IR image' : 'Titan color IR composite'}
                               onImageClick={handleImageClick}
                               onImageHover={handleImageHover}
                               className="ir-color-image"
@@ -2505,12 +2550,10 @@ function App() {
                           <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
                             <Tooltip content={
                               <>
-                                <strong>Image Type</strong>
-                                Switches between different visualization modes: IR Color (false-color composite),
-                                Incidence (angle between surface normal and sunlight), Emission (angle between surface
-                                normal and observer), and Phase (phase angle map). These different views reveal
-                                different aspects of Titan's surface and atmospheric properties, helping you understand
-                                how viewing geometry affects observations.
+                                <strong>Image Type</strong>{' '}
+                                <strong>Color</strong> shows a false-color composite; pick one of two wavelength triplets below.{' '}
+                                <strong>Black &amp; white</strong> shows one spectral band at a time from the IR cube (wavelength slider).{' '}
+                                Incidence, emission, and phase are geometry maps.
                               </>
                             }>
                               Image Type
@@ -2525,7 +2568,17 @@ function App() {
                                 checked={imageType === 'irColor'}
                                 onChange={(e) => setImageType(e.target.value)}
                               />
-                              <span>IR Color</span>
+                              <span>Color</span>
+                            </label>
+                            <label className="radio-label">
+                              <input
+                                type="radio"
+                                name="imageType"
+                                value="monoBand"
+                                checked={imageType === 'monoBand'}
+                                onChange={(e) => setImageType(e.target.value)}
+                              />
+                              <span>Black &amp; white</span>
                             </label>
                             <label className="radio-label">
                               <input
@@ -2565,13 +2618,12 @@ function App() {
                                 <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
                                   <Tooltip content={
                                     <>
-                                      <strong>Composite Type</strong>
-                                      Selects which three infrared wavelengths are combined for the false-color image.
-                                      "5, 2, 1.3 um" emphasizes deeper atmospheric penetration, while "2, 1.6, 1.3 um"
-                                      is more surface-sensitive.
+                                      <strong>Color composite</strong>
+                                      Two standard RGB recipes: <strong>5, 2, 1.3 µm</strong> (stronger path through haze) and{' '}
+                                      <strong>2, 1.6, 1.3 µm</strong> (more surface detail). These match the PNG filenames in each scenario folder.
                                     </>
                                   }>
-                                    Composite Type
+                                    Color composite (µm)
                                   </Tooltip>
                                 </h3>
                                 <div className="radio-group">
@@ -2583,7 +2635,7 @@ function App() {
                                       checked={compositeType === '5_2_1.3'}
                                       onChange={(e) => setCompositeType(e.target.value)}
                                     />
-                                    <span>5, 2, 1.3 um</span>
+                                    <span>5, 2, 1.3 µm</span>
                                   </label>
                                   <label className="radio-label">
                                     <input
@@ -2593,8 +2645,42 @@ function App() {
                                       checked={compositeType === '2_1.6_1.3'}
                                       onChange={(e) => setCompositeType(e.target.value)}
                                     />
-                                    <span>2, 1.6, 1.3 um</span>
+                                    <span>2, 1.6, 1.3 µm</span>
                                   </label>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          {imageType === 'monoBand' && (
+                            <>
+                              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '15px', marginBottom: '15px' }}></div>
+                              <div style={{ marginTop: '0' }}>
+                                <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
+                                  <Tooltip content={
+                                    <>
+                                      <strong>Wavelength</strong>
+                                      Pick a wavelength to view in grayscale.
+                                    </>
+                                  }>
+                                    Wavelength (black &amp; white)
+                                  </Tooltip>
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={COLOR_CUBE_NUM_BANDS - 1}
+                                    step={1}
+                                    value={monoBandIndex}
+                                    onChange={(e) => setMonoBandIndex(Number(e.target.value))}
+                                    aria-valuetext={`${COLOR_CUBE_BAND_CENTERS_UM[monoBandIndex].toFixed(2)} micrometers`}
+                                  />
+                                  <div style={{ fontSize: '14px', color: '#ccc' }}>
+                                    ≈ {COLOR_CUBE_BAND_CENTERS_UM[monoBandIndex].toFixed(2)} µm
+                                    <span style={{ color: '#888', marginLeft: '8px' }}>
+                                      (band {monoBandIndex + 1} / {COLOR_CUBE_NUM_BANDS})
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </>
