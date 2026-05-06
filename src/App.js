@@ -213,7 +213,7 @@ function SpherePage() {
       <div style={{ marginBottom: '16px' }}>
         <Link to="/" style={{ color: '#66ccff', textDecoration: 'none', fontSize: '14px' }}>&larr; Back to main</Link>
       </div>
-      <h2 style={{ marginBottom: '12px', color: '#e0e0e0' }}>Titan 3D sphere (phase 40&deg;, composite 5, 2, 1.3 µm)</h2>
+      <h2 style={{ marginBottom: '12px', color: '#e0e0e0' }}>Titan 3D sphere (phase 40&deg;, composite 5, 2, 1.3 um)</h2>
       <div style={{ marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center' }}>
         <span style={{ color: '#999', fontSize: '14px' }}>View:</span>
         <button
@@ -316,7 +316,7 @@ function App() {
   const [error, setError] = useState(null);
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
-  const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // For multiple mode: { pointIndex: { standard: bool, no_ch4: bool, no_haze: bool } }
+  const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // { pointIndex: { standard, no_ch4, no_haze } }
   const [currentImage, setCurrentImage] = useState(null);
   const [loadingImage, setLoadingImage] = useState(false);
   const [geoValues, setGeoValues] = useState(null);
@@ -343,7 +343,7 @@ function App() {
   useEffect(() => {
     setHazePropertiesModel((m) => (m === 'tomasko' ? 'doose' : m));
   }, []);
-  const [imageType, setImageType] = useState('irColor'); // 'irColor', 'monoBand', 'incidence', 'emission', 'phase'
+  const [imageType, setImageType] = useState('irColor'); // 'irColor' | 'monoBand'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('plotPoint'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [cameraPreset3d, setCameraPreset3d] = useState('cassini'); // '' | 'cassini' | 'sun'
@@ -359,6 +359,12 @@ function App() {
   const [showVectorsThroughTitan3d, setShowVectorsThroughTitan3d] = useState(true);
   const [tutorialMode, setTutorialMode] = useState(null);
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
+
+  useEffect(() => {
+    if (imageType !== 'irColor' && imageType !== 'monoBand') {
+      setImageType('irColor');
+    }
+  }, [imageType]);
 
   const handleSliderChange = (name, value) => {
     const numericValue = parseFloat(value);
@@ -502,7 +508,7 @@ function App() {
     setSelectedCasesByPoint(prev => ({
       ...prev,
       [pointIndex]: {
-        ...(prev[pointIndex] || { standard: true, no_ch4: false, no_haze: false }),
+        ...(prev[pointIndex] || {}),
         [caseKey]: !(prev[pointIndex]?.[caseKey] ?? false)
       }
     }));
@@ -1131,7 +1137,6 @@ function App() {
       },
       hazePropertiesModel: 'doose',
       selectedCases: { standard: true, no_ch4: true, no_haze: false },
-      transmissionToggles: { ch4: true, haze: false, co: false, c2h6: false, c2h2: false },
       clickPosition: { x: 32, y: 32 },
       plotMultiple: false
     },
@@ -1145,7 +1150,6 @@ function App() {
       },
       hazePropertiesModel: 'doose',
       selectedCases: { standard: true, no_ch4: false, no_haze: true },
-      transmissionToggles: { ch4: false, haze: true, co: false, c2h6: false, c2h2: false },
       clickPosition: { x: 40, y: 25 },
       plotMultiple: false
     },
@@ -1227,8 +1231,6 @@ function App() {
 
     if (preset.plotMultiple && preset.multipleClickPositions) {
       // Multiple mode
-      setTransmissionToggles({ ch4: false, haze: false, co: false, c2h6: false, c2h2: false });
-
       const positions = preset.multipleClickPositions.map((pos, index) => ({
         x: pos.x,
         y: pos.y,
@@ -1617,10 +1619,10 @@ function App() {
     if (!toggles.plotMultiple && !geoValues) {
       // Only reset if we're going from having a point to not having one
       // Don't reset if we never had a point
-      setSelectedCases(prev => {
-        // If we had selections before, keep them but they won't show until a point is selected
-        // Actually, let's reset to default state when no point is selected
-        return { standard: true, no_ch4: false, no_haze: false };
+      setSelectedCases({
+        standard: true,
+        no_ch4: false,
+        no_haze: false
       });
     }
   }, [toggles.plotMultiple, geoValues]);
@@ -1634,7 +1636,11 @@ function App() {
 
       if (wasNull && isNowSet) {
         // Point just selected - auto-select "Methane + Haze"
-        setSelectedCases({ standard: true, no_ch4: false, no_haze: false });
+        setSelectedCases({
+          standard: true,
+          no_ch4: false,
+          no_haze: false
+        });
       }
 
       // Update ref for next comparison
@@ -1839,9 +1845,9 @@ function App() {
                             verticalProfileView === 'gases' ? (
                               <>
                                 <strong>Gas Abundance</strong>
-                                Shows the vertical distribution of atmospheric gases (CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾, HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡, CO, CÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â , CÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡) as a function of altitude.
-                                CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
-                                The CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ profile uses a fixed abundance scale; the separate Methane control picks the <code>meth</code> suffix for Doose IR image folders.
+                                Shows the vertical distribution of atmospheric gases (CH₄, H₂, CO, C₂H₆, C₂H₂) as a function of altitude.
+                                CH₄ (methane) is displayed on a linear scale to show its variability, while trace gases use a logarithmic scale.
+                                The CH₄ profile uses a fixed abundance scale; the separate Methane control picks the <code>meth</code> suffix for Doose IR image folders.
                               </>
                             ) : verticalProfileView === 'temperature_pressure' ? (
                               <>
@@ -1852,9 +1858,9 @@ function App() {
                             ) : (
                               <>
                                 <strong>Haze profile</strong>
-                                Haze optical depth ÃƒÆ’Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ from the radiative-transfer model (<code>layers.tau.haze</code>) at
-                                three wavelength bins (~0.93, ~2.0, ~5.1 µm), for the Doose / Tomasko haze scenario and
-                                haze abundance selected in the main panel ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â same configuration as the spectra and IR images.
+                                Haze optical depth tau from the radiative-transfer model (<code>layers.tau.haze</code>) at
+                                three wavelength bins (~0.93, ~2.0, ~5.1 um), for the Doose / Tomasko haze scenario and
+                                haze abundance selected in the main panel - same configuration as the spectra and IR images.
                               </>
                             )
                           }>
@@ -1933,7 +1939,7 @@ function App() {
                           ) : (
                             <>
                               <strong>Color composite</strong>
-                              A false-color image from three IR wavelengths. Choose either the 5, 2, 1.3 µm or 2, 1.6, 1.3 µm RGB recipe under IR Image Options.
+                              A false-color image from three IR wavelengths. Choose either the 5, 2, 1.3 um or 2, 1.6, 1.3 um RGB recipe under IR Image Options.
                               Click on the disk to extract lat/lon, viewing angles, and spectral plots.
                             </>
                           )
@@ -2054,7 +2060,7 @@ function App() {
                       <div ref={quickStartBoxRef} className="control-box" style={{ height: 'auto', border: '2px solid #66ccff' }}>
                         <select
                           aria-label="Quick Start presets"
-                          title="Quick Start ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â pre-configured presets to explore Titan's atmosphere"
+                          title="Quick Start - pre-configured presets to explore Titan's atmosphere"
                           value={tutorialMode || ''}
                           onChange={(e) => applyTutorialMode(e.target.value ? parseInt(e.target.value) : null)}
                           style={{
@@ -2172,7 +2178,7 @@ function App() {
                             <Tooltip content={
                               <>
                                 <strong>Methane</strong>
-                                Chooses the <code>meth</code> suffix in the Doose image folder name: 0 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ meth0, 1 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ meth1.
+                                Chooses the <code>meth</code> suffix in the Doose image folder name: 0  meth0, 1  meth1.
                                 For some haze levels both map to the same image set; the gas profile plot keeps methane scaling at full.
                               </>
                             }>
@@ -2200,10 +2206,10 @@ function App() {
                             <Tooltip content={
                               <>
                                 <strong>Phase Angle</strong>
-                                The angle between the Sun, Titan's surface, and the observer (0-345Â° in 15Â° steps).
+                                The angle between the Sun, Titan's surface, and the observer (0-180\u00B0 in 15\u00B0 steps).
                                 Phase angle determines the geometry of illumination and viewing, affecting how light
                                 scatters through the atmosphere and reflects off the surface. At low phase angles
-                                (near 0ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÂ°), you see Titan in a "full moon" configuration with maximum brightness.
+                                (near 0\u00B0), you see Titan in a "full moon" configuration with maximum brightness.
                                 Higher phase angles show more atmospheric scattering and surface shadows, revealing
                                 different surface and atmospheric properties.
                               </>
@@ -2218,7 +2224,7 @@ function App() {
                               value={sliders.phaseAngle}
                               onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
                             />
-                            <span>{sliders.phaseAngle * PHASE_STEP_DEG}°</span>
+                            <span>{sliders.phaseAngle * PHASE_STEP_DEG}{"\u00B0"}</span>
                           </label>
 
                           {irDisplayMode === '3d' && (
@@ -2239,7 +2245,7 @@ function App() {
                                 value={sliders.obliquity}
                                 onChange={(e) => handleSliderChange('obliquity', e.target.value)}
                               />
-                              <span>{sliders.obliquity}°</span>
+                              <span>{sliders.obliquity}{"\u00B0"}</span>
                             </label>
                           )}
 
@@ -2524,8 +2530,7 @@ function App() {
                               <>
                                 <strong>Image Type</strong>{' '}
                                 <strong>Color</strong> shows a false-color composite; pick one of two wavelength triplets below.{' '}
-                                <strong>Black &amp; white</strong> shows one spectral band at a time from the IR cube (wavelength slider).{' '}
-                                Incidence, emission, and phase are geometry maps.
+                                <strong>Black &amp; white</strong> shows one spectral band at a time from the IR cube (wavelength slider).
                               </>
                             }>
                               Image Type
@@ -2552,36 +2557,6 @@ function App() {
                               />
                               <span>Black &amp; white</span>
                             </label>
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="imageType"
-                                value="incidence"
-                                checked={imageType === 'incidence'}
-                                onChange={(e) => setImageType(e.target.value)}
-                              />
-                              <span>Incidence</span>
-                            </label>
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="imageType"
-                                value="emission"
-                                checked={imageType === 'emission'}
-                                onChange={(e) => setImageType(e.target.value)}
-                              />
-                              <span>Emission</span>
-                            </label>
-                            <label className="radio-label">
-                              <input
-                                type="radio"
-                                name="imageType"
-                                value="phase"
-                                checked={imageType === 'phase'}
-                                onChange={(e) => setImageType(e.target.value)}
-                              />
-                              <span>Phase</span>
-                            </label>
                           </div>
                           {imageType === 'irColor' && (
                             <>
@@ -2591,11 +2566,11 @@ function App() {
                                   <Tooltip content={
                                     <>
                                       <strong>Color composite</strong>
-                                    Two standard RGB recipes: <strong>5, 2, 1.3 µm</strong> (stronger path through haze) and{' '}
-                                    <strong>2, 1.6, 1.3 µm</strong> (more surface detail). These match the PNG filenames in each scenario folder.
+                                    Two standard RGB recipes: <strong>5, 2, 1.3 um</strong> (stronger path through haze) and{' '}
+                                    <strong>2, 1.6, 1.3 um</strong> (more surface detail). These match the PNG filenames in each scenario folder.
                                     </>
                                   }>
-                                    Color composite (µm)
+                                    Color composite (um)
                                   </Tooltip>
                                 </h3>
                                 <div className="radio-group">
@@ -2607,7 +2582,7 @@ function App() {
                                       checked={compositeType === '5_2_1.3'}
                                       onChange={(e) => setCompositeType(e.target.value)}
                                     />
-                                    <span>5, 2, 1.3 µm</span>
+                                    <span>5, 2, 1.3 um</span>
                                   </label>
                                   <label className="radio-label">
                                     <input
@@ -2617,7 +2592,7 @@ function App() {
                                       checked={compositeType === '2_1.6_1.3'}
                                       onChange={(e) => setCompositeType(e.target.value)}
                                     />
-                                    <span>2, 1.6, 1.3 µm</span>
+                                    <span>2, 1.6, 1.3 um</span>
                                   </label>
                                 </div>
                               </div>
@@ -2648,7 +2623,7 @@ function App() {
                                     aria-valuetext={`${COLOR_CUBE_BAND_CENTERS_UM[monoBandIndex].toFixed(2)} micrometers`}
                                   />
                                   <div style={{ fontSize: '14px', color: '#ccc' }}>
-                                    ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Â°Ãƒâ€¹Ã¢â‚¬Â  {COLOR_CUBE_BAND_CENTERS_UM[monoBandIndex].toFixed(2)} ÃƒÆ’Ã¢â‚¬Å¡Ã‚Âµm
+                                     {COLOR_CUBE_BAND_CENTERS_UM[monoBandIndex].toFixed(2)} um
                                     <span style={{ color: '#888', marginLeft: '8px' }}>
                                       (band {monoBandIndex + 1} / {COLOR_CUBE_NUM_BANDS})
                                     </span>
@@ -2684,7 +2659,7 @@ function App() {
                           borderRadius: '8px',
                           margin: '10px'
                         }}>
-                          <div style={{ fontSize: '18px', marginBottom: '10px' }}>ÃƒÆ’Â°Ãƒâ€¦Ã‚Â¸ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾</div>
+                          <div style={{ fontSize: '18px', marginBottom: '10px' }}>Loading</div>
                           <p>Loading spectral data...</p>
                         </div>
                       ) : error ? (
@@ -2696,7 +2671,7 @@ function App() {
                           margin: '10px',
                           border: '1px solid #f5c6cb'
                         }}>
-                          <div style={{ fontSize: '24px', marginBottom: '15px' }}>ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã‚Â¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â</div>
+                          <div style={{ fontSize: '24px', marginBottom: '15px' }}>Error</div>
                           <h3 style={{ color: '#721c24', marginBottom: '10px' }}>Memory Error</h3>
                           <p style={{ color: '#721c24', marginBottom: '15px' }}>{error}</p>
                           <p style={{ color: '#856404', fontSize: '14px' }}>
@@ -2866,7 +2841,7 @@ function App() {
                                 <strong>Transmission</strong>
                                 Overlays gas transmission curves on the spectral plot, showing how much light passes
                                 through the atmosphere at each wavelength for different atmospheric constituents
-                                (CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾, CO, CÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â , CÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡, Haze). These curves help identify which gases are responsible
+                                (CH₄, CO, C₂H₆, C₂H₂, Haze). These curves help identify which gases are responsible
                                 for specific absorption features in the reflectance spectrum. Transmission values
                                 near 1.0 indicate little absorption, while lower values show strong absorption bands.
                               </>
@@ -2877,11 +2852,11 @@ function App() {
                           <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                             {Object.entries(transmissionToggles).map(([key, value]) => {
                               const labelMap = {
-                                ch4: 'CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾',
+                                ch4: 'CH₄',
                                 haze: 'Haze',
                                 co: 'CO',
-                                c2h6: 'CÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ',
-                                c2h2: 'CÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡HÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡',
+                                c2h6: 'C₂H₆',
+                                c2h2: 'C₂H₂',
                               };
                               const label = labelMap[key] || key.toUpperCase();
                               return (
@@ -2910,8 +2885,8 @@ function App() {
                                 <>
                                   <strong>Atmospheric Components</strong>
                                   Configures which atmospheric constituents are included in the radiative transfer calculation
-                                  for each selected point. Options include: "CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ + Haze" (standard case with both methane and
-                                  haze), "No CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾" (removes methane absorption), and "No haze" (removes haze scattering).
+                                  for each selected point. Options include: "CH₄ + Haze" (standard case with both methane and
+                                  haze), "No CH₄" (removes methane absorption), and "No haze" (removes haze scattering).
                                   Comparing these cases helps you understand the relative contributions of different atmospheric
                                   components to the observed spectral signature.
                                 </>
@@ -2938,7 +2913,7 @@ function App() {
                                     const i = incidence != null ? incidence.toFixed(0) : '?';
                                     const e = emission != null ? emission.toFixed(0) : '?';
                                     const p = phase != null ? phase.toFixed(0) : '?';
-                                    return `i:${i}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÂ° e:${e}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÂ° p:${p}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÂ°`;
+                                    return `i:${i}\u00B0 e:${e}\u00B0 p:${p}\u00B0`;
                                   };
                                   const angleStr = geoValue ? formatAngles(geoValue.incidence, geoValue.emis, geoValue.phase) : '';
 
@@ -2950,8 +2925,8 @@ function App() {
                                       <div className="case-toggle-options">
                                         {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                                           const labelMap = {
-                                            standard: 'CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ + Haze',
-                                            no_ch4: 'No CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾',
+                                            standard: 'CH₄ + Haze',
+                                            no_ch4: 'No CH₄',
                                             no_haze: 'No haze'
                                           };
                                           const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
@@ -2975,8 +2950,8 @@ function App() {
                                 <div className="case-toggle-options">
                                   {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                                     const labelMap = {
-                                      standard: 'CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ + Haze',
-                                      no_ch4: 'No CHÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾',
+                                      standard: 'CH₄ + Haze',
+                                      no_ch4: 'No CH₄',
                                       no_haze: 'No haze'
                                     };
                                     const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());
