@@ -367,14 +367,13 @@ const ClickableImage = ({
   };
 
   const latLines = [-60, -30, 0, 30, 60];
-  const lonLabelSteps = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
-  const GRID_ROTATE_LEFT_DEG = 130;
+  const lonLabelSteps = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
   const normalizeLongitudeDeg = (lonDeg) => ((((lonDeg + 180) % 360) + 360) % 360) - 180;
   const phaseWrapped = ((((phaseAngleDeg % 360) + 360) % 360));
-  const lonLines = lonLabelSteps.map((labelDeg) => normalizeLongitudeDeg(labelDeg + GRID_ROTATE_LEFT_DEG));
+  const lonLines = lonLabelSteps.map((labelDeg) => normalizeLongitudeDeg(labelDeg));
   const getProjectedPoint = (latDeg, lonDeg, radius, cx, cy) => {
     const lat = (latDeg * Math.PI) / 180;
-    const lonShifted = normalizeLongitudeDeg(lonDeg + 180 - phaseWrapped - GRID_ROTATE_LEFT_DEG);
+    const lonShifted = normalizeLongitudeDeg(lonDeg + 180 - phaseWrapped);
     const lon = (lonShifted * Math.PI) / 180;
     const visible = (Math.cos(lat) * Math.cos(lon)) >= 0;
     if (!visible) return null;
@@ -460,7 +459,6 @@ const ClickableImage = ({
             pointerEvents: 'none',
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
-            marginTop: '40px',
           }}
         >
           <img
@@ -544,13 +542,14 @@ const ClickableImage = ({
                 const w = imageRef.current.offsetWidth;
                 const h = imageRef.current.offsetHeight;
                 // Slightly larger so the overlay reaches the full dark disk.
-                const r = Math.min(w, h) * 0.38;
+                const r = Math.min(w, h) * 0.40;
                 const cx = w * 0.5;
                 const cy = h * 0.5;
                 return (
                   <>
                     {latLines.map((lat) => {
                       const path = buildLatPath(lat, r, cx, cy);
+                      const latLabelPoint = getProjectedPoint(lat, -90, r, cx, cy);
                       return (
                         <g key={`lat-${lat}`}>
                           {path && (
@@ -562,22 +561,24 @@ const ClickableImage = ({
                               style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 5px rgba(0,0,0,1))' }}
                             />
                           )}
-                          <text
-                            x="6"
-                            y={cy - (r * Math.sin((lat * Math.PI) / 180)) - 4}
-                            fill="#9de7ff"
-                            fontSize="11"
-                            style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}
-                          >
-                            {`${lat}\u00B0`}
-                          </text>
+                          {latLabelPoint && (
+                            <text
+                              x={6}
+                              y={latLabelPoint.y + 4}
+                              fill="#9de7ff"
+                              fontSize="11"
+                              style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}
+                            >
+                              {`${lat}\u00B0`}
+                            </text>
+                          )}
                         </g>
                       );
                     })}
                     {lonLines.map((lon, idx) => {
                       const path = buildLonPath(lon, r, cx, cy);
-                      const topPoint = getProjectedPoint(70, lon, r, cx, cy);
-                      const lonLabel = lonLabelSteps[idx] === -180 ? 180 : lonLabelSteps[idx];
+                      const labelPoint = getProjectedPoint(0, lon, r, cx, cy);
+                      const lonLabel = lonLabelSteps[idx];
                       return (
                         <g key={`lon-${lon}`}>
                           {path && (
@@ -589,10 +590,10 @@ const ClickableImage = ({
                               style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 5px rgba(0,0,0,1))' }}
                             />
                           )}
-                          {topPoint && (
+                          {labelPoint && (
                             <text
-                              x={topPoint.x + 3}
-                              y={topPoint.y - 6}
+                              x={labelPoint.x - 10}
+                              y={labelPoint.y - 6}
                               fill="#9de7ff"
                               fontSize="11"
                               style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}

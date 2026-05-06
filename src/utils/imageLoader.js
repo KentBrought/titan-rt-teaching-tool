@@ -193,13 +193,7 @@ export const loadPds4Image = async (phaseAngle, compositeType = '5_2_1.3', hazeF
     const resolvedPrimary = resolveFolderAndAlbedo(hazeFolder, albedo, compositeType);
     const primaryFolder = resolvedPrimary.folder;
     const primaryAlbedo = resolvedPrimary.albedo;
-
-    const isDoose = typeof hazeFolder === 'string' && hazeFolder.startsWith('doose');
-    const fallbackFolders = isDoose
-      ? [primaryFolder, 'dooseA0.1_haze1', 'dooseA0.2_haze1', 'dooseA0.2_haze0.52', 'dooseA0.2_haze2', 'tomasko_1.0']
-      : [hazeFolder, 'tomasko_1.0', 'dooseA0.1_haze1', 'dooseA0.2_haze1'];
-
-    const foldersToTry = [...new Set(fallbackFolders.filter(Boolean))];
+    const foldersToTry = [primaryFolder].filter(Boolean);
 
     for (const folder of foldersToTry) {
       const albedosToTry = getFolderAlbedoOrder(folder, albedo);
@@ -261,9 +255,9 @@ export const preloadAdjacentImages = async (currentPhaseAngle, compositeType, ha
  * @returns {number[]} Array of available phase angles in degrees
  */
 export const getAvailablePhaseAngles = () => {
-  // Phase angles go from 0 to 355 in 5-degree increments
+  // Phase angles go from 0 to 180 in 15-degree increments
   const angles = [];
-  for (let i = 0; i <= 355; i += 5) {
+  for (let i = 0; i <= 180; i += 15) {
     angles.push(i);
   }
   return angles;
