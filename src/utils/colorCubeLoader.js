@@ -1,5 +1,6 @@
 /**
- * Load 8-band VIMS-style spectral cubes (colorCCD.img) for single-band grayscale display.
+ * Load 8-band VIMS-style spectral cubes (colorCCD.img) from `tomasko_1.0`.
+ * The main IR UI grayscale mode uses haze-folder composite PNGs instead (`irCompositeGrayscale.js`).
  * Cubes are float32, shape [Band=8, Line=681, Sample=681], sample index fastest (PDS "Last Index Fastest").
  * Data in-repo: public/assets/dt/tomasko_1.0/2012_A{albedo}_p{phase}_colorCCD.img
  */

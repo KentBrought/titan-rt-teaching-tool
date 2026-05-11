@@ -14,10 +14,10 @@ import SphereView from './components/SphereView';
 import { loadJsonFile, clearDataCache } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import {
-  getMonoBandImageObjectUrl,
   COLOR_CUBE_BAND_CENTERS_UM,
   COLOR_CUBE_NUM_BANDS,
 } from './utils/colorCubeLoader';
+import { compositeImageUrlToGrayscaleObjectURL } from './utils/irCompositeGrayscale';
 import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
 import {
@@ -338,7 +338,7 @@ function App() {
   const phaseGeoFetchTimerRef = useRef(null);
   const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
-  const [monoBandIndex, setMonoBandIndex] = useState(0); // 0 .. COLOR_CUBE_NUM_BANDS-1 for grayscale cube slice
+  const [monoBandIndex, setMonoBandIndex] = useState(0); // 0 .. COLOR_CUBE_NUM_BANDS-1: grayscale mix on haze-folder composite PNG (not colorCCD.img)
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   useEffect(() => {
     setHazePropertiesModel((m) => (m === 'tomasko' ? 'doose' : m));
@@ -1335,39 +1335,28 @@ function App() {
       try {
         const phaseAngle = sliders.phaseAngle * PHASE_STEP_DEG;
 
+        revokeMonoBlob();
+
+        const imageTypeToLoad = imageType === 'irColor' || imageType === 'monoBand' ? compositeType : imageType;
+        const requestedAlbedo = FIXED_ALBEDO;
+        const result = await loadPds4Image(phaseAngle, imageTypeToLoad, imageFolderName, requestedAlbedo);
+        if (stale()) return;
+
         if (imageType === 'monoBand') {
-          const blobUrl = await getMonoBandImageObjectUrl(
-            phaseAngle,
-            monoBandIndex,
-            FIXED_ALBEDO
-          );
+          const blobUrl = await compositeImageUrlToGrayscaleObjectURL(result.url, monoBandIndex);
           if (stale()) {
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             return;
           }
           if (!blobUrl) {
-            setCurrentImage(null);
-            return;
+            setCurrentImage(result.url);
+          } else {
+            monoBlobUrlRef.current = blobUrl;
+            setCurrentImage(blobUrl);
           }
-          revokeMonoBlob();
-          monoBlobUrlRef.current = blobUrl;
-          setCurrentImage(blobUrl);
-          return;
-        }
-
-        revokeMonoBlob();
-
-        let imageTypeToLoad;
-        if (imageType === 'irColor') {
-          imageTypeToLoad = compositeType;
         } else {
-          imageTypeToLoad = imageType;
+          setCurrentImage(result.url);
         }
-
-        const requestedAlbedo = FIXED_ALBEDO;
-        const result = await loadPds4Image(phaseAngle, imageTypeToLoad, imageFolderName, requestedAlbedo);
-        if (stale()) return;
-        setCurrentImage(result.url);
 
         preloadAdjacentImages(
           phaseAngle,
@@ -1933,7 +1922,7 @@ function App() {
                             </>
                           ) : imageType === 'monoBand' ? (
                             <>
-                              <strong>Black &amp; white (single wavelength)</strong>
+                              <strong>Black &amp; white (same disk as color IR)</strong>
                               Use the wavelength slider in IR Image Options to change the displayed wavelength. Click the disk to sample geometry and spectra as usual.
                             </>
                           ) : (
@@ -1997,7 +1986,7 @@ function App() {
                           <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
                             <ClickableImage
                               src={currentImage}
-                              alt={imageType === 'monoBand' ? 'Titan single-wavelength IR image' : 'Titan color IR composite'}
+                              alt={imageType === 'monoBand' ? 'Titan grayscale IR from haze-folder composite' : 'Titan color IR composite'}
                               onImageClick={handleImageClick}
                               onImageHover={handleImageHover}
                               className="ir-color-image"
@@ -2530,7 +2519,7 @@ function App() {
                               <>
                                 <strong>Image Type</strong>{' '}
                                 <strong>Color</strong> shows a false-color composite; pick one of two wavelength triplets below.{' '}
-                                <strong>Black &amp; white</strong> shows one spectral band at a time from the IR cube (wavelength slider).
+                                <strong>Black &amp; white</strong> uses the same haze-scenario color composite PNG as color IR, converted to grayscale with the wavelength slider (surface overlay stays aligned).
                               </>
                             }>
                               Image Type
@@ -2605,8 +2594,8 @@ function App() {
                                 <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>
                                   <Tooltip content={
                                     <>
-                                      <strong>Wavelength</strong>
-                                      Pick a wavelength to view in grayscale.
+                                      <strong>Wavelength emphasis</strong>
+                                      Adjusts how the false-color composite is mixed into grayscale (same image geometry as color IR; not a single-band <code>colorCCD.img</code> slice).
                                     </>
                                   }>
                                     Wavelength (black &amp; white)
