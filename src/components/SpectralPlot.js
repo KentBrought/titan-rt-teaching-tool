@@ -565,37 +565,43 @@ const SpectralPlot = ({
     xaxis: {
       title: {
         text: 'Wavelength (μm)',
-        font: { size: 14, color: '#ccc' }
+        font: { size: 14, color: '#ccc' },
+        standoff: 4,
       },
       showgrid: true,
       gridcolor: 'rgba(255,255,255,0.1)',
-      tickfont: { size: 11, color: '#999' }
+      tickfont: { size: 11, color: '#999' },
+      automargin: false,
     },
     yaxis: {
       title: {
         text: spectralUnits ? 'Flux (W/m²/sr/μm)' : 'Apparent Reflectance',
-        font: { size: 14, color: '#ccc' }
+        font: { size: 14, color: '#ccc' },
+        standoff: 6,
       },
       type: 'linear',
       showgrid: true,
       gridcolor: 'rgba(255,255,255,0.1)',
-      tickfont: { size: 11, color: '#999' }
+      tickfont: { size: 11, color: '#999' },
+      automargin: false,
     },
     ...(hasGasTransmission && {
       yaxis2: {
         title: {
           text: 'Transmission',
-          font: { size: 14, color: '#888' }
+          font: { size: 14, color: '#888' },
+          standoff: 4,
         },
         type: 'linear',
         range: [0, 1],
         overlaying: 'y',
         side: 'right',
         showgrid: false,
-        tickfont: { size: 11, color: '#888' }
+        tickfont: { size: 11, color: '#888' },
+        automargin: false,
       }
     }),
-    margin: { l: 60, r: hasGasTransmission ? 60 : 30, t: 60, b: 60 },
+    margin: { l: 56, r: hasGasTransmission ? 56 : 28, t: 48, b: 48 },
     hovermode: 'closest',
     showlegend: true,
     legend: {
@@ -621,7 +627,7 @@ const SpectralPlot = ({
   return (
     <div style={{ padding: 0, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
       {/* Plot */}
-      <div style={{ flex: '1 1 auto', minHeight: '320px', border: '1px solid #444', borderRadius: '8px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
+      <div style={{ flex: '1 1 auto', minHeight: '280px', maxHeight: 'min(520px, 56vh)', border: '1px solid #444', borderRadius: '8px', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden', backgroundColor: '#1a1a1a' }}>
         <Plot
           data={plotData}
           layout={plotLayout}

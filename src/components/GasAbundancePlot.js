@@ -161,8 +161,9 @@ const GasAbundancePlot = ({
 
     const layout = {
       ...baseLayout,
+      margin: { ...baseLayout.margin, b: 26 },
       xaxis: {
-        title: { text: 'Trace Gas Mole Fraction', font: { size: 10, color: '#999' }, standoff: 2 },
+        title: { text: 'Trace Gas Mole Fraction', font: { size: 10, color: '#999' }, standoff: 0 },
         type: 'log',
         showgrid: true,
         gridcolor: 'rgba(255,255,255,0.1)',
@@ -170,7 +171,8 @@ const GasAbundancePlot = ({
         tickformat: '.0e',
         range: [-7, -2],
         side: 'bottom',
-        domain: [0, 1]
+        domain: [0, 1],
+        automargin: false,
       },
       xaxis2: {
         title: { text: 'CH₄ Mole Fraction', font: { size: 10, color: '#00bcd4' }, standoff: 2 },
@@ -181,7 +183,8 @@ const GasAbundancePlot = ({
         range: [0.02, 0.07],
         side: 'top',
         overlaying: 'x',
-        anchor: 'y'
+        anchor: 'y',
+        automargin: false,
       },
       yaxis: {
         title: { text: 'Altitude (km)', font: { size: 11, color: '#ccc' }, standoff: 5 },

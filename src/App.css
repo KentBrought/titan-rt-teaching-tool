@@ -532,11 +532,13 @@ body {
   background-color: #2a2a2a;
   border: 2px solid #4a9d4a;
   border-radius: 8px;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  max-height: 72vh;
   height: 100%;
   overflow: hidden;
   box-sizing: border-box;

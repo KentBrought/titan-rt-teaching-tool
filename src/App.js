@@ -32,6 +32,32 @@ const FIXED_ALBEDO = 0.1;
 const MAX_SELECTED_POINTS = 5;
 const PHASE_STEP_DEG = 15;
 const MAX_PHASE_DEG = 180;
+/** Slider 0° uses `p015` assets; filenames / geo cubes are +15° vs the UI label (teaching alignment). */
+const ASSET_PHASE_OFFSET_DEG = 15;
+const PHASE_SLIDER_MIN = 0;
+const PHASE_SLIDER_MAX = 12;
+
+function displayPhaseDegFromPhaseSlider(sliderIndex) {
+  const s = Math.round(Number(sliderIndex));
+  const clamped = Math.max(PHASE_SLIDER_MIN, Math.min(PHASE_SLIDER_MAX, s));
+  return clamped * PHASE_STEP_DEG;
+}
+
+function assetPhaseDegFromPhaseSlider(sliderIndex) {
+  return Math.min(MAX_PHASE_DEG, displayPhaseDegFromPhaseSlider(sliderIndex) + ASSET_PHASE_OFFSET_DEG);
+}
+
+function displayPhaseDegFromAssetPhaseDeg(assetDeg) {
+  if (!Number.isFinite(assetDeg)) return 0;
+  return Math.max(0, Math.min(MAX_PHASE_DEG, assetDeg - ASSET_PHASE_OFFSET_DEG));
+}
+
+function phaseSliderFromDisplayPhaseDeg(deg) {
+  if (!Number.isFinite(deg)) return PHASE_SLIDER_MIN;
+  const d = Math.max(0, Math.min(MAX_PHASE_DEG, deg));
+  const stepped = Math.round(d / PHASE_STEP_DEG);
+  return Math.max(PHASE_SLIDER_MIN, Math.min(PHASE_SLIDER_MAX, stepped));
+}
 const isFiniteNumber = (value) => Number.isFinite(value);
 const toFiniteOrNull = (value) => (Number.isFinite(value) ? value : null);
 
@@ -368,6 +394,12 @@ function App() {
 
   const handleSliderChange = (name, value) => {
     const numericValue = parseFloat(value);
+    if (name === 'phaseAngle') {
+      const v = Math.round(numericValue);
+      const clamped = Math.max(PHASE_SLIDER_MIN, Math.min(PHASE_SLIDER_MAX, v));
+      setSliders(prev => ({ ...prev, [name]: clamped }));
+      return;
+    }
     setSliders(prev => ({ ...prev, [name]: numericValue }));
   };
 
@@ -405,7 +437,8 @@ function App() {
 
       if (Number.isFinite(geometry.phaseDeg)) {
         const phaseDegNorm = normalize360(geometry.phaseDeg);
-        const phaseSlider = Math.round(clamp(phaseDegNorm, 0, MAX_PHASE_DEG) / PHASE_STEP_DEG);
+        const phaseDegClamped = clamp(phaseDegNorm, 0, MAX_PHASE_DEG);
+        const phaseSlider = phaseSliderFromDisplayPhaseDeg(phaseDegClamped);
         if (next.phaseAngle !== phaseSlider) {
           next.phaseAngle = phaseSlider;
           changed = true;
@@ -522,8 +555,11 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true);
-      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (sliders.phaseAngle * PHASE_STEP_DEG);
-      const values = await extractGeoValues(phaseAngle, x, y);
+      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const displayPhaseDeg = phaseAngleOverride !== null
+        ? displayPhaseDegFromAssetPhaseDeg(phaseAngleOverride)
+        : displayPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const values = await extractGeoValues(assetPhaseDeg, x, y);
 
       if (currentRequestId !== geoValuesRequestIdRef.current) {
         return;
@@ -542,7 +578,7 @@ function App() {
         ...values,
         lat: toFiniteOrNull(values?.lat),
         lon: toFiniteOrNull(values?.lon),
-        phase: toFiniteOrNull(phaseAngle),
+        phase: toFiniteOrNull(displayPhaseDeg),
         incidence: toFiniteOrNull(values?.incidence),
         emis: toFiniteOrNull(values?.emis),
         azimuth: toFiniteOrNull(values?.azimuth),
@@ -583,11 +619,14 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true);
-      const phaseAngle = phaseAngleOverride !== null ? phaseAngleOverride : (sliders.phaseAngle * PHASE_STEP_DEG);
+      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const displayPhaseDeg = phaseAngleOverride !== null
+        ? displayPhaseDegFromAssetPhaseDeg(phaseAngleOverride)
+        : displayPhaseDegFromPhaseSlider(sliders.phaseAngle);
       const colorNames = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
-          const values = await extractGeoValues(phaseAngle, pos.x, pos.y);
+          const values = await extractGeoValues(assetPhaseDeg, pos.x, pos.y);
 
           if (currentRequestId !== geoValuesRequestIdRef.current) {
             return null;
@@ -610,7 +649,7 @@ function App() {
             ...values,
             lat: toFiniteOrNull(values?.lat),
             lon: toFiniteOrNull(values?.lon),
-            phase: toFiniteOrNull(phaseAngle),
+            phase: toFiniteOrNull(displayPhaseDeg),
             incidence: toFiniteOrNull(values?.incidence),
             emis: toFiniteOrNull(values?.emis),
             azimuth: toFiniteOrNull(values?.azimuth),
@@ -754,12 +793,12 @@ function App() {
   // Preload geo cube data when phase angle changes
   useEffect(() => {
     const loadGeoCube = async () => {
-      const phaseAngle = sliders.phaseAngle * PHASE_STEP_DEG;
-      if (currentPhaseAngleRef.current !== phaseAngle) {
+      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      if (currentPhaseAngleRef.current !== assetPhaseDeg) {
         try {
-          const geoData = await getGeoCubeData(phaseAngle);
+          const geoData = await getGeoCubeData(assetPhaseDeg);
           geoCubeDataRef.current = geoData;
-          currentPhaseAngleRef.current = phaseAngle;
+          currentPhaseAngleRef.current = assetPhaseDeg;
         } catch (error) {
           console.error('Error loading geo cube data:', error);
           geoCubeDataRef.current = null;
@@ -788,20 +827,21 @@ function App() {
     const geoData = geoCubeDataRef.current;
     if (!geoData) {
       // If data not loaded yet, fall back to async call
-      const phaseAngle = sliders.phaseAngle * PHASE_STEP_DEG;
-      extractGeoValues(phaseAngle, px, py).then(values => {
+      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      extractGeoValues(assetPhaseDeg, px, py).then(values => {
         setHoverGeoValues(prev => {
+          const merged = { ...values, phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)) };
           if (
             prev &&
-            prev.x === values.x &&
-            prev.y === values.y &&
-            prev.incidence === values.incidence &&
-            prev.emis === values.emis &&
-            prev.phase === values.phase
+            prev.x === merged.x &&
+            prev.y === merged.y &&
+            prev.incidence === merged.incidence &&
+            prev.emis === merged.emis &&
+            prev.phase === merged.phase
           ) {
             return prev;
           }
-          return values;
+          return merged;
         });
       }).catch(error => {
         console.error('Error extracting hover geo values:', error);
@@ -814,14 +854,13 @@ function App() {
     try {
       const lat = getGeoValue(geoData, px, py, 0);
       const lon = getGeoValue(geoData, px, py, 1);
-      const phase = getGeoValue(geoData, px, py, 4);
       const incidence = getGeoValue(geoData, px, py, 5);
       const emis = getGeoValue(geoData, px, py, 6);
 
       const nextHover = {
         lat: toFiniteOrNull(lat),
         lon: toFiniteOrNull(lon),
-        phase: toFiniteOrNull(phase),
+        phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)),
         incidence: toFiniteOrNull(incidence),
         emis: toFiniteOrNull(emis),
         x: px,
@@ -974,7 +1013,7 @@ function App() {
   const handleSpherePlotPoint = useCallback(async (point) => {
     if (!point) return;
     const isRemove = Boolean(point.remove);
-    const phaseAngle = sliders.phaseAngle * PHASE_STEP_DEG;
+    const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
     let targetX = point.x;
     let targetY = point.y;
     const targetLat = toFiniteOrNull(point.lat);
@@ -987,7 +1026,7 @@ function App() {
     // the current phase image projection in 2D.
     if (Number.isFinite(targetLat) && Number.isFinite(targetLon)) {
       try {
-        const nearest = await findNearestGeoPixelByLatLon(targetLat, targetLon, phaseAngle);
+        const nearest = await findNearestGeoPixelByLatLon(targetLat, targetLon, assetPhaseDeg);
         if (nearest) {
           targetX = nearest.x;
           targetY = nearest.y;
@@ -1039,7 +1078,7 @@ function App() {
             setGeoValues(null);
             setSelectedCasesByPoint({});
           } else {
-            fetchMultipleGeoValues(newPositions, phaseAngle);
+            fetchMultipleGeoValues(newPositions, assetPhaseDeg);
           }
           setClickedPosition(null);
           setToggles(prevToggles => ({ ...prevToggles, plotMultiple: true }));
@@ -1075,7 +1114,7 @@ function App() {
           ...prevCases,
           [newArrayIndex]: { standard: true, no_ch4: false, no_haze: false }
         }));
-        fetchMultipleGeoValues(newPositions, phaseAngle);
+        fetchMultipleGeoValues(newPositions, assetPhaseDeg);
         setClickedPosition(null);
         setToggles(prevToggles => ({ ...prevToggles, plotMultiple: true }));
         return newPositions;
@@ -1111,7 +1150,7 @@ function App() {
         is3d: true,
       }
     });
-    await fetchGeoValues(targetX, targetY, phaseAngle);
+    await fetchGeoValues(targetX, targetY, assetPhaseDeg);
   }, [clickedPosition, fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, sliders.phaseAngle]);
 
   const syncedSelectionPointsFor3d = useMemo(() => {
@@ -1146,7 +1185,7 @@ function App() {
       sliders: {
         hazeAbundance: 100,
         methaneAbundance: 100,
-        phaseAngle: 13
+        phaseAngle: 12
       },
       hazePropertiesModel: 'doose',
       selectedCases: { standard: true, no_ch4: false, no_haze: true },
@@ -1333,13 +1372,13 @@ function App() {
 
     imageLoadTimerRef.current = setTimeout(async () => {
       try {
-        const phaseAngle = sliders.phaseAngle * PHASE_STEP_DEG;
+        const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
 
         revokeMonoBlob();
 
         const imageTypeToLoad = imageType === 'irColor' || imageType === 'monoBand' ? compositeType : imageType;
         const requestedAlbedo = FIXED_ALBEDO;
-        const result = await loadPds4Image(phaseAngle, imageTypeToLoad, imageFolderName, requestedAlbedo);
+        const result = await loadPds4Image(assetPhaseDeg, imageTypeToLoad, imageFolderName, requestedAlbedo);
         if (stale()) return;
 
         if (imageType === 'monoBand') {
@@ -1359,7 +1398,7 @@ function App() {
         }
 
         preloadAdjacentImages(
-          phaseAngle,
+          assetPhaseDeg,
           imageTypeToLoad,
           result?.actualFolder || imageFolderName,
           2,
@@ -1411,13 +1450,13 @@ function App() {
 
     let cancelled = false;
     const remapSelectionsFor2dPhase = async () => {
-      const phaseAngle = sliders.phaseAngle * PHASE_STEP_DEG;
+      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
 
       if (toggles.plotMultiple) {
         if (!Array.isArray(multiplePositions) || multiplePositions.length === 0) return;
 
         const mapped = await Promise.all(
-          multiplePositions.map((point) => remapPointToCurrent2dPhase(point, phaseAngle))
+          multiplePositions.map((point) => remapPointToCurrent2dPhase(point, assetPhaseDeg))
         );
         if (cancelled) return;
 
@@ -1436,13 +1475,13 @@ function App() {
 
         if (changed) {
           setMultiplePositions(filtered);
-          fetchMultipleGeoValues(filtered, phaseAngle);
+          fetchMultipleGeoValues(filtered, assetPhaseDeg);
         }
         return;
       }
 
       if (!clickedPosition) return;
-      const mappedPoint = await remapPointToCurrent2dPhase(clickedPosition, phaseAngle);
+      const mappedPoint = await remapPointToCurrent2dPhase(clickedPosition, assetPhaseDeg);
       if (cancelled) return;
 
       if (!mappedPoint) {
@@ -1454,7 +1493,7 @@ function App() {
       const changed = mappedPoint.x !== clickedPosition.x || mappedPoint.y !== clickedPosition.y;
       if (changed) {
         setClickedPosition(mappedPoint);
-        fetchGeoValues(mappedPoint.x, mappedPoint.y, phaseAngle);
+        fetchGeoValues(mappedPoint.x, mappedPoint.y, assetPhaseDeg);
       }
     };
 
@@ -1943,13 +1982,13 @@ function App() {
                           <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <div style={{ width: '100%', height: `${panelMatchHeightPx}px`, borderRadius: '4px', overflow: 'hidden' }}>
                               <SphereView
-                                phaseAngle={sliders.phaseAngle * PHASE_STEP_DEG}
+                                phaseAngle={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
                                 compositeType={compositeType}
                                 viewMode="weightedPhase"
                                 minHeight={0}
                                 incidenceDeg={sliders.incidenceAngle}
                                 emissionDeg={sliders.emissionAngle}
-                                phaseDeg={sliders.phaseAngle * PHASE_STEP_DEG}
+                                phaseDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
                                 titanYawDeg={sliders.titanYaw}
                                 obliquityDeg={sliders.obliquity}
                                 cameraPreset={cameraPreset3d || 'none'}
@@ -1995,7 +2034,7 @@ function App() {
                               multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
-                              phaseAngleDeg={sliders.phaseAngle * PHASE_STEP_DEG}
+                              phaseAngleDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -2036,7 +2075,7 @@ function App() {
                             geoValues={geoValues}
                             plotMultiple={toggles.plotMultiple}
                             loadingGeo={loadingGeo}
-                            currentPhaseAngle={sliders.phaseAngle * PHASE_STEP_DEG}
+                            currentPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
                             onClearAllPoints={handleClearAllSelectedPoints}
                             onRemovePoint={handleRemoveSelectedPoint}
                           />
@@ -2213,7 +2252,7 @@ function App() {
                               value={sliders.phaseAngle}
                               onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
                             />
-                            <span>{sliders.phaseAngle * PHASE_STEP_DEG}{"\u00B0"}</span>
+                            <span>{displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}{"\u00B0"}</span>
                           </label>
 
                           {irDisplayMode === '3d' && (
@@ -2697,7 +2736,7 @@ function App() {
                                 transmissionToggles={transmissionToggles}
                                 spectralUnits={toggles.spectralUnits}
                                 spectralResolution={spectralResolution}
-                                selectedPhaseAngle={sliders.phaseAngle * PHASE_STEP_DEG}
+                                selectedPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
                                 albedo={FIXED_ALBEDO}
                                 spectralLoading={loadingSpectral}
                               />
