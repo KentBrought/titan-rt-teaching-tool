@@ -2057,10 +2057,10 @@ function App() {
                           }}>
                             {hoverGeoValues ? (
                               <>
-                                <strong>Hover Position:</strong> Latitude: <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lat) ? `${hoverGeoValues.lat.toFixed(4)}\u00B0 ${hoverGeoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span>, Longitude: <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lon) ? `${hoverGeoValues.lon.toFixed(4)}\u00B0 ${hoverGeoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span>, Incidence: {isFiniteNumber(hoverGeoValues.incidence) ? `${hoverGeoValues.incidence.toFixed(2)}\u00B0` : 'N/A'}, Emission: {isFiniteNumber(hoverGeoValues.emis) ? `${hoverGeoValues.emis.toFixed(2)}\u00B0` : 'N/A'}, Phase: {isFiniteNumber(hoverGeoValues.phase) ? `${hoverGeoValues.phase.toFixed(2)}\u00B0` : 'N/A'}
+                                <strong>Hover:</strong> Lat <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lat) ? `${hoverGeoValues.lat.toFixed(2)}\u00B0 ${hoverGeoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span>, Lon <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lon) ? `${hoverGeoValues.lon.toFixed(2)}\u00B0 ${hoverGeoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span>, Inc {isFiniteNumber(hoverGeoValues.incidence) ? `${hoverGeoValues.incidence.toFixed(1)}\u00B0` : 'N/A'}, Em {isFiniteNumber(hoverGeoValues.emis) ? `${hoverGeoValues.emis.toFixed(1)}\u00B0` : 'N/A'}, Ph {isFiniteNumber(hoverGeoValues.phase) ? `${hoverGeoValues.phase.toFixed(1)}\u00B0` : 'N/A'}
                               </>
                             ) : (
-                              <span>Hover over the image to see latitude/longitude and angles</span>
+                              <span>Hover image for Lat/Lon and angles</span>
                             )}
                           </div>
                         </>

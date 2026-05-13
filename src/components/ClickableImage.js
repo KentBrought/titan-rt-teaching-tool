@@ -367,7 +367,7 @@ const ClickableImage = ({
   };
 
   const latLines = [-60, -30, 0, 30, 60];
-  const lonLabelSteps = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+  const lonLabelSteps = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
   const normalizeLongitudeDeg = (lonDeg) => ((((lonDeg + 180) % 360) + 360) % 360) - 180;
   const phaseWrapped = ((((phaseAngleDeg % 360) + 360) % 360));
   const lonLines = lonLabelSteps.map((labelDeg) => normalizeLongitudeDeg(labelDeg));
