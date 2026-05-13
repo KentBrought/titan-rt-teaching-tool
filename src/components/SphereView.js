@@ -293,7 +293,7 @@ function SphereView({
     }
 
     let cancelled = false;
-    let scene, overlayScene, camera, renderer, controls, geometry, material, mesh;
+    let scene, overlayScene, camera, renderer, controls, geometry, material, basicSurfaceMaterial, mesh;
     let composer = null;
     let baseSurfaceTexture = null;
     let angleSurfaceTexture = null;
@@ -401,6 +401,12 @@ function SphereView({
           side: THREE.DoubleSide,
           roughness: 0.95,
           metalness: 0.0,
+          transparent: true,
+          opacity: 1,
+        });
+        basicSurfaceMaterial = new THREE.MeshBasicMaterial({
+          side: THREE.DoubleSide,
+          color: 0xffffff,
           transparent: true,
           opacity: 1,
         });
@@ -2198,9 +2204,14 @@ function SphereView({
         };
 
         const applySurfaceTextureForMode = () => {
-          if (!material) return;
+          if (!material || !mesh) return;
           const mode = surfaceMapModeRef.current || 'ir';
           if (mode === 'ir') {
+            if (mesh.material !== material) {
+              mesh.material = material;
+            }
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
             if (!baseSurfaceTexture) return;
             if (material.map !== baseSurfaceTexture) {
               material.map = baseSurfaceTexture;
@@ -2222,9 +2233,14 @@ function SphereView({
             || (signature !== lastAngleMapSignature && (angleMapUpdateTick % 10 === 0))
             || !angleSurfaceTexture;
           if (!shouldRefresh) {
-            if (material.map !== angleSurfaceTexture && angleSurfaceTexture) {
-              material.map = angleSurfaceTexture;
-              material.needsUpdate = true;
+            if (basicSurfaceMaterial && mesh.material !== basicSurfaceMaterial) {
+              mesh.material = basicSurfaceMaterial;
+            }
+            mesh.castShadow = false;
+            mesh.receiveShadow = false;
+            if (basicSurfaceMaterial && basicSurfaceMaterial.map !== angleSurfaceTexture && angleSurfaceTexture) {
+              basicSurfaceMaterial.map = angleSurfaceTexture;
+              basicSurfaceMaterial.needsUpdate = true;
             }
             return;
           }
@@ -2232,8 +2248,15 @@ function SphereView({
           if (!nextAngleTex) return;
           if (angleSurfaceTexture) angleSurfaceTexture.dispose();
           angleSurfaceTexture = nextAngleTex;
-          material.map = angleSurfaceTexture;
-          material.needsUpdate = true;
+          if (basicSurfaceMaterial && mesh.material !== basicSurfaceMaterial) {
+            mesh.material = basicSurfaceMaterial;
+          }
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
+          if (basicSurfaceMaterial) {
+            basicSurfaceMaterial.map = angleSurfaceTexture;
+            basicSurfaceMaterial.needsUpdate = true;
+          }
           lastAppliedSurfaceMode = mode;
           lastAngleMapSignature = signature;
         };
@@ -2909,6 +2932,7 @@ function SphereView({
       }
       if (geometry) geometry.dispose();
       if (material) material.dispose();
+      if (basicSurfaceMaterial) basicSurfaceMaterial.dispose();
       if (textureRef.current) {
         textureRef.current.dispose();
         textureRef.current = null;
