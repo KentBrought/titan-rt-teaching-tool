@@ -47,6 +47,7 @@ function SphereView({
   showExtendedVectorLines = false,
   allowMultipleVectors = false,
   showThroughSurface = true,
+  surfaceMapMode = 'ir', // 'ir' | 'incidence' | 'emission'
   showAtmosphere = true,
   interactionMode = 'vector', // 'vector' | 'plotPoint'
   onSurfacePointSelect,
@@ -117,6 +118,7 @@ function SphereView({
   const satOrbitPhaseDegRef = useRef(null);
   const titanDragHitRef = useRef(null);
   const cassiniDragHitRef = useRef(null);
+  const surfaceMapModeRef = useRef('ir');
 
   useEffect(() => {
     incomingPointsRef.current = Array.isArray(multiplePoints) ? multiplePoints : [];
@@ -268,6 +270,12 @@ function SphereView({
   }, [showThroughSurface]);
 
   useEffect(() => {
+    surfaceMapModeRef.current = (surfaceMapMode === 'incidence' || surfaceMapMode === 'emission')
+      ? surfaceMapMode
+      : 'ir';
+  }, [surfaceMapMode]);
+
+  useEffect(() => {
     showAtmosphereRef.current = !!showAtmosphere;
     if (atmosphereRef.current) {
       atmosphereRef.current.visible = !!showAtmosphere;
@@ -287,6 +295,11 @@ function SphereView({
     let cancelled = false;
     let scene, overlayScene, camera, renderer, controls, geometry, material, mesh;
     let composer = null;
+    let baseSurfaceTexture = null;
+    let angleSurfaceTexture = null;
+    let lastAppliedSurfaceMode = null;
+    let angleMapUpdateTick = 0;
+    let lastAngleMapSignature = '';
     let starsNear = null;
     let starsFar = null;
     let sunBody = null;
@@ -308,6 +321,9 @@ function SphereView({
     const satTargetPos = new THREE.Vector3();
     const sunTargetPos = new THREE.Vector3();
     const sunDirectionForAtmosphere = new THREE.Vector3(0, 0, -1);
+    const tmpNormalLocal = new THREE.Vector3();
+    const tmpNormalWorld = new THREE.Vector3();
+    const textureSize = { width: 1024, height: 512 };
 
     const rafId = requestAnimationFrame(function initThree() {
       if (cancelled) return;
@@ -2133,6 +2149,95 @@ function SphereView({
         };
         updateSunSatelliteWorldPositions();
 
+        const buildAngularSurfaceTexture = (mode, worldQuat) => {
+          const width = textureSize.width;
+          const height = textureSize.height;
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: false });
+          if (!ctx) return null;
+          const imageData = ctx.createImageData(width, height);
+          const pix = imageData.data;
+          const direction = (mode === 'emission' ? satTargetPos : sunTargetPos).clone().normalize();
+          if (!Number.isFinite(direction.lengthSq()) || direction.lengthSq() < 1e-12) {
+            return null;
+          }
+          const invPi = 1 / Math.PI;
+          let p = 0;
+          for (let y = 0; y < height; y += 1) {
+            const v = (y + 0.5) / height;
+            const lat = (0.5 - v) * Math.PI;
+            const sinLat = Math.sin(lat);
+            const cosLat = Math.cos(lat);
+            for (let x = 0; x < width; x += 1) {
+              const u = (x + 0.5) / width;
+              const lon = ((u - 0.5) * 2 * Math.PI);
+              tmpNormalLocal.set(
+                Math.sin(lon) * cosLat,
+                sinLat,
+                Math.cos(lon) * cosLat
+              );
+              tmpNormalWorld.copy(tmpNormalLocal).applyQuaternion(worldQuat).normalize();
+              const angle = tmpNormalWorld.angleTo(direction);
+              const shade = Math.max(0, Math.min(255, Math.round((angle * invPi) * 255)));
+              pix[p] = shade;
+              pix[p + 1] = shade;
+              pix[p + 2] = shade;
+              pix[p + 3] = 255;
+              p += 4;
+            }
+          }
+          ctx.putImageData(imageData, 0, 0);
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.needsUpdate = true;
+          tex.colorSpace = THREE.SRGBColorSpace;
+          tex.minFilter = THREE.LinearFilter;
+          tex.magFilter = THREE.LinearFilter;
+          return tex;
+        };
+
+        const applySurfaceTextureForMode = () => {
+          if (!material) return;
+          const mode = surfaceMapModeRef.current || 'ir';
+          if (mode === 'ir') {
+            if (!baseSurfaceTexture) return;
+            if (material.map !== baseSurfaceTexture) {
+              material.map = baseSurfaceTexture;
+              material.needsUpdate = true;
+            }
+            lastAppliedSurfaceMode = 'ir';
+            lastAngleMapSignature = '';
+            return;
+          }
+          const q = mesh.getWorldQuaternion(new THREE.Quaternion());
+          const signature = [
+            mode,
+            sunTargetPos.x.toFixed(4), sunTargetPos.y.toFixed(4), sunTargetPos.z.toFixed(4),
+            satTargetPos.x.toFixed(4), satTargetPos.y.toFixed(4), satTargetPos.z.toFixed(4),
+            q.x.toFixed(4), q.y.toFixed(4), q.z.toFixed(4), q.w.toFixed(4),
+          ].join('|');
+          angleMapUpdateTick += 1;
+          const shouldRefresh = (mode !== lastAppliedSurfaceMode)
+            || (signature !== lastAngleMapSignature && (angleMapUpdateTick % 10 === 0))
+            || !angleSurfaceTexture;
+          if (!shouldRefresh) {
+            if (material.map !== angleSurfaceTexture && angleSurfaceTexture) {
+              material.map = angleSurfaceTexture;
+              material.needsUpdate = true;
+            }
+            return;
+          }
+          const nextAngleTex = buildAngularSurfaceTexture(mode, q);
+          if (!nextAngleTex) return;
+          if (angleSurfaceTexture) angleSurfaceTexture.dispose();
+          angleSurfaceTexture = nextAngleTex;
+          material.map = angleSurfaceTexture;
+          material.needsUpdate = true;
+          lastAppliedSurfaceMode = mode;
+          lastAngleMapSignature = signature;
+        };
+
         const getDefaultCameraTarget = () => {
           if (cameraModeRef.current.center === 'spacecraft' && satelliteBody) {
             return satelliteBody.position.clone();
@@ -2665,6 +2770,7 @@ function SphereView({
             if (sunGlow) {
               sunGlow.scale.set(1.25, 1.25, 1);
             }
+            applySurfaceTextureForMode();
             if (composer) composer.render();
             else renderer.render(scene, camera);
             if (overlayScene) {
@@ -2697,8 +2803,10 @@ function SphereView({
             if (cancelled) return;
             if (textureRef.current) textureRef.current.dispose();
             textureRef.current = heightTex;
+            baseSurfaceTexture = heightTex;
             material.map = heightTex;
             material.needsUpdate = true;
+            lastAppliedSurfaceMode = 'ir';
           })
           .catch((err) => {
             if (!cancelled) setError(err.message || 'Failed to load texture');
@@ -2804,6 +2912,10 @@ function SphereView({
       if (textureRef.current) {
         textureRef.current.dispose();
         textureRef.current = null;
+      }
+      if (angleSurfaceTexture) {
+        angleSurfaceTexture.dispose();
+        angleSurfaceTexture = null;
       }
       if (atmosphereRef.current) {
         atmosphereRef.current.traverse((child) => {

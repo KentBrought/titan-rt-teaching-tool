@@ -383,6 +383,7 @@ function App() {
   const [showVectorLabels3d, setShowVectorLabels3d] = useState(true);
   const [showVectorGuideLines3d, setShowVectorGuideLines3d] = useState(false);
   const [showVectorsThroughTitan3d, setShowVectorsThroughTitan3d] = useState(true);
+  const [surfaceMapMode3d, setSurfaceMapMode3d] = useState('ir'); // 'ir' | 'incidence' | 'emission'
   const [tutorialMode, setTutorialMode] = useState(null);
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
 
@@ -2008,6 +2009,7 @@ function App() {
                                 showExtendedVectorLines={showVectorGuideLines3d}
                                 allowMultipleVectors={selectionMode === 'multipleVectorSelection'}
                                 showThroughSurface={showVectorsThroughTitan3d}
+                                surfaceMapMode={surfaceMapMode3d}
                                 showAtmosphere={toggles.showAtmosphere}
                                 interactionMode={
                                   selectionMode === 'plotPoint'
@@ -2441,6 +2443,42 @@ function App() {
                             </div>
                             <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '12px', marginBottom: '12px' }}></div>
                             <h3 style={{ fontSize: '16px', marginBottom: '10px', fontWeight: 'normal' }}>View Aids</h3>
+                              <label style={{ color: '#ccc', display: 'block', marginBottom: '8px' }}>
+                                Surface Shading
+                              </label>
+                              <div className="radio-group">
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="surfaceMapMode3d"
+                                    value="ir"
+                                    checked={surfaceMapMode3d === 'ir'}
+                                    onChange={(e) => setSurfaceMapMode3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>IR Texture</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="surfaceMapMode3d"
+                                    value="incidence"
+                                    checked={surfaceMapMode3d === 'incidence'}
+                                    onChange={(e) => setSurfaceMapMode3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Incidence (B/W)</span>
+                                </label>
+                                <label className="radio-label">
+                                  <input
+                                    type="radio"
+                                    name="surfaceMapMode3d"
+                                    value="emission"
+                                    checked={surfaceMapMode3d === 'emission'}
+                                    onChange={(e) => setSurfaceMapMode3d(e.target.value)}
+                                  />
+                                  <span style={{ float: 'none', color: 'inherit', fontWeight: 'normal' }}>Emission (B/W)</span>
+                                </label>
+                              </div>
+                              <div style={{ borderTop: '1px solid #3a3a3a', marginTop: '12px', marginBottom: '12px' }}></div>
                               <label className="radio-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <input
                                   type="checkbox"
