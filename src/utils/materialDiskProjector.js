@@ -1,5 +1,5 @@
 import { getGeoValue } from './geoCubeLoader';
-import { getMaterialClassAtLatLon } from './materialMapLoader';
+import { getMaterialClassAtLatLonMajority } from './materialMapLoader';
 
 const NUM_SAMPLES = 681;
 const NUM_LINES = 681;
@@ -85,8 +85,10 @@ function fillInvalidByNearestValid(classMap, onDiskMask, maxRadius = 6) {
 }
 
 /**
- * Project the global 3-class material map onto the current 681x681 disk using the geo cube.
- * This mimics the old overlay’s “stable” per-pixel classing (and then lightly smooths it).
+ * Build a 681×681 material-class disk from geo-cube lat/lon → {@link getMaterialClassAtLatLonMajority}
+ * on the global surface map, with limb fill and 3×3 smoothing.
+ * @param {Float32Array} geoCubeData
+ * @param {object} materialMap
  */
 export function buildMaterialClassDiskMap(geoCubeData, materialMap) {
   const out = new Uint8Array(NUM_SAMPLES * NUM_LINES);
@@ -115,22 +117,19 @@ export function buildMaterialClassDiskMap(geoCubeData, materialMap) {
       sumY += y;
       count += 1;
 
-      const cls = getMaterialClassAtLatLon(materialMap, lat, lon);
+      const cls = getMaterialClassAtLatLonMajority(materialMap, lat, lon, 1);
       if (isValidClass(cls)) out[idx] = cls;
     }
   }
 
   // Build a circular on-disk mask from the valid-lat/lon footprint.
-  // (Distance band is finite everywhere, so it can't be used as a mask.)
   const onDiskMask = new Uint8Array(out.length);
   if (minX > maxX || minY > maxY) {
-    // No valid footprint; return empty mask.
     return { width: NUM_SAMPLES, height: NUM_LINES, data: out };
   }
   const cx = count > 0 ? (sumX / count) : ((minX + maxX) * 0.5);
   const cy = count > 0 ? (sumY / count) : ((minY + maxY) * 0.5);
 
-  // Radius from the farthest seed point (more accurate than bbox-derived radius).
   let r2Seed = 0;
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
@@ -152,9 +151,7 @@ export function buildMaterialClassDiskMap(geoCubeData, materialMap) {
     }
   }
 
-  // Fill missing classes near the limb, then smooth within the disk.
   const filled = fillInvalidByNearestValid(out, onDiskMask, 10);
   const smoothed = smoothMajority3x3(filled, onDiskMask);
   return { width: NUM_SAMPLES, height: NUM_LINES, data: smoothed };
 }
-

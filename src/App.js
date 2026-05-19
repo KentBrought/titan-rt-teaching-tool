@@ -6,6 +6,7 @@ import ClickableImage from './components/ClickableImage';
 import GasAbundancePlot from './components/GasAbundancePlot';
 import ErrorBoundary from './components/ErrorBoundary';
 import UserGuide from './components/UserGuide';
+import SurfaceMapDebugPage from './components/SurfaceMapDebugPage';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ScrollToTop from './components/ScrollToTop';
@@ -18,22 +19,66 @@ import {
   COLOR_CUBE_NUM_BANDS,
 } from './utils/colorCubeLoader';
 import { compositeImageUrlToGrayscaleObjectURL } from './utils/irCompositeGrayscale';
-import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLoader';
+import { extractGeoValues, getGeoCubeData, getGeoValue, clearGeoCubeCache } from './utils/geoCubeLoader';
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
 import {
   loadMaterialAlbedoMap,
-  getMaterialClassAtPixel,
   mapMaterialClassToSpectralAlbedo,
   formatSurfaceMaterialWithSpectrumAlbedo,
   getSurfaceMaterialLabel,
 } from './utils/materialMapLoader';
+import { createSurfaceUnitsDiskFromIrPngUrl } from './utils/basemapDiskImage';
+import {
+  clearMaterialDiskClassCache,
+  getCachedSmoothedMaterialClassAtDiskPixel,
+  getSmoothedMaterialClassAtDiskPixel,
+} from './utils/materialDiskClassCache';
+import { naturalIrPixelToDisk681 } from './utils/materialFromIrColor';
 
 const FIXED_ALBEDO = 0.1;
 const MAX_SELECTED_POINTS = 5;
+/** Geo cube and RT disk grid extent (samples/lines). */
+const GEO_DISK_DIM = 681;
+/** IR views that resolve surface material from geo + global basemap (not raw PNG RGB). */
+function usesBasemapDiskMaterial(imageType) {
+  return imageType === 'irColor' || imageType === 'monoBand' || imageType === 'surfaceUnits';
+}
+
+/**
+ * Material class at disk (x,y): always the smoothed 681×681 basemap disk — identical to the
+ * Surface units PNG and {@link buildMaterialClassDiskMap}. Color IR / B&W use the same grid so
+ * switching modes keeps labels 1:1 with the colored disk.
+ */
+async function resolveBasemapMaterialClass(
+  imageAssetPhaseDeg,
+  materialMap,
+  geoLoadContext,
+  diskX,
+  diskY
+) {
+  if (!materialMap) return null;
+  let mc = getCachedSmoothedMaterialClassAtDiskPixel(
+    imageAssetPhaseDeg,
+    materialMap,
+    diskX,
+    diskY,
+    { geoLoadContext }
+  );
+  if (mc === null) {
+    mc = await getSmoothedMaterialClassAtDiskPixel(
+      imageAssetPhaseDeg,
+      materialMap,
+      diskX,
+      diskY,
+      { geoLoadContext }
+    );
+  }
+  return mc;
+}
 const PHASE_STEP_DEG = 15;
 const MAX_PHASE_DEG = 180;
-/** Slider 0° uses `p015` assets; filenames / geo cubes are +15° vs the UI label (teaching alignment). */
-const ASSET_PHASE_OFFSET_DEG = 15;
+/** Slider 0° uses `p000` assets; filename phase matches the UI phase label (0°→p000, 15°→p015, …, 180°→p180). */
+const ASSET_PHASE_OFFSET_DEG = 0;
 const PHASE_SLIDER_MIN = 0;
 const PHASE_SLIDER_MAX = 12;
 
@@ -45,6 +90,15 @@ function displayPhaseDegFromPhaseSlider(sliderIndex) {
 
 function assetPhaseDegFromPhaseSlider(sliderIndex) {
   return Math.min(MAX_PHASE_DEG, displayPhaseDegFromPhaseSlider(sliderIndex) + ASSET_PHASE_OFFSET_DEG);
+}
+
+/**
+ * All disk modes (Color IR, B&amp;W, Surface units) use the same RT/geo phase for a given slider:
+ * {@link assetPhaseDegFromPhaseSlider} (same degrees as the UI phase label). Basemap class = lat/lon from that
+ * `*_geo.img` at the clicked line/sample (same grid as the composite PNG / colorCCD).
+ */
+function assetPhaseDegForImageAndGeo(sliderIndex, _imageType) {
+  return assetPhaseDegFromPhaseSlider(sliderIndex);
 }
 
 function displayPhaseDegFromAssetPhaseDeg(assetDeg) {
@@ -67,6 +121,7 @@ const GeoValuesDisplay = memo(({
   plotMultiple,
   loadingGeo,
   currentPhaseAngle,
+  colorIrBasemapMaterial = false,
   onClearAllPoints = null,
   onRemovePoint = null
 }) => {
@@ -146,9 +201,26 @@ const GeoValuesDisplay = memo(({
                     <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}\u00B0` : 'N/A'}</p>
                     <p><strong>Incidence:</strong> {isFiniteNumber(values.incidence) ? `${values.incidence.toFixed(2)}\u00B0` : 'N/A'}</p>
                     <p><strong>Emis:</strong> {isFiniteNumber(values.emis) ? `${values.emis.toFixed(2)}\u00B0` : 'N/A'}</p>
-                    {Number.isFinite(values.materialClass) && (
-                      <p><strong>Surface material:</strong> {formatSurfaceMaterialWithSpectrumAlbedo(values.materialClass, values.surfaceAlbedo)}</p>
-                    )}
+                    {Number.isFinite(values.materialClass) ? (
+                      <>
+                        <p style={{ marginTop: '6px' }}>
+                          <strong>Basemap unit (0 / 1 / 2):</strong>{' '}
+                          <span style={{ fontFamily: 'ui-monospace, monospace', color: '#e8f4c8' }}>
+                            {values.materialClass}
+                          </span>
+                          {' — '}
+                          {getSurfaceMaterialLabel(values.materialClass)}
+                        </p>
+                        <p>
+                          <strong>Surface material (spectra):</strong>{' '}
+                          {formatSurfaceMaterialWithSpectrumAlbedo(values.materialClass, values.surfaceAlbedo)}
+                        </p>
+                      </>
+                    ) : colorIrBasemapMaterial && !values.error && isFiniteNumber(values.lat) && isFiniteNumber(values.lon) ? (
+                      <p style={{ marginTop: '6px', color: '#aaa', fontSize: '13px' }}>
+                        <strong>Basemap unit:</strong> unavailable here (need valid incidence and emission on the disk).
+                      </p>
+                    ) : null}
                   </div>
                 )}
                 {index < geoValues.length - 1 && (
@@ -172,9 +244,26 @@ const GeoValuesDisplay = memo(({
                 <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}\u00B0` : 'N/A'}</p>
                 <p><strong>Incidence:</strong> {isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}\u00B0` : 'N/A'}</p>
                 <p><strong>Emis:</strong> {isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}\u00B0` : 'N/A'}</p>
-                {Number.isFinite(geoValues.materialClass) && (
-                  <p><strong>Surface material:</strong> {formatSurfaceMaterialWithSpectrumAlbedo(geoValues.materialClass, geoValues.surfaceAlbedo)}</p>
-                )}
+                {Number.isFinite(geoValues.materialClass) ? (
+                  <>
+                    <p style={{ marginTop: '6px' }}>
+                      <strong>Basemap unit (0 / 1 / 2):</strong>{' '}
+                      <span style={{ fontFamily: 'ui-monospace, monospace', color: '#e8f4c8' }}>
+                        {geoValues.materialClass}
+                      </span>
+                      {' — '}
+                      {getSurfaceMaterialLabel(geoValues.materialClass)}
+                    </p>
+                    <p>
+                      <strong>Surface material (spectra):</strong>{' '}
+                      {formatSurfaceMaterialWithSpectrumAlbedo(geoValues.materialClass, geoValues.surfaceAlbedo)}
+                    </p>
+                  </>
+                ) : colorIrBasemapMaterial && !geoValues.error && isFiniteNumber(geoValues.lat) && isFiniteNumber(geoValues.lon) ? (
+                  <p style={{ marginTop: '6px', color: '#aaa', fontSize: '13px' }}>
+                    <strong>Basemap unit:</strong> unavailable here (need valid incidence and emission on the disk).
+                  </p>
+                ) : null}
               </div>
             )}
           </>
@@ -189,6 +278,7 @@ const GeoValuesDisplay = memo(({
   if (prevProps.plotMultiple !== nextProps.plotMultiple) return false;
   if (prevProps.loadingGeo !== nextProps.loadingGeo) return false;
   if (prevProps.currentPhaseAngle !== nextProps.currentPhaseAngle) return false;
+  if (prevProps.colorIrBasemapMaterial !== nextProps.colorIrBasemapMaterial) return false;
   if (prevProps.onClearAllPoints !== nextProps.onClearAllPoints) return false;
   if (prevProps.onRemovePoint !== nextProps.onRemovePoint) return false;
 
@@ -203,11 +293,12 @@ const GeoValuesDisplay = memo(({
   if (Array.isArray(prev) && Array.isArray(next)) {
     if (prev.length !== next.length) return false;
     // Compare each element by key properties
-    return prev.every((p, i) => {
+      return prev.every((p, i) => {
       const n = next[i];
       return p.x === n.x && p.y === n.y &&
         p.lat === n.lat && p.lon === n.lon &&
-        p.incidence === n.incidence && p.emis === n.emis;
+        p.incidence === n.incidence && p.emis === n.emis &&
+        p.materialClass === n.materialClass && p.surfaceAlbedo === n.surfaceAlbedo;
     });
   }
 
@@ -215,7 +306,8 @@ const GeoValuesDisplay = memo(({
   if (!Array.isArray(prev) && !Array.isArray(next)) {
     return prev.x === next.x && prev.y === next.y &&
       prev.lat === next.lat && prev.lon === next.lon &&
-      prev.incidence === next.incidence && prev.emis === next.emis;
+      prev.incidence === next.incidence && prev.emis === next.emis &&
+      prev.materialClass === next.materialClass && prev.surfaceAlbedo === next.surfaceAlbedo;
   }
 
   return false; // Different types
@@ -364,12 +456,14 @@ function App() {
   const phaseGeoFetchTimerRef = useRef(null);
   const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
+  /** When key matches {@link rtGeoAssetKey}, geo + basemap disk use loadPds4Image's actualFolder/actualAlbedo (same as surface-units disk). */
+  const [resolvedRtGeoForAssetKey, setResolvedRtGeoForAssetKey] = useState(() => ({ key: null, ctx: null }));
   const [monoBandIndex, setMonoBandIndex] = useState(0); // 0 .. COLOR_CUBE_NUM_BANDS-1: grayscale mix on haze-folder composite PNG (not colorCCD.img)
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
   useEffect(() => {
     setHazePropertiesModel((m) => (m === 'tomasko' ? 'doose' : m));
   }, []);
-  const [imageType, setImageType] = useState('irColor'); // 'irColor' | 'monoBand'
+  const [imageType, setImageType] = useState('irColor'); // 'irColor' | 'monoBand' | 'surfaceUnits'
   const [irDisplayMode, setIrDisplayMode] = useState('2d'); // '2d' | '3d'
   const [selectionMode, setSelectionMode] = useState('plotPoint'); // 'vectorSelection' | 'multipleVectorSelection' | 'plotPoint' | 'plotMultiplePoints'
   const [cameraPreset3d, setCameraPreset3d] = useState('cassini'); // '' | 'cassini' | 'sun'
@@ -387,7 +481,7 @@ function App() {
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
 
   useEffect(() => {
-    if (imageType !== 'irColor' && imageType !== 'monoBand') {
+    if (imageType !== 'irColor' && imageType !== 'monoBand' && imageType !== 'surfaceUnits') {
       setImageType('irColor');
     }
   }, [imageType]);
@@ -547,30 +641,76 @@ function App() {
     }));
   };
 
+  const hazeAbundanceSetting = useMemo(() => getHazeAbundanceValue(sliders.hazeAbundance), [sliders.hazeAbundance]);
+  const hazeFolderName = useMemo(() => `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`, [hazePropertiesModel, hazeAbundanceSetting]);
+  const imageFolderName = useMemo(() => {
+    const meth = sliders.methaneAbundance >= 50 ? 1 : 0;
+    return hazePropertiesModel === 'doose' ? `${hazeFolderName}_meth${meth}` : hazeFolderName;
+  }, [hazePropertiesModel, hazeFolderName, sliders.methaneAbundance]);
+  const hazeProfileScenarioKey = useMemo(
+    () => (hazePropertiesModel === 'tomasko' ? 'tomasko_1.0' : hazeFolderName),
+    [hazePropertiesModel, hazeFolderName]
+  );
+  const geoLoadContext = useMemo(
+    () => ({
+      hazeFolder: imageFolderName,
+      albedo: FIXED_ALBEDO,
+      compositeType,
+    }),
+    [imageFolderName, compositeType]
+  );
+  const rtGeoAssetKey = useMemo(() => `${imageFolderName}|${compositeType}`, [imageFolderName, compositeType]);
+  const geoLoadContextForDisk = useMemo(() => {
+    if (resolvedRtGeoForAssetKey.key === rtGeoAssetKey && resolvedRtGeoForAssetKey.ctx) {
+      return resolvedRtGeoForAssetKey.ctx;
+    }
+    return geoLoadContext;
+  }, [resolvedRtGeoForAssetKey, rtGeoAssetKey, geoLoadContext]);
   // Fetch geo values for a given position
-  const fetchGeoValues = useCallback(async (x, y, phaseAngleOverride = null) => {
+  const fetchGeoValues = useCallback(async (x, y, phaseAngleOverride = null, coordsAreDisk681 = false) => {
     geoValuesRequestIdRef.current += 1;
     const currentRequestId = geoValuesRequestIdRef.current;
 
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true);
-      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const imageAssetPhaseDeg = phaseAngleOverride !== null
+        ? phaseAngleOverride
+        : assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
       const displayPhaseDeg = phaseAngleOverride !== null
         ? displayPhaseDegFromAssetPhaseDeg(phaseAngleOverride)
         : displayPhaseDegFromPhaseSlider(sliders.phaseAngle);
-      const values = await extractGeoValues(assetPhaseDeg, x, y);
+      let geoDisk;
+      if (coordsAreDisk681) {
+        geoDisk = {
+          x: Math.max(0, Math.min(GEO_DISK_DIM - 1, Math.floor(Number(x)))),
+          y: Math.max(0, Math.min(GEO_DISK_DIM - 1, Math.floor(Number(y)))),
+        };
+      } else {
+        const irImg0 = typeof document !== 'undefined' ? irColorImageRef.current?.querySelector('img') : null;
+        const nw0 = irImg0?.naturalWidth > 1 ? irImg0.naturalWidth : GEO_DISK_DIM;
+        const nh0 = irImg0?.naturalHeight > 1 ? irImg0.naturalHeight : GEO_DISK_DIM;
+        geoDisk = naturalIrPixelToDisk681(x, y, nw0, nh0);
+      }
+      const values = await extractGeoValues(imageAssetPhaseDeg, geoDisk.x, geoDisk.y, geoLoadContextForDisk);
 
       if (currentRequestId !== geoValuesRequestIdRef.current) {
         return;
       }
 
-      const hasValidSurfaceData =
-        Number.isFinite(values?.lat) &&
-        Number.isFinite(values?.lon) &&
-        Number.isFinite(values?.incidence) &&
-        Number.isFinite(values?.emis);
-      const materialClass = hasValidSurfaceData ? getMaterialClassAtPixel(materialAlbedoMap, x, y) : null;
+      let materialClass = null;
+      if (usesBasemapDiskMaterial(imageType) && materialAlbedoMap) {
+        materialClass = await resolveBasemapMaterialClass(
+          imageAssetPhaseDeg,
+          materialAlbedoMap,
+          geoLoadContextForDisk,
+          geoDisk.x,
+          geoDisk.y
+        );
+      }
+      if (currentRequestId !== geoValuesRequestIdRef.current) {
+        return;
+      }
       const surfaceAlbedo = Number.isFinite(materialClass)
         ? mapMaterialClassToSpectralAlbedo(materialClass)
         : null;
@@ -609,7 +749,7 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [sliders.phaseAngle, materialAlbedoMap]);
+  }, [sliders.phaseAngle, materialAlbedoMap, geoLoadContextForDisk, imageType]);
 
   // Fetch geo values for multiple positions
   const fetchMultipleGeoValues = useCallback(async (positions, phaseAngleOverride = null) => {
@@ -619,14 +759,26 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true);
-      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const imageAssetPhaseDeg = phaseAngleOverride !== null
+        ? phaseAngleOverride
+        : assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
       const displayPhaseDeg = phaseAngleOverride !== null
         ? displayPhaseDegFromAssetPhaseDeg(phaseAngleOverride)
         : displayPhaseDegFromPhaseSlider(sliders.phaseAngle);
       const colorNames = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
-          const values = await extractGeoValues(assetPhaseDeg, pos.x, pos.y);
+          const irImgM = typeof document !== 'undefined' ? irColorImageRef.current?.querySelector('img') : null;
+          const nwM = irImgM?.naturalWidth > 1 ? irImgM.naturalWidth : GEO_DISK_DIM;
+          const nhM = irImgM?.naturalHeight > 1 ? irImgM.naturalHeight : GEO_DISK_DIM;
+          const from3d = Boolean(pos.position?.is3d);
+          const geoDisk = from3d
+            ? {
+                x: Math.max(0, Math.min(GEO_DISK_DIM - 1, Math.floor(pos.x))),
+                y: Math.max(0, Math.min(GEO_DISK_DIM - 1, Math.floor(pos.y))),
+              }
+            : naturalIrPixelToDisk681(pos.x, pos.y, nwM, nhM);
+          const values = await extractGeoValues(imageAssetPhaseDeg, geoDisk.x, geoDisk.y, geoLoadContextForDisk);
 
           if (currentRequestId !== geoValuesRequestIdRef.current) {
             return null;
@@ -634,14 +786,19 @@ function App() {
 
           const colorIndex = pos.colorIndex !== undefined ? pos.colorIndex : index;
 
-          const hasValidSurfaceData =
-            Number.isFinite(values?.lat) &&
-            Number.isFinite(values?.lon) &&
-            Number.isFinite(values?.incidence) &&
-            Number.isFinite(values?.emis);
-          const materialClass = hasValidSurfaceData
-            ? getMaterialClassAtPixel(materialAlbedoMap, pos.x, pos.y)
-            : null;
+          let materialClass = null;
+          if (usesBasemapDiskMaterial(imageType) && materialAlbedoMap) {
+            materialClass = await resolveBasemapMaterialClass(
+              imageAssetPhaseDeg,
+              materialAlbedoMap,
+              geoLoadContextForDisk,
+              geoDisk.x,
+              geoDisk.y
+            );
+          }
+          if (currentRequestId !== geoValuesRequestIdRef.current) {
+            return null;
+          }
           const surfaceAlbedo = Number.isFinite(materialClass)
             ? mapMaterialClassToSpectralAlbedo(materialClass)
             : null;
@@ -713,10 +870,10 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [sliders.phaseAngle, materialAlbedoMap]);
+  }, [sliders.phaseAngle, materialAlbedoMap, geoLoadContextForDisk, imageType]);
 
   const findNearestGeoPixelByLatLon = useCallback(async (targetLat, targetLon, phaseAngleDeg) => {
-    const geoData = await getGeoCubeData(phaseAngleDeg);
+    const geoData = await getGeoCubeData(phaseAngleDeg, geoLoadContextForDisk);
     const numSamples = 681;
     const numLines = 681;
     const bandSize = numSamples * numLines;
@@ -749,7 +906,7 @@ function App() {
       x: bestIndex % numSamples,
       y: Math.floor(bestIndex / numSamples),
     };
-  }, []);
+  }, [geoLoadContextForDisk]);
 
   const remapPointToCurrent2dPhase = useCallback(async (point, phaseAngleDeg) => {
     if (!point) return null;
@@ -783,30 +940,34 @@ function App() {
 
   // Cache for geo cube data (by phase angle)
   const geoCubeDataRef = useRef(null);
-  const currentPhaseAngleRef = useRef(null);
+  const currentGeoPreloadKeyRef = useRef(null);
+  const prevRtGeoAssetKeyRef = useRef(null);
   const lastHoverPixelRef = useRef({ x: null, y: null });
   // Debounce timer ref for image loading
   const imageLoadTimerRef = useRef(null);
   const imageLoadRequestIdRef = useRef(0);
   const monoBlobUrlRef = useRef(null);
+  const surfaceUnitsBlobUrlRef = useRef(null);
 
-  // Preload geo cube data when phase angle changes
+  // Preload geo cube when phase or RT folder changes (same `*_geo.img` as composite / colorCCD for that phase)
   useEffect(() => {
     const loadGeoCube = async () => {
-      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
-      if (currentPhaseAngleRef.current !== assetPhaseDeg) {
-        try {
-          const geoData = await getGeoCubeData(assetPhaseDeg);
-          geoCubeDataRef.current = geoData;
-          currentPhaseAngleRef.current = assetPhaseDeg;
-        } catch (error) {
-          console.error('Error loading geo cube data:', error);
-          geoCubeDataRef.current = null;
-        }
+      const assetPhaseDeg = assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
+      const ctx = geoLoadContextForDisk;
+      const key = `${assetPhaseDeg}|${ctx.hazeFolder}|${String(ctx.albedo ?? FIXED_ALBEDO)}|${ctx.compositeType}`;
+      if (currentGeoPreloadKeyRef.current === key) return;
+      try {
+        const geoData = await getGeoCubeData(assetPhaseDeg, ctx);
+        geoCubeDataRef.current = geoData;
+        currentGeoPreloadKeyRef.current = key;
+      } catch (error) {
+        console.error('Error loading geo cube data:', error);
+        geoCubeDataRef.current = null;
+        currentGeoPreloadKeyRef.current = null;
       }
     };
     loadGeoCube();
-  }, [sliders.phaseAngle]);
+  }, [sliders.phaseAngle, imageFolderName, compositeType, geoLoadContextForDisk, imageType]);
 
   // Handle image hover to extract geo values (real-time with cached lookups)
   const handleImageHover = useCallback((x, y, position) => {
@@ -815,56 +976,122 @@ function App() {
       setHoverGeoValues(null);
       return;
     }
-    const px = Math.max(0, Math.min(680, Math.round(x)));
-    const py = Math.max(0, Math.min(680, Math.round(y)));
+    const irImgH = typeof document !== 'undefined' ? irColorImageRef.current?.querySelector('img') : null;
+    const nwH = irImgH?.naturalWidth > 1 ? irImgH.naturalWidth : GEO_DISK_DIM;
+    const nhH = irImgH?.naturalHeight > 1 ? irImgH.naturalHeight : GEO_DISK_DIM;
+    const geoDisk = naturalIrPixelToDisk681(x, y, nwH, nhH);
 
-    // Skip no-op updates for the same hovered pixel.
-    if (lastHoverPixelRef.current.x === px && lastHoverPixelRef.current.y === py) {
+    // Skip no-op updates for the same hovered geo cell.
+    if (lastHoverPixelRef.current.x === geoDisk.x && lastHoverPixelRef.current.y === geoDisk.y) {
       return;
     }
-    lastHoverPixelRef.current = { x: px, y: py };
+    lastHoverPixelRef.current = { x: geoDisk.x, y: geoDisk.y };
 
     const geoData = geoCubeDataRef.current;
     if (!geoData) {
       // If data not loaded yet, fall back to async call
-      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
-      extractGeoValues(assetPhaseDeg, px, py).then(values => {
-        setHoverGeoValues(prev => {
-          const merged = { ...values, phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)) };
-          if (
-            prev &&
-            prev.x === merged.x &&
-            prev.y === merged.y &&
-            prev.incidence === merged.incidence &&
-            prev.emis === merged.emis &&
-            prev.phase === merged.phase
-          ) {
-            return prev;
+      const imageAssetPhaseDeg = assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
+      extractGeoValues(imageAssetPhaseDeg, geoDisk.x, geoDisk.y, geoLoadContextForDisk)
+        .then(async (values) => {
+          let materialClass = null;
+          if (usesBasemapDiskMaterial(imageType) && materialAlbedoMap) {
+            materialClass = await resolveBasemapMaterialClass(
+              imageAssetPhaseDeg,
+              materialAlbedoMap,
+              geoLoadContextForDisk,
+              geoDisk.x,
+              geoDisk.y
+            );
           }
-          return merged;
+          const surfaceAlbedo = Number.isFinite(materialClass)
+            ? mapMaterialClassToSpectralAlbedo(materialClass)
+            : null;
+          setHoverGeoValues((prev) => {
+            const merged = {
+              ...values,
+              phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)),
+              materialClass,
+              surfaceAlbedo,
+            };
+            if (
+              prev &&
+              prev.x === merged.x &&
+              prev.y === merged.y &&
+              prev.incidence === merged.incidence &&
+              prev.emis === merged.emis &&
+              prev.phase === merged.phase &&
+              prev.materialClass === merged.materialClass &&
+              prev.surfaceAlbedo === merged.surfaceAlbedo
+            ) {
+              return prev;
+            }
+            return merged;
+          });
+        })
+        .catch((error) => {
+          console.error('Error extracting hover geo values:', error);
+          setHoverGeoValues(null);
         });
-      }).catch(error => {
-        console.error('Error extracting hover geo values:', error);
-        setHoverGeoValues(null);
-      });
       return;
     }
 
     // Fast synchronous lookup from cached data
     try {
-      const lat = getGeoValue(geoData, px, py, 0);
-      const lon = getGeoValue(geoData, px, py, 1);
-      const incidence = getGeoValue(geoData, px, py, 5);
-      const emis = getGeoValue(geoData, px, py, 6);
+      const lat = getGeoValue(geoData, geoDisk.x, geoDisk.y, 0);
+      const lon = getGeoValue(geoData, geoDisk.x, geoDisk.y, 1);
+      const incidence = getGeoValue(geoData, geoDisk.x, geoDisk.y, 5);
+      const emis = getGeoValue(geoData, geoDisk.x, geoDisk.y, 6);
 
-      const nextHover = {
+      const geoSample = {
         lat: toFiniteOrNull(lat),
         lon: toFiniteOrNull(lon),
-        phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)),
         incidence: toFiniteOrNull(incidence),
         emis: toFiniteOrNull(emis),
-        x: px,
-        y: py
+      };
+      const imageAssetPhaseDeg = assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
+      let materialClass = null;
+      if (usesBasemapDiskMaterial(imageType) && materialAlbedoMap) {
+        materialClass = getCachedSmoothedMaterialClassAtDiskPixel(
+          imageAssetPhaseDeg,
+          materialAlbedoMap,
+          geoDisk.x,
+          geoDisk.y,
+          { geoLoadContext: geoLoadContextForDisk }
+        );
+        if (materialClass === null) {
+          getSmoothedMaterialClassAtDiskPixel(
+            imageAssetPhaseDeg,
+            materialAlbedoMap,
+            geoDisk.x,
+            geoDisk.y,
+            { geoLoadContext: geoLoadContextForDisk }
+          ).then((mc) => {
+            if (lastHoverPixelRef.current.x !== geoDisk.x || lastHoverPixelRef.current.y !== geoDisk.y) {
+              return;
+            }
+            const sa = Number.isFinite(mc) ? mapMaterialClassToSpectralAlbedo(mc) : null;
+            setHoverGeoValues((prev) => {
+              if (!prev || prev.x !== geoDisk.x || prev.y !== geoDisk.y) return prev;
+              if (prev.materialClass === mc && prev.surfaceAlbedo === sa) return prev;
+              return { ...prev, materialClass: mc, surfaceAlbedo: sa };
+            });
+          });
+        }
+      }
+      const surfaceAlbedo = Number.isFinite(materialClass)
+        ? mapMaterialClassToSpectralAlbedo(materialClass)
+        : null;
+
+      const nextHover = {
+        lat: geoSample.lat,
+        lon: geoSample.lon,
+        phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)),
+        incidence: geoSample.incidence,
+        emis: geoSample.emis,
+        materialClass,
+        surfaceAlbedo,
+        x: geoDisk.x,
+        y: geoDisk.y
       };
       setHoverGeoValues(prev => {
         if (
@@ -873,7 +1100,9 @@ function App() {
           prev.y === nextHover.y &&
           prev.incidence === nextHover.incidence &&
           prev.emis === nextHover.emis &&
-          prev.phase === nextHover.phase
+          prev.phase === nextHover.phase &&
+          prev.materialClass === nextHover.materialClass &&
+          prev.surfaceAlbedo === nextHover.surfaceAlbedo
         ) {
           return prev;
         }
@@ -883,7 +1112,7 @@ function App() {
       console.error('Error extracting hover geo values:', error);
       setHoverGeoValues(null);
     }
-  }, [sliders.phaseAngle]);
+  }, [sliders.phaseAngle, materialAlbedoMap, geoLoadContextForDisk, imageType]);
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
@@ -1013,7 +1242,7 @@ function App() {
   const handleSpherePlotPoint = useCallback(async (point) => {
     if (!point) return;
     const isRemove = Boolean(point.remove);
-    const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+    const assetPhaseDeg = assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
     let targetX = point.x;
     let targetY = point.y;
     const targetLat = toFiniteOrNull(point.lat);
@@ -1022,21 +1251,19 @@ function App() {
       ? { x: point.local.x, y: point.local.y, z: point.local.z }
       : null;
 
-    // Prefer geolocation mapping over raw UV pixel mapping so 3D selections align with
-    // the current phase image projection in 2D.
+    if (targetX == null || targetY == null) return;
+
+    // Sphere UV → 681 indices only match the geo/RT disk if the mesh map uses that
+    // same projection. The 3D view uses a full-sphere equirectangular heightmap, so
+    // UV indices are not disk cells. Raycast lat/lon is correct — snap to the nearest
+    // valid geo-cube pixel (same 681 grid as 2D disk / surface units).
     if (Number.isFinite(targetLat) && Number.isFinite(targetLon)) {
-      try {
-        const nearest = await findNearestGeoPixelByLatLon(targetLat, targetLon, assetPhaseDeg);
-        if (nearest) {
-          targetX = nearest.x;
-          targetY = nearest.y;
-        }
-      } catch (error) {
-        console.warn('Could not map 3D lat/lon back to 2D pixel:', error);
+      const nearest = await findNearestGeoPixelByLatLon(targetLat, targetLon, assetPhaseDeg);
+      if (nearest) {
+        targetX = nearest.x;
+        targetY = nearest.y;
       }
     }
-
-    if (targetX == null || targetY == null) return;
 
     // In 3D vector workflows, treat clicks as multi-point selections so every placed
     // surface point contributes to the spectral plot (matching 2D multi-point behavior).
@@ -1150,8 +1377,8 @@ function App() {
         is3d: true,
       }
     });
-    await fetchGeoValues(targetX, targetY, assetPhaseDeg);
-  }, [clickedPosition, fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, sliders.phaseAngle]);
+    await fetchGeoValues(targetX, targetY, assetPhaseDeg, true);
+  }, [clickedPosition, fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, imageType, selectionMode, sliders.phaseAngle]);
 
   const syncedSelectionPointsFor3d = useMemo(() => {
     const hasGeoOrLocal = (point) => (
@@ -1304,7 +1531,6 @@ function App() {
     }
   };
 
-  const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
   const activeAlbedoValue = FIXED_ALBEDO;
   const activeGridEnabled = irDisplayMode === '3d' ? sphereGridEnabled3d : irGridEnabled2d;
   const optionsPanelTitle = irDisplayMode === '3d' ? 'Observing Geometry Options' : 'IR Image Options';
@@ -1313,12 +1539,6 @@ function App() {
     if (irDisplayMode === '3d') setSphereGridEnabled3d(enabled);
     else setIrGridEnabled2d(enabled);
   };
-  const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
-  const hazeProfileScenarioKey = hazePropertiesModel === 'tomasko' ? 'tomasko_1.0' : hazeFolderName;
-  const methaneImageSetting = sliders.methaneAbundance >= 50 ? 1 : 0;
-  const imageFolderName = hazePropertiesModel === 'doose'
-    ? `${hazeFolderName}_meth${methaneImageSetting}`
-    : hazeFolderName;
 
   // Processed spectral data for checking if a point has spectral plot data
   const processedSpectralData = useMemo(() => {
@@ -1368,18 +1588,84 @@ function App() {
       }
     };
 
+    const revokeSurfaceUnitsBlob = () => {
+      if (surfaceUnitsBlobUrlRef.current) {
+        URL.revokeObjectURL(surfaceUnitsBlobUrlRef.current);
+        surfaceUnitsBlobUrlRef.current = null;
+      }
+    };
+
     const stale = () => loadId !== imageLoadRequestIdRef.current;
 
     imageLoadTimerRef.current = setTimeout(async () => {
       try {
         const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
-
         revokeMonoBlob();
+        revokeSurfaceUnitsBlob();
 
-        const imageTypeToLoad = imageType === 'irColor' || imageType === 'monoBand' ? compositeType : imageType;
+        if (imageType === 'surfaceUnits') {
+          const imageTypeToLoad = compositeType;
+          const requestedAlbedo = FIXED_ALBEDO;
+          const result = await loadPds4Image(assetPhaseDeg, imageTypeToLoad, imageFolderName, requestedAlbedo);
+          if (stale()) return;
+          if (!result?.url) {
+            if (!stale()) {
+              setCurrentImage(null);
+              setResolvedRtGeoForAssetKey({ key: null, ctx: null });
+            }
+            return;
+          }
+          const blobUrl = await createSurfaceUnitsDiskFromIrPngUrl(null, {
+            materialMap: materialAlbedoMap,
+            phaseAssetDeg: assetPhaseDeg,
+            geoLoadContext: {
+              ...geoLoadContext,
+              hazeFolder: result.actualFolder ?? imageFolderName,
+              albedo: result.actualAlbedo ?? requestedAlbedo,
+            },
+          });
+          if (stale()) {
+            if (blobUrl) URL.revokeObjectURL(blobUrl);
+            return;
+          }
+          if (blobUrl) {
+            surfaceUnitsBlobUrlRef.current = blobUrl;
+            setCurrentImage(blobUrl);
+            if (!stale()) {
+              setResolvedRtGeoForAssetKey({
+                key: `${imageFolderName}|${compositeType}`,
+                ctx: {
+                  ...geoLoadContext,
+                  hazeFolder: result.actualFolder ?? imageFolderName,
+                  albedo: result.actualAlbedo ?? requestedAlbedo,
+                },
+              });
+            }
+          } else if (!stale()) {
+            setCurrentImage(null);
+            setResolvedRtGeoForAssetKey({ key: null, ctx: null });
+          }
+          preloadAdjacentImages(
+            assetPhaseDeg,
+            imageTypeToLoad,
+            result?.actualFolder || imageFolderName,
+            2,
+            result?.actualAlbedo ?? requestedAlbedo
+          );
+          return;
+        }
+
+        const imageTypeToLoad = compositeType;
         const requestedAlbedo = FIXED_ALBEDO;
         const result = await loadPds4Image(assetPhaseDeg, imageTypeToLoad, imageFolderName, requestedAlbedo);
         if (stale()) return;
+        if (!result?.url) {
+          if (!stale()) {
+            setCurrentImage(null);
+            setResolvedRtGeoForAssetKey({ key: null, ctx: null });
+          }
+          return;
+        }
 
         if (imageType === 'monoBand') {
           const blobUrl = await compositeImageUrlToGrayscaleObjectURL(result.url, monoBandIndex);
@@ -1397,6 +1683,17 @@ function App() {
           setCurrentImage(result.url);
         }
 
+        if (!stale()) {
+          setResolvedRtGeoForAssetKey({
+            key: `${imageFolderName}|${compositeType}`,
+            ctx: {
+              ...geoLoadContext,
+              hazeFolder: result.actualFolder ?? imageFolderName,
+              albedo: result.actualAlbedo ?? requestedAlbedo,
+            },
+          });
+        }
+
         preloadAdjacentImages(
           assetPhaseDeg,
           imageTypeToLoad,
@@ -1408,6 +1705,7 @@ function App() {
         if (!stale()) {
           console.error('Error loading image:', error);
           setCurrentImage(null);
+          setResolvedRtGeoForAssetKey({ key: null, ctx: null });
         }
       } finally {
         if (!stale()) {
@@ -1420,8 +1718,9 @@ function App() {
       if (imageLoadTimerRef.current) {
         clearTimeout(imageLoadTimerRef.current);
       }
+      revokeSurfaceUnitsBlob();
     };
-  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex]);
+  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex, materialAlbedoMap, geoLoadContext]);
 
   // Update geo values when phase angle changes and there is an active selection.
   // Debounced to avoid lag while dragging phase in 3D edit mode.
@@ -1433,7 +1732,8 @@ function App() {
       if (toggles.plotMultiple && multiplePositions.length > 0) {
         fetchMultipleGeoValues(multiplePositions);
       } else if (!toggles.plotMultiple && clickedPosition) {
-        fetchGeoValues(clickedPosition.x, clickedPosition.y);
+        const disk681 = Boolean(clickedPosition.position?.is3d);
+        fetchGeoValues(clickedPosition.x, clickedPosition.y, null, disk681);
       }
     }, 140);
     return () => {
@@ -1450,7 +1750,7 @@ function App() {
 
     let cancelled = false;
     const remapSelectionsFor2dPhase = async () => {
-      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const assetPhaseDeg = assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType);
 
       if (toggles.plotMultiple) {
         if (!Array.isArray(multiplePositions) || multiplePositions.length === 0) return;
@@ -1508,8 +1808,9 @@ function App() {
     irDisplayMode,
     multiplePositions,
     remapPointToCurrent2dPhase,
+    imageType,
     sliders.phaseAngle,
-    toggles.plotMultiple
+    toggles.plotMultiple,
   ]);
 
   // Limit selected-points panel height so it scrolls instead of continuously growing.
@@ -1841,11 +2142,27 @@ function App() {
 
   useEffect(() => {
     loadMaterialAlbedoMap()
-      .then(setMaterialAlbedoMap)
+      .then((map) => {
+        clearMaterialDiskClassCache();
+        setMaterialAlbedoMap(map);
+      })
       .catch(() => setMaterialAlbedoMap(null));
   }, []);
 
-  // Cleanup effect
+  useEffect(() => {
+    const key = `${imageFolderName}|${compositeType}`;
+    if (prevRtGeoAssetKeyRef.current === null) {
+      prevRtGeoAssetKeyRef.current = key;
+      return;
+    }
+    if (prevRtGeoAssetKeyRef.current === key) return;
+    prevRtGeoAssetKeyRef.current = key;
+    clearMaterialDiskClassCache();
+    clearGeoCubeCache();
+    geoCubeDataRef.current = null;
+    currentGeoPreloadKeyRef.current = null;
+  }, [imageFolderName, compositeType]);
+
   useEffect(() => {
     return () => {
       clearDataCache();
@@ -1860,6 +2177,7 @@ function App() {
         <main className="app-body">
           <Routes>
             <Route path="/user-guide" element={<UserGuide />} />
+            <Route path="/debug/surface-units-map" element={<SurfaceMapDebugPage />} />
             <Route path="/" element={
               <div className="main-container">
                 {/* Left side - Display panels */}
@@ -1959,6 +2277,11 @@ function App() {
                               Click on Titan to visualize vectors from your selected surface location to the Sun and spacecraft,
                               plus the local surface normal vector.
                             </>
+                          ) : imageType === 'surfaceUnits' ? (
+                            <>
+                              <strong>Surface units (3-class)</strong>
+                              Flat basemap colors on the same RT disk grid and phase as Color IR (filename phase matches the phase slider).
+                            </>
                           ) : imageType === 'monoBand' ? (
                             <>
                               <strong>Black &amp; white (same disk as color IR)</strong>
@@ -1967,14 +2290,15 @@ function App() {
                           ) : (
                             <>
                               <strong>Color composite</strong>
-                              A false-color image from three IR wavelengths. Choose either the 5, 2, 1.3 um or 2, 1.6, 1.3 um RGB recipe under IR Image Options.
-                              Click on the disk to extract lat/lon, viewing angles, and spectral plots.
+                              False-color IR at the phase angle on the slider (normal RT geometry). Basemap 0 / 1 / 2 from lat/lon.
                             </>
                           )
                         }>
                           {irDisplayMode === '3d'
                             ? 'Observing Geometry'
-                            : (imageType === 'monoBand' ? 'Black & white IR' : 'Color IR')}
+                            : (imageType === 'surfaceUnits'
+                              ? 'Surface units (3-class)'
+                              : (imageType === 'monoBand' ? 'Black & white IR' : 'Color IR'))}
                         </Tooltip>
                       </h2>
                       {irDisplayMode === '3d' ? (
@@ -1982,13 +2306,13 @@ function App() {
                           <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <div style={{ width: '100%', height: `${panelMatchHeightPx}px`, borderRadius: '4px', overflow: 'hidden' }}>
                               <SphereView
-                                phaseAngle={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                phaseAngle={assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType)}
                                 compositeType={compositeType}
                                 viewMode="weightedPhase"
                                 minHeight={0}
                                 incidenceDeg={sliders.incidenceAngle}
                                 emissionDeg={sliders.emissionAngle}
-                                phaseDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                phaseDeg={assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType)}
                                 titanYawDeg={sliders.titanYaw}
                                 obliquityDeg={sliders.obliquity}
                                 cameraPreset={cameraPreset3d || 'none'}
@@ -2025,7 +2349,13 @@ function App() {
                           <div style={{ position: 'relative', width: '100%', flex: '1', display: 'flex', flexDirection: 'column' }}>
                             <ClickableImage
                               src={currentImage}
-                              alt={imageType === 'monoBand' ? 'Titan grayscale IR from haze-folder composite' : 'Titan color IR composite'}
+                              alt={
+                                imageType === 'surfaceUnits'
+                                  ? 'Titan disk colored by global surface unit (3-class basemap)'
+                                  : (imageType === 'monoBand'
+                                    ? 'Titan grayscale IR from haze-folder composite'
+                                    : 'Titan color IR composite')
+                              }
                               onImageClick={handleImageClick}
                               onImageHover={handleImageHover}
                               className="ir-color-image"
@@ -2034,7 +2364,8 @@ function App() {
                               multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
-                              phaseAngleDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                              phaseAngleDeg={assetPhaseDegForImageAndGeo(sliders.phaseAngle, imageType)}
+                              sharpDiskPixels={imageType === 'surfaceUnits'}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -2058,6 +2389,25 @@ function App() {
                             {hoverGeoValues ? (
                               <>
                                 <strong>Hover Position:</strong> Latitude: <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lat) ? `${hoverGeoValues.lat.toFixed(4)}\u00B0 ${hoverGeoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span>, Longitude: <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lon) ? `${hoverGeoValues.lon.toFixed(4)}\u00B0 ${hoverGeoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span>, Incidence: {isFiniteNumber(hoverGeoValues.incidence) ? `${hoverGeoValues.incidence.toFixed(2)}\u00B0` : 'N/A'}, Emission: {isFiniteNumber(hoverGeoValues.emis) ? `${hoverGeoValues.emis.toFixed(2)}\u00B0` : 'N/A'}, Phase: {isFiniteNumber(hoverGeoValues.phase) ? `${hoverGeoValues.phase.toFixed(2)}\u00B0` : 'N/A'}
+                                {Number.isFinite(hoverGeoValues.materialClass) && (
+                                  <span style={{ display: 'block', marginTop: '6px' }}>
+                                    <strong>Basemap unit (0 / 1 / 2) from lat/lon:</strong>{' '}
+                                    <span style={{ fontFamily: 'ui-monospace, monospace', color: '#e8f4c8' }}>
+                                      {hoverGeoValues.materialClass}
+                                    </span>
+                                    {' — '}
+                                    {getSurfaceMaterialLabel(hoverGeoValues.materialClass)}
+                                    <span style={{ display: 'block', marginTop: '4px' }}>
+                                      <strong>Surface material (spectra):</strong>{' '}
+                                      {formatSurfaceMaterialWithSpectrumAlbedo(hoverGeoValues.materialClass, hoverGeoValues.surfaceAlbedo)}
+                                    </span>
+                                  </span>
+                                )}
+                                {usesBasemapDiskMaterial(imageType) && !Number.isFinite(hoverGeoValues.materialClass) && isFiniteNumber(hoverGeoValues.lat) && isFiniteNumber(hoverGeoValues.lon) && (
+                                  <span style={{ display: 'block', marginTop: '6px', color: '#aaa', fontSize: '13px' }}>
+                                    <strong>Basemap unit:</strong> unavailable here (need valid incidence and emission on the disk).
+                                  </span>
+                                )}
                               </>
                             ) : (
                               <span>Hover over the image to see latitude/longitude and angles</span>
@@ -2076,6 +2426,7 @@ function App() {
                             plotMultiple={toggles.plotMultiple}
                             loadingGeo={loadingGeo}
                             currentPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                            colorIrBasemapMaterial={usesBasemapDiskMaterial(imageType)}
                             onClearAllPoints={handleClearAllSelectedPoints}
                             onRemovePoint={handleRemoveSelectedPoint}
                           />
@@ -2557,8 +2908,7 @@ function App() {
                             <Tooltip content={
                               <>
                                 <strong>Image Type</strong>{' '}
-                                <strong>Color</strong> shows a false-color composite; pick one of two wavelength triplets below.{' '}
-                                <strong>Black &amp; white</strong> uses the same haze-scenario color composite PNG as color IR, converted to grayscale with the wavelength slider (surface overlay stays aligned).
+                                <strong>Color</strong>, <strong>black &amp; white</strong>, and <strong>surface units</strong> all use the <strong>same phase</strong> as the phase slider for RT images and <code>*_geo.img</code> (e.g. 0°→<code>p000</code>, 180°→<code>p180</code>), so disk pixels and lat/lon stay aligned across modes.
                               </>
                             }>
                               Image Type
@@ -2584,6 +2934,16 @@ function App() {
                                 onChange={(e) => setImageType(e.target.value)}
                               />
                               <span>Black &amp; white</span>
+                            </label>
+                            <label className="radio-label">
+                              <input
+                                type="radio"
+                                name="imageType"
+                                value="surfaceUnits"
+                                checked={imageType === 'surfaceUnits'}
+                                onChange={(e) => setImageType(e.target.value)}
+                              />
+                              <span>Surface units (3-class)</span>
                             </label>
                           </div>
                           {imageType === 'irColor' && (

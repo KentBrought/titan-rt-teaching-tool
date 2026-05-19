@@ -89,6 +89,14 @@ function resolveFolderAndAlbedo(hazeFolder, requestedAlbedo, compositeType) {
   return { folder, albedo };
 }
 
+/** Canonical `public/assets/dt/<name>/` folder for RT images + per-scenario geo cubes. */
+export function resolveRtAssetFolder(hazeFolder, requestedAlbedo = 0.1, compositeType = '5_2_1.3') {
+  return resolveFolderAndAlbedo(hazeFolder, requestedAlbedo, compositeType).folder;
+}
+
+/** Grayscale views from geo bands (incidence / emission / phase) — same folder as `*_geo.img`, not `tomasko_1.0`. */
+const GEO_DERIVED_PUBLIC_BASE = '/assets/dt/vims_geo';
+
 /**
  * @param {string} hazeFolder - dt subfolder (canonical or legacy doose_*)
  */
@@ -109,10 +117,9 @@ export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder, a
   const effectiveAlbedo = resolved.albedo;
   const basePath = getAssetBasePath(folder);
   
-  // Handle geo-based image types (incidence, emission, phase)
-  // These are only available with albedo 0.1 in tomasko_1.0
+  // Handle geo-based image types (incidence, emission, phase) — derived from geo cubes in `vims_geo`
   if (compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase') {
-    return `/assets/dt/tomasko_1.0/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
+    return `${GEO_DERIVED_PUBLIC_BASE}/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
   }
   
   // Handle composite image types with albedo

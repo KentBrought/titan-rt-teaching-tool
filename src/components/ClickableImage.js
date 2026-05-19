@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { SURFACE_CLASS_RGB } from '../utils/materialMapLoader';
 import './ClickableImage.css';
 
 const ClickableImage = ({ 
@@ -15,6 +16,8 @@ const ClickableImage = ({
   phaseAngleDeg = 0,
   materialOverlay = null,
   materialVisibility = [true, true, true],
+  /** When true, use nearest-neighbor style scaling to avoid false color fringes on posterized disks. */
+  sharpDiskPixels = false,
 }) => {
   const [clickPosition, setClickPosition] = useState(initialPosition);
   const [zoom, setZoom] = useState(1);
@@ -133,6 +136,26 @@ const ClickableImage = ({
 
   const materialVisKey = materialVisibility.join(',');
 
+  /** Map pointer position inside the layout box to natural image pixels (object-fit: contain aware). */
+  const naturalPixelFromRelativePointer = (img, relativeX, relativeY) => {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    const ew = img.offsetWidth;
+    const eh = img.offsetHeight;
+    if (!nw || !nh || !ew || !eh) return null;
+    const scale = Math.min(ew / nw, eh / nh);
+    const drawnW = nw * scale;
+    const drawnH = nh * scale;
+    const offX = (ew - drawnW) * 0.5;
+    const offY = (eh - drawnH) * 0.5;
+    const ux = relativeX - offX;
+    const uy = relativeY - offY;
+    if (ux < 0 || uy < 0 || ux >= drawnW || uy >= drawnH) return null;
+    const naturalX = Math.max(0, Math.min(nw - 1, Math.floor((ux / drawnW) * nw)));
+    const naturalY = Math.max(0, Math.min(nh - 1, Math.floor((uy / drawnH) * nh)));
+    return { naturalX, naturalY };
+  };
+
   useLayoutEffect(() => {
     if (!materialOverlay || !imageRef.current || !materialCanvasRef.current) return;
     const img = imageRef.current;
@@ -148,11 +171,7 @@ const ClickableImage = ({
     canvas.height = dh;
     const ctx = canvas.getContext('2d');
     const imageData = ctx.createImageData(dw, dh);
-    const colors = [
-      [255, 90, 90],
-      [90, 220, 120],
-      [100, 160, 255],
-    ];
+    const colors = SURFACE_CLASS_RGB;
     const alpha = 110;
     for (let py = 0; py < dh; py++) {
       for (let px = 0; px < dw; px++) {
@@ -206,22 +225,15 @@ const ClickableImage = ({
     if (relativeX >= 0 && relativeX <= img.offsetWidth && 
         relativeY >= 0 && relativeY <= img.offsetHeight) {
       
-      // Calculate position in natural image coordinates
-      const scaleX = img.naturalWidth / img.offsetWidth;
-      const scaleY = img.naturalHeight / img.offsetHeight;
-      const naturalX = Math.round(relativeX * scaleX);
-      const naturalY = Math.round(relativeY * scaleY);
+      const nat = naturalPixelFromRelativePointer(img, relativeX, relativeY);
+      if (!nat) return null;
+      const { naturalX, naturalY } = nat;
       
-      // Clamp coordinates to valid range (geo cubes are 681x681)
-      const clampedX = Math.max(0, Math.min(naturalX, img.naturalWidth - 1));
-      const clampedY = Math.max(0, Math.min(naturalY, img.naturalHeight - 1));
-      
-      // Position relative to inner container (which matches image dimensions)
       return {
         displayX: relativeX,
         displayY: relativeY,
-        naturalX: clampedX,
-        naturalY: clampedY
+        naturalX,
+        naturalY
       };
     }
     return null;
@@ -465,7 +477,7 @@ const ClickableImage = ({
             ref={imageRef}
             src={src}
             alt={alt}
-            className="clickable-image"
+            className={`clickable-image${sharpDiskPixels ? ' clickable-image--sharp-disk' : ''}`}
             style={{ maxWidth: '100%', height: 'auto', objectFit: 'contain', display: 'block' }}
             onLoad={() => setOverlayRevision((n) => n + 1)}
           />

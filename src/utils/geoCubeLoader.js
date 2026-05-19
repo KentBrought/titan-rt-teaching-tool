@@ -4,86 +4,114 @@
  * Layers: 0=lat, 1=lon, 2=xres, 3=yres, 4=phase, 5=incidence, 6=emis, 7=azimuth, 8=distance
  */
 
-// Cache for parsed geo cube data (by phase angle)
+import { resolveRtAssetFolder } from './imageLoader';
+
 const geoCubeCache = new Map();
 
-/**
- * Load geo cube data from a .img file
- * @param {number} phaseAngle - Phase angle in degrees
- * @returns {Promise<ArrayBuffer>} ArrayBuffer containing the geo cube data
- */
-export const loadGeoCubeFile = async (phaseAngle) => {
-  const paddedPhase = String(Math.round(phaseAngle)).padStart(3, '0');
-  const filename = `2012_A0.1_p${paddedPhase}_geo.img`;
-  const url = `/assets/dt/tomasko_1.0/${filename}`;
-  
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to load geo cube: ${response.status}`);
-    }
-    return await response.arrayBuffer();
-  } catch (error) {
-    console.error(`Error loading geo cube file ${filename}:`, error);
-    throw error;
-  }
-};
+export const GEO_CUBE_BANDS = 9;
+export const GEO_CUBE_LINES = 681;
+export const GEO_CUBE_SAMPLES = 681;
+export const GEO_CUBE_FLOAT32_BYTES = GEO_CUBE_BANDS * GEO_CUBE_LINES * GEO_CUBE_SAMPLES * 4;
+
+/** Shared geo when RT-folder cube is missing or wrong size. */
+export const GEO_CUBE_PUBLIC_BASE = '/assets/dt/vims_geo';
+
+async function fetchArrayBuffer(url) {
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  return response.arrayBuffer();
+}
 
 /**
- * Parse geo cube data from ArrayBuffer
- * Geo cube structure: [9 bands, 681 lines, 681 samples]
- * Data type: IEEE754LSBSingle (32-bit float, little-endian)
- * Layout: Last Index Fastest (Sample fastest, then Line, then Band)
- * @param {ArrayBuffer} buffer - The binary data buffer
- * @returns {Float32Array} 1D array with data in [band][line][sample] order
+ * Load raw geo cube bytes. Prefers `*_geo.img` in the resolved RT asset folder when it matches
+ * the float32 cube size (same layout as `vims_geo`); otherwise uses `vims_geo`.
+ */
+export async function loadGeoCubeFile(phaseAngle, opts = {}) {
+  const paddedPhase = String(Math.round(phaseAngle)).padStart(3, '0');
+  const filename = `2012_A0.1_p${paddedPhase}_geo.img`;
+  const { hazeFolder, albedo = 0.1, compositeType = '5_2_1.3' } = opts;
+
+  const isUsableCube = (buf) => buf && buf.byteLength >= GEO_CUBE_FLOAT32_BYTES;
+
+  let buffer = null;
+  if (hazeFolder) {
+    const folder = resolveRtAssetFolder(hazeFolder, albedo, compositeType);
+    const rtBuf = await fetchArrayBuffer(`/assets/dt/${folder}/${filename}`);
+    if (isUsableCube(rtBuf)) {
+      buffer = rtBuf;
+    } else if (rtBuf) {
+      console.warn(
+        `[geo] Skipping /assets/dt/${folder}/${filename} (${rtBuf.byteLength} bytes); need >= ${GEO_CUBE_FLOAT32_BYTES} for float cube. Using ${GEO_CUBE_PUBLIC_BASE}.`
+      );
+    }
+  }
+  if (!buffer) {
+    buffer = await fetchArrayBuffer(`${GEO_CUBE_PUBLIC_BASE}/${filename}`);
+  }
+  if (!isUsableCube(buffer)) {
+    const err = new Error(`Failed to load geo cube: ${filename}`);
+    console.error(err.message);
+    throw err;
+  }
+  return buffer;
+}
+
+export function clearGeoCubeCache() {
+  geoCubeCache.clear();
+}
+
+/**
+ * Geo cubes on disk: only `public/assets/dt/vims_geo/*_geo.img` ship in this repo; per-haze folders hold
+ * composites only (`readme.txt`: *_geo are backplanes). {@link loadGeoCubeFile} therefore always ends up
+ * reading `vims_geo` bytes for RT-aligned lat/lon at filename phase `p***`. Cache by phase only so every
+ * haze scenario at the same slider shares identical geometry — matches the phase-labelled PNGs/`p***` grid.
+ */
+function geoCacheKey(phaseAngle, _geoLoadContext) {
+  const p = Math.round(Number(phaseAngle));
+  return `${p}|vims_geo`;
+}
+
+/**
+ * Parse geo cube data from ArrayBuffer (uses first GEO_CUBE_FLOAT32_BYTES; ignores trailing padding).
  */
 export const parseGeoCube = (buffer) => {
-  // The data is stored as 32-bit floats (4 bytes each)
-  // Total size: 9 * 681 * 681 * 4 = 16,695,396 bytes
   const view = new DataView(buffer);
-  const numBands = 9;
-  const numLines = 681;
-  const numSamples = 681;
+  const numBands = GEO_CUBE_BANDS;
+  const numLines = GEO_CUBE_LINES;
+  const numSamples = GEO_CUBE_SAMPLES;
   const totalElements = numBands * numLines * numSamples;
-  const data = new Float32Array(totalElements);
-  
-  // Read the data (little-endian 32-bit floats)
-  for (let i = 0; i < totalElements; i++) {
-    data[i] = view.getFloat32(i * 4, true); // true = little-endian
+  const expectedBytes = totalElements * 4;
+  if (buffer.byteLength < expectedBytes) {
+    throw new Error(
+      `Geo cube file too small (${buffer.byteLength} bytes; need at least ${expectedBytes}).`
+    );
   }
-  
+  const data = new Float32Array(totalElements);
+  for (let i = 0; i < totalElements; i++) {
+    data[i] = view.getFloat32(i * 4, true);
+  }
   return data;
 };
 
-/**
- * Get value from geo cube at specific position and band
- * @param {Float32Array} geoCubeData - Parsed geo cube data (1D array)
- * @param {number} x - Sample coordinate (0-680)
- * @param {number} y - Line coordinate (0-680)
- * @param {number} band - Band index (0-8)
- * @returns {number} The value at the specified position
- */
 export const getGeoValue = (geoCubeData, x, y, band) => {
   if (!geoCubeData || typeof geoCubeData.length !== 'number') {
     return null;
   }
-  const numBands = 9;
-  const numLines = 681;
-  const numSamples = 681;
-  
-  // Clamp and validate coordinates
+  const numBands = GEO_CUBE_BANDS;
+  const numLines = GEO_CUBE_LINES;
+  const numSamples = GEO_CUBE_SAMPLES;
+
   const clampedX = Math.max(0, Math.min(Math.floor(x), numSamples - 1));
   const clampedY = Math.max(0, Math.min(Math.floor(y), numLines - 1));
   const clampedBand = Math.max(0, Math.min(Math.floor(band), numBands - 1));
-  
-  // Calculate index: [band][line][sample] order (Last Index Fastest = sample changes fastest)
+
   const index = clampedBand * numLines * numSamples + clampedY * numSamples + clampedX;
-  
+
   if (index < 0 || index >= geoCubeData.length) {
     console.error(`Invalid index ${index} for array length ${geoCubeData.length}`);
     return null;
   }
-  
+
   return geoCubeData[index];
 };
 
@@ -150,45 +178,34 @@ const estimateLatLonFromGrid = (geoData, x, y, maxRadius = 24) => {
 };
 
 /**
- * Get or load parsed geo cube data for a phase angle (with caching)
- * @param {number} phaseAngle - Phase angle in degrees
- * @returns {Promise<Float32Array>} Parsed geo cube data
+ * @param {number} phaseAngle
+ * @param {object|null} [geoLoadContext] `{ hazeFolder, albedo?, compositeType? }`
  */
-export const getGeoCubeData = async (phaseAngle) => {
-  const cacheKey = Math.round(phaseAngle);
-  
-  // Check cache first
+export const getGeoCubeData = async (phaseAngle, geoLoadContext = null) => {
+  const cacheKey = geoCacheKey(phaseAngle, geoLoadContext);
+
   if (geoCubeCache.has(cacheKey)) {
     return geoCubeCache.get(cacheKey);
   }
-  
-  // Load and parse
-  const buffer = await loadGeoCubeFile(phaseAngle);
+
+  const buffer = await loadGeoCubeFile(phaseAngle, geoLoadContext || {});
   const geoData = parseGeoCube(buffer);
-  
-  // Cache the parsed data
+
   geoCubeCache.set(cacheKey, geoData);
-  
+
   return geoData;
 };
 
-/**
- * Extract values from layers 0, 1, 4, 5, 6, and 7 at a specific position
- * @param {number} phaseAngle - Phase angle in degrees
- * @param {number} x - Sample coordinate (0-680)
- * @param {number} y - Line coordinate (0-680)
- * @returns {Promise<Object>} Object with lat, lon, phase, incidence, emis, and azimuth values
- */
-export const extractGeoValues = async (phaseAngle, x, y) => {
+export const extractGeoValues = async (phaseAngle, x, y, geoLoadContext = null) => {
   try {
-    const geoData = await getGeoCubeData(phaseAngle);
+    const geoData = await getGeoCubeData(phaseAngle, geoLoadContext);
 
-    const rawLat = getGeoValue(geoData, x, y, 0);       // Layer 0: lat (negative = North)
-    const rawLon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon (negative = West)
-    const rawPhase = getGeoValue(geoData, x, y, 4);     // Layer 4: phase (Deg)
-    const rawIncidence = getGeoValue(geoData, x, y, 5); // Layer 5: incidence (Deg)
-    const rawEmis = getGeoValue(geoData, x, y, 6);      // Layer 6: emis (Deg)
-    const rawAzimuth = getGeoValue(geoData, x, y, 7);   // Layer 7: azimuth (Deg)
+    const rawLat = getGeoValue(geoData, x, y, 0);
+    const rawLon = getGeoValue(geoData, x, y, 1);
+    const rawPhase = getGeoValue(geoData, x, y, 4);
+    const rawIncidence = getGeoValue(geoData, x, y, 5);
+    const rawEmis = getGeoValue(geoData, x, y, 6);
+    const rawAzimuth = getGeoValue(geoData, x, y, 7);
 
     const lat = toFiniteInRangeOrNull(rawLat, -90, 90);
     const lon = toFiniteInRangeOrNull(rawLon, -360, 360);
@@ -201,7 +218,7 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
       : { lat: null, lon: null };
     const resolvedLat = Number.isFinite(lat) ? lat : estimatedLatLon.lat;
     const resolvedLon = Number.isFinite(lon) ? lon : estimatedLatLon.lon;
-    
+
     return {
       lat: resolvedLat,
       lon: resolvedLon,

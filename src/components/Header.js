@@ -71,6 +71,9 @@ function Header() {
         <Link to="/user-guide" className="user-guide-link">
           User Guide
         </Link>
+        <Link to="/debug/surface-units-map" className="user-guide-link">
+          Surface map debug
+        </Link>
         <div className="github-container">
           <a
             href="https://github.com/KentBrought/titan-rt-teaching-tool"

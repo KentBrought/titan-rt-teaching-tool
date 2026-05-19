@@ -123,8 +123,8 @@ def generate_geo_images_for_all_angles():
     Generate grayscale images for all phase angles (0-355 in 5-degree increments).
     Creates images for incidence (layer 5), emission (layer 6), and phase (layer 4).
     """
-    base_dir = 'public/assets/dt/tomasko_1.0'
-    output_dir = 'public/assets/dt/tomasko_1.0'
+    base_dir = 'public/assets/dt/vims_geo'
+    output_dir = 'public/assets/dt/vims_geo'
     
     # Phase angles from 0 to 355 in 5-degree increments
     phase_angles = range(0, 360, 5)

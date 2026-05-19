@@ -17,6 +17,13 @@
   border-radius: 4px;
 }
 
+/* Posterized 3-class disk: avoid blended fringes when the 681px image is scaled down in the layout. */
+.clickable-image.clickable-image--sharp-disk {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
 .click-marker {
   position: absolute;
   transform: translate(-50%, -50%);
