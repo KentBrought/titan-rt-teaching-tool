@@ -1,5 +1,239 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import './ClickableImage.css';
+
+const GEO_GRID_SIZE = 681;
+const GEO_BAND_SIZE = GEO_GRID_SIZE * GEO_GRID_SIZE;
+const LAT_GRID_LINES = [-60, -30, 0, 30, 60];
+const LON_LABEL_STEPS = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+
+const normalizeLongitudeDeg = (lonDeg) => {
+  if (!Number.isFinite(lonDeg)) return null;
+  return ((((lonDeg + 180) % 360) + 360) % 360) - 180;
+};
+
+const angularDifferenceDeg = (valueDeg, targetDeg) => {
+  const value = normalizeLongitudeDeg(valueDeg);
+  const target = normalizeLongitudeDeg(targetDeg);
+  if (!Number.isFinite(value) || !Number.isFinite(target)) return null;
+  return ((((value - target + 180) % 360) + 360) % 360) - 180;
+};
+
+const buildPath = (points) => {
+  if (!points || points.length < 2) return '';
+  return points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
+};
+
+const getGeoLat = (geoData, x, y) => geoData[y * GEO_GRID_SIZE + x];
+const getGeoLon = (geoData, x, y) => geoData[GEO_BAND_SIZE + y * GEO_GRID_SIZE + x];
+
+const isValidLat = (lat) => Number.isFinite(lat) && lat >= -90 && lat <= 90;
+const isValidLon = (lon) => Number.isFinite(lon) && lon >= -360 && lon <= 360;
+
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const getGeoBounds = (geoData) => {
+  if (!geoData || typeof geoData.length !== 'number' || geoData.length < GEO_BAND_SIZE * 2) return null;
+  let minX = GEO_GRID_SIZE;
+  let minY = GEO_GRID_SIZE;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < GEO_GRID_SIZE; y += 1) {
+    const row = y * GEO_GRID_SIZE;
+    for (let x = 0; x < GEO_GRID_SIZE; x += 1) {
+      const idx = row + x;
+      const lat = geoData[idx];
+      const lon = geoData[GEO_BAND_SIZE + idx];
+      if (!isValidLat(lat) || !isValidLon(lon)) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < minX || maxY < minY) return null;
+  return { minX, minY, maxX, maxY };
+};
+
+const getImageContentBounds = (img) => {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+  try {
+    ctx.drawImage(img, 0, 0);
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let minX = canvas.width;
+    let minY = canvas.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const idx = (y * canvas.width + x) * 4;
+        const alpha = data[idx + 3];
+        const brightness = data[idx] + data[idx + 1] + data[idx + 2];
+        if (alpha < 8 || brightness <= 6) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < minX || maxY < minY) return null;
+    return { minX, minY, maxX, maxY };
+  } catch (_err) {
+    return null;
+  }
+};
+
+const getIdentityImageBounds = (img) => ({
+  minX: 0,
+  minY: 0,
+  maxX: Math.max(0, (img?.naturalWidth || GEO_GRID_SIZE) - 1),
+  maxY: Math.max(0, (img?.naturalHeight || GEO_GRID_SIZE) - 1),
+});
+
+const buildImageGeoTransform = (img, geoData, referenceImageBounds = null) => {
+  const geoBounds = getGeoBounds(geoData) || {
+    minX: 0,
+    minY: 0,
+    maxX: GEO_GRID_SIZE - 1,
+    maxY: GEO_GRID_SIZE - 1,
+  };
+  const imageBounds = referenceImageBounds || getImageContentBounds(img) || getIdentityImageBounds(img);
+  return {
+    geoBounds,
+    imageBounds,
+    naturalWidth: img?.naturalWidth || GEO_GRID_SIZE,
+    naturalHeight: img?.naturalHeight || GEO_GRID_SIZE,
+  };
+};
+
+const mapImageNaturalToGeo = (x, y, transform) => {
+  const t = transform || {
+    imageBounds: { minX: 0, minY: 0, maxX: GEO_GRID_SIZE - 1, maxY: GEO_GRID_SIZE - 1 },
+    geoBounds: { minX: 0, minY: 0, maxX: GEO_GRID_SIZE - 1, maxY: GEO_GRID_SIZE - 1 },
+  };
+  const imageW = Math.max(1, t.imageBounds.maxX - t.imageBounds.minX);
+  const imageH = Math.max(1, t.imageBounds.maxY - t.imageBounds.minY);
+  const geoW = Math.max(1, t.geoBounds.maxX - t.geoBounds.minX);
+  const geoH = Math.max(1, t.geoBounds.maxY - t.geoBounds.minY);
+  const nx = (x - t.imageBounds.minX) / imageW;
+  const ny = (y - t.imageBounds.minY) / imageH;
+  return {
+    x: Math.round(clamp(t.geoBounds.minX + nx * geoW, 0, GEO_GRID_SIZE - 1)),
+    y: Math.round(clamp(t.geoBounds.minY + ny * geoH, 0, GEO_GRID_SIZE - 1)),
+  };
+};
+
+const mapGeoToImageNatural = (x, y, transform) => {
+  const t = transform || {
+    imageBounds: { minX: 0, minY: 0, maxX: GEO_GRID_SIZE - 1, maxY: GEO_GRID_SIZE - 1 },
+    geoBounds: { minX: 0, minY: 0, maxX: GEO_GRID_SIZE - 1, maxY: GEO_GRID_SIZE - 1 },
+  };
+  const imageW = Math.max(1, t.imageBounds.maxX - t.imageBounds.minX);
+  const imageH = Math.max(1, t.imageBounds.maxY - t.imageBounds.minY);
+  const geoW = Math.max(1, t.geoBounds.maxX - t.geoBounds.minX);
+  const geoH = Math.max(1, t.geoBounds.maxY - t.geoBounds.minY);
+  const nx = (x - t.geoBounds.minX) / geoW;
+  const ny = (y - t.geoBounds.minY) / geoH;
+  return {
+    x: t.imageBounds.minX + nx * imageW,
+    y: t.imageBounds.minY + ny * imageH,
+  };
+};
+
+const interpolateCrossing = (aValue, bValue) => {
+  const denom = Math.abs(aValue) + Math.abs(bValue);
+  if (denom <= 1e-8) return 0.5;
+  return Math.max(0, Math.min(1, Math.abs(aValue) / denom));
+};
+
+const shouldSplitSegment = (a, b) => {
+  if (!a || !b) return true;
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return ((dx * dx) + (dy * dy)) > (34 * 34);
+};
+
+const buildContourPathsFromPoints = (points) => {
+  if (!points.length) return [];
+  const paths = [];
+  let segment = [];
+  points.forEach((point) => {
+    if (segment.length && shouldSplitSegment(segment[segment.length - 1], point)) {
+      const path = buildPath(segment);
+      if (path) paths.push({ path, labelPoint: segment[Math.floor(segment.length / 2)] });
+      segment = [];
+    }
+    segment.push(point);
+  });
+  const path = buildPath(segment);
+  if (path) paths.push({ path, labelPoint: segment[Math.floor(segment.length / 2)] });
+  return paths;
+};
+
+const buildLatContourPaths = (geoData, targetLat, mapGeoToDisplay) => {
+  const points = [];
+
+  for (let x = 0; x < GEO_GRID_SIZE; x += 2) {
+    let previous = null;
+    for (let y = 0; y < GEO_GRID_SIZE; y += 2) {
+      const lat = getGeoLat(geoData, x, y);
+      if (!isValidLat(lat)) {
+        previous = null;
+        continue;
+      }
+      const current = { y, delta: lat - targetLat };
+      if (previous && (
+        current.delta === 0
+        || previous.delta === 0
+        || Math.sign(current.delta) !== Math.sign(previous.delta)
+      )) {
+        const t = interpolateCrossing(previous.delta, current.delta);
+        points.push(mapGeoToDisplay(x, previous.y + ((current.y - previous.y) * t)));
+        break;
+      }
+      previous = current;
+    }
+  }
+
+  return buildContourPathsFromPoints(points);
+};
+
+const buildLonContourPaths = (geoData, targetLon, mapGeoToDisplay) => {
+  const points = [];
+
+  for (let y = 0; y < GEO_GRID_SIZE; y += 2) {
+    let previous = null;
+    for (let x = 0; x < GEO_GRID_SIZE; x += 2) {
+      const lon = getGeoLon(geoData, x, y);
+      if (!isValidLon(lon)) {
+        previous = null;
+        continue;
+      }
+      const delta = angularDifferenceDeg(lon, targetLon);
+      if (!Number.isFinite(delta) || Math.abs(delta) > 120) {
+        previous = null;
+        continue;
+      }
+      const current = { x, delta };
+      if (previous && (
+        current.delta === 0
+        || previous.delta === 0
+        || Math.sign(current.delta) !== Math.sign(previous.delta)
+      )) {
+        const t = interpolateCrossing(previous.delta, current.delta);
+        points.push(mapGeoToDisplay(previous.x + ((current.x - previous.x) * t), y));
+        break;
+      }
+      previous = current;
+    }
+  }
+
+  return buildContourPathsFromPoints(points);
+};
 
 const ClickableImage = ({ 
   src, 
@@ -12,13 +246,17 @@ const ClickableImage = ({
   multiplePositions = [],
   plotMultiple = false,
   showLatLonGrid = false,
-  phaseAngleDeg = 0,
+  geoCubeData = null,
+  alignmentReferenceSrc = null,
   materialOverlay = null,
   materialVisibility = [true, true, true],
 }) => {
   const [clickPosition, setClickPosition] = useState(initialPosition);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [imageGeoTransform, setImageGeoTransform] = useState(null);
+  const [referenceImageBounds, setReferenceImageBounds] = useState(null);
   const [overlayRevision, setOverlayRevision] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState(null); // { type: 'single' } | { type: 'multiple', index }
   const [markerTooltip, setMarkerTooltip] = useState({ visible: false, x: 0, y: 0 });
@@ -42,37 +280,46 @@ const ClickableImage = ({
         requestAnimationFrame(() => {
           if (imageRef.current && containerRef.current && imageContainerRef.current) {
             const img = imageRef.current;
+            setImageSize((prev) => {
+              const next = { width: img.offsetWidth || 0, height: img.offsetHeight || 0 };
+              return (prev.width === next.width && prev.height === next.height) ? prev : next;
+            });
+            setImageGeoTransform(buildImageGeoTransform(img, geoCubeData, referenceImageBounds));
             
             // Recalculate display position if we have natural coordinates
             // Now using image-relative coordinates (relative to inner container)
             if (initialPosition && initialPosition.x !== undefined && initialPosition.y !== undefined) {
               if (img.naturalWidth > 0 && img.naturalHeight > 0 && img.offsetWidth > 0 && img.offsetHeight > 0) {
-                // Convert natural coordinates to image-relative display coordinates
+                const imagePoint = mapGeoToImageNatural(initialPosition.x, initialPosition.y, buildImageGeoTransform(img, geoCubeData, referenceImageBounds));
                 const scaleX = img.offsetWidth / img.naturalWidth;
                 const scaleY = img.offsetHeight / img.naturalHeight;
-                const imageRelativeX = initialPosition.x * scaleX;
-                const imageRelativeY = initialPosition.y * scaleY;
+                const imageRelativeX = imagePoint.x * scaleX;
+                const imageRelativeY = imagePoint.y * scaleY;
                 
                 setClickPosition({
                   displayX: imageRelativeX,
                   displayY: imageRelativeY,
                   naturalX: initialPosition.x,
-                  naturalY: initialPosition.y
+                  naturalY: initialPosition.y,
+                  imageNaturalX: imagePoint.x,
+                  imageNaturalY: imagePoint.y,
                 });
               }
             } else if (initialPosition && initialPosition.position) {
               // Recalculate stored position - use image-relative coordinates
-              if (initialPosition.position.naturalX !== undefined && initialPosition.position.naturalY !== undefined) {
+              if (initialPosition.position.imageNaturalX !== undefined && initialPosition.position.imageNaturalY !== undefined) {
                 const scaleX = img.offsetWidth / img.naturalWidth;
                 const scaleY = img.offsetHeight / img.naturalHeight;
-                const imageRelativeX = initialPosition.position.naturalX * scaleX;
-                const imageRelativeY = initialPosition.position.naturalY * scaleY;
+                const imageRelativeX = initialPosition.position.imageNaturalX * scaleX;
+                const imageRelativeY = initialPosition.position.imageNaturalY * scaleY;
                 
                 setClickPosition({
                   displayX: imageRelativeX,
                   displayY: imageRelativeY,
                   naturalX: initialPosition.position.naturalX,
-                  naturalY: initialPosition.position.naturalY
+                  naturalY: initialPosition.position.naturalY,
+                  imageNaturalX: initialPosition.position.imageNaturalX,
+                  imageNaturalY: initialPosition.position.imageNaturalY,
                 });
               } else if (initialPosition.position.displayX !== undefined && initialPosition.position.displayY !== undefined) {
                 // If we have display coordinates, they should already be image-relative
@@ -124,7 +371,32 @@ const ClickableImage = ({
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, [src, initialPosition]);
+  }, [src, initialPosition, geoCubeData, referenceImageBounds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!alignmentReferenceSrc) {
+      setReferenceImageBounds(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const refImg = new Image();
+    refImg.onload = () => {
+      if (cancelled) return;
+      setReferenceImageBounds(getImageContentBounds(refImg));
+    };
+    refImg.onerror = () => {
+      if (cancelled) return;
+      setReferenceImageBounds(null);
+    };
+    refImg.src = alignmentReferenceSrc;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alignmentReferenceSrc]);
 
   useEffect(() => {
     setZoom(1);
@@ -179,15 +451,21 @@ const ClickableImage = ({
     ctx.putImageData(imageData, 0, 0);
     canvas.style.width = `${dw}px`;
     canvas.style.height = `${dh}px`;
-  }, [materialOverlay, materialVisKey, src, zoom, pan, overlayRevision]);
+  }, [materialOverlay, materialVisKey, materialVisibility, src, zoom, pan, overlayRevision]);
 
   useEffect(() => {
     const el = imageRef.current;
-    if (!el || !materialOverlay) return;
-    const ro = new ResizeObserver(() => setOverlayRevision((n) => n + 1));
+    if (!el || (!materialOverlay && !showLatLonGrid)) return;
+    const ro = new ResizeObserver(() => {
+      setImageSize((prev) => {
+        const next = { width: el.offsetWidth || 0, height: el.offsetHeight || 0 };
+        return (prev.width === next.width && prev.height === next.height) ? prev : next;
+      });
+      setOverlayRevision((n) => n + 1);
+    });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [src, materialOverlay]);
+  }, [src, materialOverlay, showLatLonGrid]);
 
   const calculateCoordinates = (e) => {
     if (!imageRef.current || !imageContainerRef.current) return null;
@@ -209,19 +487,22 @@ const ClickableImage = ({
       // Calculate position in natural image coordinates
       const scaleX = img.naturalWidth / img.offsetWidth;
       const scaleY = img.naturalHeight / img.offsetHeight;
-      const naturalX = Math.round(relativeX * scaleX);
-      const naturalY = Math.round(relativeY * scaleY);
+      const imageNaturalX = Math.round(relativeX * scaleX);
+      const imageNaturalY = Math.round(relativeY * scaleY);
+      const geoPoint = mapImageNaturalToGeo(imageNaturalX, imageNaturalY, imageGeoTransform);
       
       // Clamp coordinates to valid range (geo cubes are 681x681)
-      const clampedX = Math.max(0, Math.min(naturalX, img.naturalWidth - 1));
-      const clampedY = Math.max(0, Math.min(naturalY, img.naturalHeight - 1));
+      const clampedImageX = Math.max(0, Math.min(imageNaturalX, img.naturalWidth - 1));
+      const clampedImageY = Math.max(0, Math.min(imageNaturalY, img.naturalHeight - 1));
       
       // Position relative to inner container (which matches image dimensions)
       return {
         displayX: relativeX,
         displayY: relativeY,
-        naturalX: clampedX,
-        naturalY: clampedY
+        naturalX: geoPoint.x,
+        naturalY: geoPoint.y,
+        imageNaturalX: clampedImageX,
+        imageNaturalY: clampedImageY,
       };
     }
     return null;
@@ -366,41 +647,41 @@ const ClickableImage = ({
     }, 0);
   };
 
-  const latLines = [-60, -30, 0, 30, 60];
-  const lonLabelSteps = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
-  const normalizeLongitudeDeg = (lonDeg) => ((((lonDeg + 180) % 360) + 360) % 360) - 180;
-  const phaseWrapped = ((((phaseAngleDeg % 360) + 360) % 360));
-  const lonLines = lonLabelSteps.map((labelDeg) => normalizeLongitudeDeg(labelDeg));
-  const getProjectedPoint = (latDeg, lonDeg, radius, cx, cy) => {
-    const lat = (latDeg * Math.PI) / 180;
-    const lonShifted = normalizeLongitudeDeg(lonDeg + 180 - phaseWrapped);
-    const lon = (lonShifted * Math.PI) / 180;
-    const visible = (Math.cos(lat) * Math.cos(lon)) >= 0;
-    if (!visible) return null;
-    const x = cx + (radius * Math.cos(lat) * Math.sin(lon));
-    const y = cy - (radius * Math.sin(lat));
-    return { x, y };
-  };
-  const buildPath = (points) => {
-    if (!points || points.length === 0) return '';
-    return points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
-  };
-  const buildLatPath = (latDeg, radius, cx, cy) => {
-    const points = [];
-    for (let lon = -180; lon <= 180; lon += 3) {
-      const p = getProjectedPoint(latDeg, lon, radius, cx, cy);
-      if (p) points.push(p);
-    }
-    return buildPath(points);
-  };
-  const buildLonPath = (lonDeg, radius, cx, cy) => {
-    const points = [];
-    for (let lat = -90; lat <= 90; lat += 2) {
-      const p = getProjectedPoint(lat, lonDeg, radius, cx, cy);
-      if (p) points.push(p);
-    }
-    return buildPath(points);
-  };
+  const gridOverlay = useMemo(() => {
+    if (!showLatLonGrid || !geoCubeData) return null;
+    const width = imageSize.width;
+    const height = imageSize.height;
+    if (!width || !height || geoCubeData.length < GEO_BAND_SIZE * 2) return null;
+    const transform = imageGeoTransform || {
+      imageBounds: { minX: 0, minY: 0, maxX: GEO_GRID_SIZE - 1, maxY: GEO_GRID_SIZE - 1 },
+      geoBounds: { minX: 0, minY: 0, maxX: GEO_GRID_SIZE - 1, maxY: GEO_GRID_SIZE - 1 },
+      naturalWidth: GEO_GRID_SIZE,
+      naturalHeight: GEO_GRID_SIZE,
+    };
+    const displayScaleX = width / Math.max(1, transform.naturalWidth || GEO_GRID_SIZE);
+    const displayScaleY = height / Math.max(1, transform.naturalHeight || GEO_GRID_SIZE);
+    const mapGeoToDisplay = (x, y) => {
+      const imagePoint = mapGeoToImageNatural(x, y, transform);
+      return {
+        x: imagePoint.x * displayScaleX,
+        y: imagePoint.y * displayScaleY,
+      };
+    };
+
+    return {
+      width,
+      height,
+      latContours: LAT_GRID_LINES.map((lat) => ({
+        value: lat,
+        contours: buildLatContourPaths(geoCubeData, lat, mapGeoToDisplay),
+      })),
+      lonContours: LON_LABEL_STEPS.map((lon) => ({
+        value: lon,
+        normalizedValue: normalizeLongitudeDeg(lon),
+        contours: buildLonContourPaths(geoCubeData, lon, mapGeoToDisplay),
+      })),
+    };
+  }, [showLatLonGrid, geoCubeData, imageSize.width, imageSize.height, imageGeoTransform]);
 
   const getWarpedMarkerStyle = (position) => {
     const safeX = Number.isFinite(position?.displayX) ? position.displayX : 0;
@@ -467,7 +748,14 @@ const ClickableImage = ({
             alt={alt}
             className="clickable-image"
             style={{ maxWidth: '100%', height: 'auto', objectFit: 'contain', display: 'block' }}
-            onLoad={() => setOverlayRevision((n) => n + 1)}
+            onLoad={() => {
+              if (imageRef.current) {
+                const img = imageRef.current;
+                setImageSize({ width: img.offsetWidth || 0, height: img.offsetHeight || 0 });
+                setImageGeoTransform(buildImageGeoTransform(img, geoCubeData, referenceImageBounds));
+              }
+              setOverlayRevision((n) => n + 1);
+            }}
           />
           {materialOverlay && (
             <canvas
@@ -532,81 +820,80 @@ const ClickableImage = ({
               );
             })()
           )}
-          {showLatLonGrid && imageRef.current && (
+          {showLatLonGrid && gridOverlay && (
             <svg
-              width={imageRef.current.offsetWidth}
-              height={imageRef.current.offsetHeight}
+              width={gridOverlay.width}
+              height={gridOverlay.height}
               style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 12 }}
             >
-              {(() => {
-                const w = imageRef.current.offsetWidth;
-                const h = imageRef.current.offsetHeight;
-                // Slightly larger so the overlay reaches the full dark disk.
-                const r = Math.min(w, h) * 0.380;
-                const cx = w * 0.5;
-                const cy = h * 0.5;
+              {gridOverlay.latContours.map(({ value, contours }) => {
+                const labelPoint = contours[0]?.labelPoint;
                 return (
-                  <>
-                    {latLines.map((lat) => {
-                      const path = buildLatPath(lat, r, cx, cy);
-                      const latLabelPoint = getProjectedPoint(lat, -90, r, cx, cy);
-                      return (
-                        <g key={`lat-${lat}`}>
-                          {path && (
-                            <path
-                              d={path}
-                              fill="none"
-                              stroke="rgba(120,220,255,0.45)"
-                              strokeWidth="1"
-                              style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 5px rgba(0,0,0,1))' }}
-                            />
-                          )}
-                          {latLabelPoint && (
-                            <text
-                              x={6}
-                              y={latLabelPoint.y + 4}
-                              fill="#9de7ff"
-                              fontSize="11"
-                              style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}
-                            >
-                              {`${lat}\u00B0`}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                    {lonLines.map((lon, idx) => {
-                      const path = buildLonPath(lon, r, cx, cy);
-                      const labelPoint = getProjectedPoint(0, lon, r, cx, cy);
-                      const lonLabel = lonLabelSteps[idx];
-                      return (
-                        <g key={`lon-${lon}`}>
-                          {path && (
-                            <path
-                              d={path}
-                              fill="none"
-                              stroke="rgba(120,220,255,0.45)"
-                              strokeWidth="1"
-                              style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 5px rgba(0,0,0,1))' }}
-                            />
-                          )}
-                          {labelPoint && (
-                            <text
-                              x={labelPoint.x - 10}
-                              y={labelPoint.y - 6}
-                              fill="#9de7ff"
-                              fontSize="11"
-                              style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 6px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,0.95)' }}
-                            >
-                              {`${lonLabel}\u00B0`}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </>
+                  <g key={`lat-${value}`}>
+                    {contours.map(({ path }, idx) => (
+                      <path
+                        key={`lat-${value}-${idx}`}
+                        d={path}
+                        fill="none"
+                        stroke="rgba(145,230,255,0.82)"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 6px rgba(0,0,0,1))' }}
+                      />
+                    ))}
+                    {labelPoint && (
+                      <text
+                        x={Math.max(6, Math.min(gridOverlay.width - 32, labelPoint.x + 4))}
+                        y={Math.max(12, Math.min(gridOverlay.height - 6, labelPoint.y - 4))}
+                        fill="#9de7ff"
+                        fontSize="16"
+                        fontWeight="900"
+                        stroke="rgba(0,0,0,0.9)"
+                        strokeWidth="3"
+                        paintOrder="stroke fill"
+                        style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 7px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.95)' }}
+                      >
+                        {`${value}°`}
+                      </text>
+                    )}
+                  </g>
                 );
-              })()}
+              })}
+              {gridOverlay.lonContours.map(({ value, normalizedValue, contours }) => {
+                const labelPoint = contours[0]?.labelPoint;
+                return (
+                  <g key={`lon-${normalizedValue}`}>
+                    {contours.map(({ path }, idx) => (
+                      <path
+                        key={`lon-${normalizedValue}-${idx}`}
+                        d={path}
+                        fill="none"
+                        stroke="rgba(145,230,255,0.82)"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 6px rgba(0,0,0,1))' }}
+                      />
+                    ))}
+                    {labelPoint && (
+                      <text
+                        x={Math.max(6, Math.min(gridOverlay.width - 42, labelPoint.x - 10))}
+                        y={Math.max(12, Math.min(gridOverlay.height - 6, labelPoint.y - 6))}
+                        fill="#9de7ff"
+                        fontSize="16"
+                        fontWeight="900"
+                        stroke="rgba(0,0,0,0.9)"
+                        strokeWidth="3"
+                        paintOrder="stroke fill"
+                        style={{ textShadow: '0 0 2px rgba(0,0,0,1), 0 0 7px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,0.95)' }}
+                      >
+                        {`${value}°`}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
             </svg>
           )}
         </div>

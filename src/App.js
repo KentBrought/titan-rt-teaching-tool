@@ -32,8 +32,8 @@ const FIXED_ALBEDO = 0.1;
 const MAX_SELECTED_POINTS = 5;
 const PHASE_STEP_DEG = 15;
 const MAX_PHASE_DEG = 180;
-/** Slider 0° uses `p015` assets; filenames / geo cubes are +15° vs the UI label (teaching alignment). */
-const ASSET_PHASE_OFFSET_DEG = 15;
+/** Use the same phase value for displayed labels, IR images, and geo backplanes. */
+const ASSET_PHASE_OFFSET_DEG = 0;
 const PHASE_SLIDER_MIN = 0;
 const PHASE_SLIDER_MAX = 12;
 
@@ -141,11 +141,11 @@ const GeoValuesDisplay = memo(({
                   <p style={{ color: '#ff6b6b' }}>Error: {values.error}</p>
                 ) : (
                   <div style={{ fontSize: '14px', color: '#ccc' }}>
-                    <p><strong>Latitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(values.lat) ? `${values.lat.toFixed(4)}\u00B0 ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span></p>
-                    <p><strong>Longitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(values.lon) ? `${values.lon.toFixed(4)}\u00B0 ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span></p>
-                    <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}\u00B0` : 'N/A'}</p>
-                    <p><strong>Incidence:</strong> {isFiniteNumber(values.incidence) ? `${values.incidence.toFixed(2)}\u00B0` : 'N/A'}</p>
-                    <p><strong>Emis:</strong> {isFiniteNumber(values.emis) ? `${values.emis.toFixed(2)}\u00B0` : 'N/A'}</p>
+                    <p><strong>Latitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(values.lat) ? `${values.lat.toFixed(4)}° ${values.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span></p>
+                    <p><strong>Longitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(values.lon) ? `${values.lon.toFixed(4)}° ${values.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span></p>
+                    <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Incidence:</strong> {isFiniteNumber(values.incidence) ? `${values.incidence.toFixed(2)}°` : 'N/A'}</p>
+                    <p><strong>Emis:</strong> {isFiniteNumber(values.emis) ? `${values.emis.toFixed(2)}°` : 'N/A'}</p>
                     {Number.isFinite(values.materialClass) && (
                       <p><strong>Surface material:</strong> {formatSurfaceMaterialWithSpectrumAlbedo(values.materialClass, values.surfaceAlbedo)}</p>
                     )}
@@ -167,11 +167,11 @@ const GeoValuesDisplay = memo(({
               <p style={{ color: '#ff6b6b' }}>Error: {geoValues.error}</p>
             ) : (
               <div style={{ fontSize: '14px', color: '#ccc' }}>
-                <p><strong>Latitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(geoValues.lat) ? `${geoValues.lat.toFixed(4)}\u00B0 ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span></p>
-                <p><strong>Longitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(geoValues.lon) ? `${geoValues.lon.toFixed(4)}\u00B0 ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span></p>
-                <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}\u00B0` : 'N/A'}</p>
-                <p><strong>Incidence:</strong> {isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}\u00B0` : 'N/A'}</p>
-                <p><strong>Emis:</strong> {isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}\u00B0` : 'N/A'}</p>
+                <p><strong>Latitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(geoValues.lat) ? `${geoValues.lat.toFixed(4)}° ${geoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span></p>
+                <p><strong>Longitude:</strong> <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(geoValues.lon) ? `${geoValues.lon.toFixed(4)}° ${geoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span></p>
+                <p><strong>Phase:</strong> {isFiniteNumber(currentPhaseAngle) ? `${currentPhaseAngle.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Incidence:</strong> {isFiniteNumber(geoValues.incidence) ? `${geoValues.incidence.toFixed(2)}°` : 'N/A'}</p>
+                <p><strong>Emis:</strong> {isFiniteNumber(geoValues.emis) ? `${geoValues.emis.toFixed(2)}°` : 'N/A'}</p>
                 {Number.isFinite(geoValues.materialClass) && (
                   <p><strong>Surface material:</strong> {formatSurfaceMaterialWithSpectrumAlbedo(geoValues.materialClass, geoValues.surfaceAlbedo)}</p>
                 )}
@@ -344,7 +344,9 @@ function App() {
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
   const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // { pointIndex: { standard, no_ch4, no_haze } }
   const [currentImage, setCurrentImage] = useState(null);
+  const [currentImageAlignmentReference, setCurrentImageAlignmentReference] = useState(null);
   const [loadingImage, setLoadingImage] = useState(false);
+  const [currentGeoCubeData, setCurrentGeoCubeData] = useState(null);
   const [geoValues, setGeoValues] = useState(null);
   const [loadingGeo, setLoadingGeo] = useState(false);
   const [loadingSpectral, setLoadingSpectral] = useState(false); // Loading state for spectral plot updates
@@ -799,10 +801,12 @@ function App() {
         try {
           const geoData = await getGeoCubeData(assetPhaseDeg);
           geoCubeDataRef.current = geoData;
+          setCurrentGeoCubeData(geoData);
           currentPhaseAngleRef.current = assetPhaseDeg;
         } catch (error) {
           console.error('Error loading geo cube data:', error);
           geoCubeDataRef.current = null;
+          setCurrentGeoCubeData(null);
         }
       }
     };
@@ -1382,6 +1386,22 @@ function App() {
         const result = await loadPds4Image(assetPhaseDeg, imageTypeToLoad, imageFolderName, requestedAlbedo);
         if (stale()) return;
 
+        const shouldUseHazeZeroReference = imageType === 'irColor' || imageType === 'monoBand';
+        if (shouldUseHazeZeroReference && hazePropertiesModel === 'doose') {
+          const referenceFolderName = `doose_0.0_meth${methaneImageSetting}`;
+          loadPds4Image(assetPhaseDeg, imageTypeToLoad, referenceFolderName, requestedAlbedo)
+            .then((referenceResult) => {
+              if (!stale()) {
+                setCurrentImageAlignmentReference(referenceResult?.url || null);
+              }
+            })
+            .catch(() => {
+              if (!stale()) setCurrentImageAlignmentReference(null);
+            });
+        } else {
+          setCurrentImageAlignmentReference(null);
+        }
+
         if (imageType === 'monoBand') {
           const blobUrl = await compositeImageUrlToGrayscaleObjectURL(result.url, monoBandIndex);
           if (stale()) {
@@ -1409,6 +1429,7 @@ function App() {
         if (!stale()) {
           console.error('Error loading image:', error);
           setCurrentImage(null);
+          setCurrentImageAlignmentReference(null);
         }
       } finally {
         if (!stale()) {
@@ -1422,7 +1443,7 @@ function App() {
         clearTimeout(imageLoadTimerRef.current);
       }
     };
-  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex]);
+  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex, hazePropertiesModel, methaneImageSetting]);
 
   // Update geo values when phase angle changes and there is an active selection.
   // Debounced to avoid lag while dragging phase in 3D edit mode.
@@ -2018,6 +2039,7 @@ function App() {
                                 }
                                 onSurfacePointSelect={handleSpherePlotPoint}
                                 multiplePoints={syncedSelectionPointsFor3d}
+                                geoCubeData={currentGeoCubeData}
                               />
                             </div>
                           </div>
@@ -2036,7 +2058,8 @@ function App() {
                               multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
-                              phaseAngleDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                              geoCubeData={currentGeoCubeData}
+                              alignmentReferenceSrc={currentImageAlignmentReference}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">
@@ -2059,7 +2082,7 @@ function App() {
                           }}>
                             {hoverGeoValues ? (
                               <>
-                                <strong>Hover:</strong> Lat <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lat) ? `${hoverGeoValues.lat.toFixed(2)}\u00B0 ${hoverGeoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span>, Lon <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lon) ? `${hoverGeoValues.lon.toFixed(2)}\u00B0 ${hoverGeoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span>, Inc {isFiniteNumber(hoverGeoValues.incidence) ? `${hoverGeoValues.incidence.toFixed(1)}\u00B0` : 'N/A'}, Em {isFiniteNumber(hoverGeoValues.emis) ? `${hoverGeoValues.emis.toFixed(1)}\u00B0` : 'N/A'}, Ph {isFiniteNumber(hoverGeoValues.phase) ? `${hoverGeoValues.phase.toFixed(1)}\u00B0` : 'N/A'}
+                                <strong>Hover:</strong> Lat <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lat) ? `${hoverGeoValues.lat.toFixed(2)}° ${hoverGeoValues.lat < 0 ? 'N' : 'S'}` : 'N/A'}</span>, Lon <span style={{ color: '#66ccff', fontWeight: 700 }}>{isFiniteNumber(hoverGeoValues.lon) ? `${hoverGeoValues.lon.toFixed(2)}° ${hoverGeoValues.lon < 0 ? 'W' : 'E'}` : 'N/A'}</span>, Inc {isFiniteNumber(hoverGeoValues.incidence) ? `${hoverGeoValues.incidence.toFixed(1)}°` : 'N/A'}, Em {isFiniteNumber(hoverGeoValues.emis) ? `${hoverGeoValues.emis.toFixed(1)}°` : 'N/A'}, Ph {isFiniteNumber(hoverGeoValues.phase) ? `${hoverGeoValues.phase.toFixed(1)}°` : 'N/A'}
                               </>
                             ) : (
                               <span>Hover image for Lat/Lon and angles</span>
@@ -2236,10 +2259,10 @@ function App() {
                             <Tooltip content={
                               <>
                                 <strong>Phase Angle</strong>
-                                The angle between the Sun, Titan's surface, and the observer (0-180\u00B0 in 15\u00B0 steps).
+                                The angle between the Sun, Titan's surface, and the observer (0-180° in 15° steps).
                                 Phase angle determines the geometry of illumination and viewing, affecting how light
                                 scatters through the atmosphere and reflects off the surface. At low phase angles
-                                (near 0\u00B0), you see Titan in a "full moon" configuration with maximum brightness.
+                                (near 0°), you see Titan in a "full moon" configuration with maximum brightness.
                                 Higher phase angles show more atmospheric scattering and surface shadows, revealing
                                 different surface and atmospheric properties.
                               </>
@@ -2254,7 +2277,7 @@ function App() {
                               value={sliders.phaseAngle}
                               onChange={(e) => handleSliderChange('phaseAngle', e.target.value)}
                             />
-                            <span>{displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}{"\u00B0"}</span>
+                            <span>{displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}{"°"}</span>
                           </label>
 
                           {irDisplayMode === '3d' && (
@@ -2275,7 +2298,7 @@ function App() {
                                 value={sliders.obliquity}
                                 onChange={(e) => handleSliderChange('obliquity', e.target.value)}
                               />
-                              <span>{sliders.obliquity}{"\u00B0"}</span>
+                              <span>{sliders.obliquity}{"°"}</span>
                             </label>
                           )}
 
@@ -2907,7 +2930,7 @@ function App() {
                                 <strong>Transmission</strong>
                                 Overlays gas transmission curves on the spectral plot, showing how much light passes
                                 through the atmosphere at each wavelength for different atmospheric constituents
-                                (CH₄, CO, C₂H₆, C₂H₂, Haze). These curves help identify which gases are responsible
+                                  (CH₄, CO, C₂H₆, C₂H₂, Haze). These curves help identify which gases are responsible
                                 for specific absorption features in the reflectance spectrum. Transmission values
                                 near 1.0 indicate little absorption, while lower values show strong absorption bands.
                               </>
@@ -2918,11 +2941,11 @@ function App() {
                           <div className="transmission-toggle-group" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px' }}>
                             {Object.entries(transmissionToggles).map(([key, value]) => {
                               const labelMap = {
-                                ch4: 'CH₄',
+                                    ch4: 'CH₄',
                                 haze: 'Haze',
                                 co: 'CO',
-                                c2h6: 'C₂H₆',
-                                c2h2: 'C₂H₂',
+                                    c2h6: 'C₂H₆',
+                                    c2h2: 'C₂H₂',
                               };
                               const label = labelMap[key] || key.toUpperCase();
                               return (
@@ -2979,7 +3002,7 @@ function App() {
                                     const i = incidence != null ? incidence.toFixed(0) : '?';
                                     const e = emission != null ? emission.toFixed(0) : '?';
                                     const p = phase != null ? phase.toFixed(0) : '?';
-                                    return `i:${i}\u00B0 e:${e}\u00B0 p:${p}\u00B0`;
+                                    return `i:${i}° e:${e}° p:${p}°`;
                                   };
                                   const angleStr = geoValue ? formatAngles(geoValue.incidence, geoValue.emis, geoValue.phase) : '';
 
@@ -2991,8 +3014,8 @@ function App() {
                                       <div className="case-toggle-options">
                                         {['standard', 'no_ch4', 'no_haze'].map((caseKey) => {
                                           const labelMap = {
-                                            standard: 'CH₄ + Haze',
-                                            no_ch4: 'No CH₄',
+                                                standard: 'CH₄ + Haze',
+                                                no_ch4: 'No CH₄',
                                             no_haze: 'No haze'
                                           };
                                           const label = labelMap[caseKey] || caseKey.replace('_', ' ').replace(/^\w/, c => c.toUpperCase());

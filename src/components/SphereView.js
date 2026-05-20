@@ -13,11 +13,11 @@ import { CASSINI_GLB_BASE64 } from '../assets/cassiniModelBase64';
 
 const POINT_COLOR_PALETTE = [0xff0000, 0xffa500, 0xffff00, 0x00ff00, 0x0000ff, 0x800080];
 const MAX_SYNCED_VECTORS = 5;
+const GEO_GRID_SIZE = 681;
+const GEO_BAND_SIZE = GEO_GRID_SIZE * GEO_GRID_SIZE;
+const LAT_GRID_LABELS = [60, 30, 0, -30, -60];
 const VECTOR_LEFT_SHIFT_DEG = 0;
-const IMAGE_GRID_ROTATE_LEFT_DEG = 130;
-const GRID_ROTATE_LEFT_3D_DEG = IMAGE_GRID_ROTATE_LEFT_DEG + 3;
-const LAT_LABEL_LON_OFFSET_DEG = 18;
-const DATA_LON_OFFSET_DEG = GRID_ROTATE_LEFT_3D_DEG - VECTOR_LEFT_SHIFT_DEG;
+const DATA_LON_OFFSET_DEG = 133 - VECTOR_LEFT_SHIFT_DEG;
 const normalizeLongitudeDeg = (lonDeg) => {
   if (!Number.isFinite(lonDeg)) return null;
   return ((((lonDeg + 180) % 360) + 360) % 360) - 180;
@@ -26,6 +26,40 @@ const normalizeLongitudeDeg = (lonDeg) => {
 const normalizeAngle360 = (deg) => {
   if (!Number.isFinite(deg)) return 0;
   return ((((deg % 360) + 360) % 360));
+};
+
+const isValidGeoLatLon = (lat, lon) => (
+  Number.isFinite(lat)
+  && Number.isFinite(lon)
+  && lat >= -90
+  && lat <= 90
+  && lon >= -360
+  && lon <= 360
+);
+
+const computeGeoFootprintScale = (geoData) => {
+  if (!geoData || typeof geoData.length !== 'number' || geoData.length < GEO_BAND_SIZE * 2) return 1;
+  let minX = GEO_GRID_SIZE;
+  let maxX = -1;
+  let minY = GEO_GRID_SIZE;
+  let maxY = -1;
+  for (let y = 0; y < GEO_GRID_SIZE; y += 1) {
+    const rowOffset = y * GEO_GRID_SIZE;
+    for (let x = 0; x < GEO_GRID_SIZE; x += 1) {
+      const idx = rowOffset + x;
+      if (!isValidGeoLatLon(geoData[idx], geoData[GEO_BAND_SIZE + idx])) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < minX || maxY < minY) return 1;
+  const footprintDiameterPx = Math.max(maxX - minX + 1, maxY - minY + 1);
+  if (!Number.isFinite(footprintDiameterPx) || footprintDiameterPx <= 0) return 1;
+  // The geo cube's valid pixels describe the projected disk inside the source
+  // PNG, not a smaller physical Titan. Keep the 3D grid on the rendered sphere.
+  return Math.max(1, Math.min(1.18, footprintDiameterPx / GEO_GRID_SIZE));
 };
 
 function SphereView({
@@ -55,6 +89,7 @@ function SphereView({
   onCameraPresetRelease,
   onVectorPlaced,
   multiplePoints = [],
+  geoCubeData = null,
 }) {
   const containerRef = useRef(null);
   const clickOverlayRef = useRef({ marker: null, sunArrow: null, satArrow: null, normalArrow: null, plotCross: null, vectors: [] });
@@ -119,6 +154,7 @@ function SphereView({
   const titanDragHitRef = useRef(null);
   const cassiniDragHitRef = useRef(null);
   const surfaceMapModeRef = useRef('ir');
+  const geoGridFootprintScaleRef = useRef(computeGeoFootprintScale(geoCubeData));
 
   useEffect(() => {
     incomingPointsRef.current = Array.isArray(multiplePoints) ? multiplePoints : [];
@@ -274,6 +310,13 @@ function SphereView({
       ? surfaceMapMode
       : 'ir';
   }, [surfaceMapMode]);
+
+  useEffect(() => {
+    const scale = computeGeoFootprintScale(geoCubeData);
+    geoGridFootprintScaleRef.current = scale;
+    if (latLonGridRef.current) latLonGridRef.current.scale.setScalar(scale);
+    if (latLonLabelsRef.current) latLonLabelsRef.current.scale.setScalar(scale);
+  }, [geoCubeData]);
 
   useEffect(() => {
     showAtmosphereRef.current = !!showAtmosphere;
@@ -537,97 +580,103 @@ function SphereView({
 
         const createTextSprite = (text, color = '#8fe7ff') => {
           const canvas = document.createElement('canvas');
-          canvas.width = 256;
-          canvas.height = 64;
+          canvas.width = 512;
+          canvas.height = 128;
           const ctx = canvas.getContext('2d');
           if (!ctx) return null;
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.font = '24px Arial';
+          ctx.font = '800 78px Arial';
           ctx.fillStyle = color;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+          ctx.shadowBlur = 12;
+          ctx.lineWidth = 8;
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+          ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
           ctx.fillText(text, canvas.width / 2, canvas.height / 2);
           const texture = new THREE.CanvasTexture(canvas);
           const materialSprite = new THREE.SpriteMaterial({
             map: texture,
             transparent: true,
             depthWrite: false,
+            depthTest: false,
           });
           const sprite = new THREE.Sprite(materialSprite);
-          sprite.scale.set(0.25, 0.0625, 1);
+          sprite.scale.set(1.05, 0.265, 1);
           return sprite;
         };
 
         const gridGroup = new THREE.Group();
         const labelGroup = new THREE.Group();
-        const lonLineMaterial = new THREE.LineBasicMaterial({
+        const lonLineMaterial = new THREE.MeshBasicMaterial({
           color: 0xffb56a,
           transparent: true,
-          opacity: 0.5,
+          opacity: 0.78,
+          depthWrite: false,
         });
-        const latLineMaterial = new THREE.LineBasicMaterial({
+        const latLineMaterial = new THREE.MeshBasicMaterial({
           color: 0x8fe7ff,
           transparent: true,
-          opacity: 0.5,
+          opacity: 0.78,
+          depthWrite: false,
         });
-        const lonSteps = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
+        const lonSteps = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
         const latSteps = [-60, -30, 0, 30, 60];
-        const r = 1.002;
-        const labelR = 1.03;
+        const visualGridRadius = Math.max(
+          atmosphereGlow?.geometry?.parameters?.radius || 0,
+          atmosphere?.geometry?.parameters?.radius || 0,
+          geometry?.parameters?.radius || 1
+        );
+        const r = visualGridRadius;
+        const labelR = visualGridRadius * 1.08;
+        const gridTubeRadius = visualGridRadius * 0.024;
+        const rawLatLonToLocal = (rawLatDeg, rawLonDeg, radius = r) => {
+          const u = (normalizeLongitudeDeg(rawLonDeg) + 180) / 360;
+          const v = (rawLatDeg + 90) / 180;
+          const theta = THREE.MathUtils.clamp(v, 0, 1) * Math.PI;
+          const phi = u * Math.PI * 2;
+          const sinTheta = Math.sin(theta);
+          return new THREE.Vector3(
+            -Math.cos(phi) * sinTheta * radius,
+            Math.cos(theta) * radius,
+            Math.sin(phi) * sinTheta * radius
+          );
+        };
+        const makeGridTube = (points, materialSource, closed = false) => {
+          if (!points || points.length < 2) return null;
+          const curve = new THREE.CatmullRomCurve3(points, closed, 'catmullrom', 0.5);
+          const geometryTube = new THREE.TubeGeometry(curve, Math.max(48, points.length * 2), gridTubeRadius, 8, closed);
+          const tube = new THREE.Mesh(geometryTube, materialSource.clone());
+          tube.renderOrder = 4;
+          return tube;
+        };
         lonSteps.forEach((lonDeg) => {
-          const lon = THREE.MathUtils.degToRad(lonDeg);
           const pts = [];
-          for (let latDeg = -90; latDeg <= 90; latDeg += 3) {
-            const lat = THREE.MathUtils.degToRad(latDeg);
-            pts.push(new THREE.Vector3(
-              Math.sin(lon) * Math.cos(lat) * r,
-              Math.sin(lat) * r,
-              Math.cos(lon) * Math.cos(lat) * r
-            ));
+          for (let latDeg = -88; latDeg <= 88; latDeg += 2) {
+            pts.push(rawLatLonToLocal(latDeg, lonDeg));
           }
-          gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lonLineMaterial.clone()));
-          const lonLabelRaw = normalizeLongitudeDeg(lonDeg + 180);
-          const lonLabelDeg = lonLabelRaw === -180 ? 180 : lonLabelRaw;
-          const label = createTextSprite(`${lonLabelDeg}°`, '#ffb56a');
+          const tube = makeGridTube(pts, lonLineMaterial, false);
+          if (tube) gridGroup.add(tube);
+          const label = createTextSprite(`${lonDeg}°`, '#ffb56a');
           if (label) {
-            label.position.set(
-              Math.sin(lon) * labelR,
-              0,
-              Math.cos(lon) * labelR
-            );
-            label.scale.set(0.40, 0.10, 1);
+            label.position.copy(rawLatLonToLocal(0, lonDeg, labelR));
+            label.scale.set(1.24, 0.31, 1);
             labelGroup.add(label);
           }
         });
         latSteps.forEach((latDeg) => {
-          const lat = THREE.MathUtils.degToRad(latDeg);
           const pts = [];
-          for (let lonDeg = -180; lonDeg <= 180; lonDeg += 3) {
-            const lon = THREE.MathUtils.degToRad(lonDeg);
-            pts.push(new THREE.Vector3(
-              Math.sin(lon) * Math.cos(lat) * r,
-              Math.sin(lat) * r,
-              Math.cos(lon) * Math.cos(lat) * r
-            ));
+          for (let lonDeg = -180; lonDeg <= 180; lonDeg += 2) {
+            pts.push(rawLatLonToLocal(latDeg, lonDeg));
           }
-          gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latLineMaterial.clone()));
-          const label = createTextSprite(`${latDeg}°`, '#8fe7ff');
-          if (label) {
-            const latLabelLon = THREE.MathUtils.degToRad(LAT_LABEL_LON_OFFSET_DEG);
-            label.position.set(
-              Math.sin(latLabelLon) * Math.cos(lat) * labelR,
-              Math.sin(lat) * labelR,
-              Math.cos(latLabelLon) * Math.cos(lat) * labelR
-            );
-            label.scale.set(0.40, 0.10, 1);
-            labelGroup.add(label);
-          }
+          const tube = makeGridTube(pts, latLineMaterial, true);
+          if (tube) gridGroup.add(tube);
         });
-        const gridRotateRad = THREE.MathUtils.degToRad(-GRID_ROTATE_LEFT_3D_DEG);
-        gridGroup.rotation.y = gridRotateRad;
-        labelGroup.rotation.y = gridRotateRad;
         gridGroup.visible = latLonGridEnabledRef.current;
         labelGroup.visible = latLonGridEnabledRef.current;
+        gridGroup.scale.setScalar(geoGridFootprintScaleRef.current);
+        labelGroup.scale.setScalar(geoGridFootprintScaleRef.current);
         latLonGridRef.current = gridGroup;
         latLonLabelsRef.current = labelGroup;
         mesh.add(gridGroup);
@@ -2173,20 +2222,22 @@ function SphereView({
           let p = 0;
           for (let y = 0; y < height; y += 1) {
             const v = (y + 0.5) / height;
-            const lat = (0.5 - v) * Math.PI;
-            const sinLat = Math.sin(lat);
-            const cosLat = Math.cos(lat);
+            const theta = v * Math.PI;
+            const sinTheta = Math.sin(theta);
+            const cosTheta = Math.cos(theta);
             for (let x = 0; x < width; x += 1) {
               const u = (x + 0.5) / width;
-              const lon = ((u - 0.5) * 2 * Math.PI);
+              const phi = u * Math.PI * 2;
+              // Match THREE.SphereGeometry's UV-to-position mapping so angle maps
+              // stay registered with the rendered sphere texture.
               tmpNormalLocal.set(
-                Math.sin(lon) * cosLat,
-                sinLat,
-                Math.cos(lon) * cosLat
+                -Math.cos(phi) * sinTheta,
+                cosTheta,
+                Math.sin(phi) * sinTheta
               );
               tmpNormalWorld.copy(tmpNormalLocal).applyQuaternion(worldQuat).normalize();
               const angle = tmpNormalWorld.angleTo(direction);
-              const shade = Math.max(0, Math.min(255, Math.round((angle * invPi) * 255)));
+              const shade = Math.max(0, Math.min(255, Math.round((1 - (angle * invPi)) * 255)));
               pix[p] = shade;
               pix[p + 1] = shade;
               pix[p + 2] = shade;
@@ -3053,6 +3104,29 @@ function SphereView({
           inset: 0,
         }}
       />
+      {showLatLonGrid && LAT_GRID_LABELS.map((lat) => {
+        const topPct = 50 - (Math.sin(THREE.MathUtils.degToRad(lat)) * 37);
+        return (
+          <div
+            key={`fixed-lat-${lat}`}
+            style={{
+              position: 'absolute',
+              left: '5%',
+              top: `${topPct}%`,
+              transform: 'translate(-50%, -50%)',
+              zIndex: 6,
+              pointerEvents: 'none',
+              color: '#9deeff',
+              fontSize: '28px',
+              fontWeight: 900,
+              lineHeight: 1,
+              textShadow: '0 0 3px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,1)',
+            }}
+          >
+            {`${lat}°`}
+          </div>
+        );
+      })}
       {pinnedVectorTooltips.map((tip) => (
         <div
           key={tip.key}
