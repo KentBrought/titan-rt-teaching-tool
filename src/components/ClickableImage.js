@@ -94,6 +94,20 @@ const getIdentityImageBounds = (img) => ({
   maxY: Math.max(0, (img?.naturalHeight || GEO_GRID_SIZE) - 1),
 });
 
+const mapGeoBoundsToImageBounds = (img, geoBounds) => {
+  if (!geoBounds) return null;
+  const naturalWidth = img?.naturalWidth || GEO_GRID_SIZE;
+  const naturalHeight = img?.naturalHeight || GEO_GRID_SIZE;
+  const scaleX = Math.max(1, naturalWidth - 1) / (GEO_GRID_SIZE - 1);
+  const scaleY = Math.max(1, naturalHeight - 1) / (GEO_GRID_SIZE - 1);
+  return {
+    minX: geoBounds.minX * scaleX,
+    minY: geoBounds.minY * scaleY,
+    maxX: geoBounds.maxX * scaleX,
+    maxY: geoBounds.maxY * scaleY,
+  };
+};
+
 const buildImageGeoTransform = (img, geoData, referenceImageBounds = null) => {
   const geoBounds = getGeoBounds(geoData) || {
     minX: 0,
@@ -101,7 +115,13 @@ const buildImageGeoTransform = (img, geoData, referenceImageBounds = null) => {
     maxX: GEO_GRID_SIZE - 1,
     maxY: GEO_GRID_SIZE - 1,
   };
-  const imageBounds = referenceImageBounds || getImageContentBounds(img) || getIdentityImageBounds(img);
+  const identityBounds = getIdentityImageBounds(img);
+  // Keep the grid anchored to the solid-surface footprint from the geo cube;
+  // haze brightness can extend beyond this and should not resize the grid.
+  const imageBounds = referenceImageBounds
+    || mapGeoBoundsToImageBounds(img, geoBounds)
+    || getImageContentBounds(img)
+    || identityBounds;
   return {
     geoBounds,
     imageBounds,
@@ -144,95 +164,264 @@ const mapGeoToImageNatural = (x, y, transform) => {
   };
 };
 
+const mapGeoBoundsToDisplayEllipse = (bounds, mapGeoToDisplay) => {
+  if (!bounds) return null;
+  const topLeft = mapGeoToDisplay(bounds.minX, bounds.minY);
+  const bottomRight = mapGeoToDisplay(bounds.maxX, bounds.maxY);
+  const left = Math.min(topLeft.x, bottomRight.x);
+  const right = Math.max(topLeft.x, bottomRight.x);
+  const top = Math.min(topLeft.y, bottomRight.y);
+  const bottom = Math.max(topLeft.y, bottomRight.y);
+  const rx = Math.max(0, (right - left) / 2);
+  const ry = Math.max(0, (bottom - top) / 2);
+  if (rx < 1 || ry < 1) return null;
+  return {
+    cx: left + rx,
+    cy: top + ry,
+    rx,
+    ry,
+  };
+};
+
 const interpolateCrossing = (aValue, bValue) => {
   const denom = Math.abs(aValue) + Math.abs(bValue);
   if (denom <= 1e-8) return 0.5;
   return Math.max(0, Math.min(1, Math.abs(aValue) / denom));
 };
 
-const shouldSplitSegment = (a, b) => {
-  if (!a || !b) return true;
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return ((dx * dx) + (dy * dy)) > (34 * 34);
+const contourEdgeDefinitions = [
+  {
+    edge: 0,
+    a: 0,
+    b: 1,
+    key: (x, y) => `h:${y}:${x}`,
+    point: (x, y, t) => ({ x: x + t, y }),
+  },
+  {
+    edge: 1,
+    a: 1,
+    b: 2,
+    key: (x, y) => `v:${x + 1}:${y}`,
+    point: (x, y, t) => ({ x: x + 1, y: y + t }),
+  },
+  {
+    edge: 2,
+    a: 3,
+    b: 2,
+    key: (x, y) => `h:${y + 1}:${x}`,
+    point: (x, y, t) => ({ x: x + t, y: y + 1 }),
+  },
+  {
+    edge: 3,
+    a: 0,
+    b: 3,
+    key: (x, y) => `v:${x}:${y}`,
+    point: (x, y, t) => ({ x, y: y + t }),
+  },
+];
+
+const crossesContour = (aValue, bValue) => {
+  if (!Number.isFinite(aValue) || !Number.isFinite(bValue)) return false;
+  if (aValue === 0 && bValue === 0) return false;
+  return aValue === 0 || bValue === 0 || Math.sign(aValue) !== Math.sign(bValue);
 };
 
-const buildContourPathsFromPoints = (points) => {
-  if (!points.length) return [];
-  const paths = [];
-  let segment = [];
-  points.forEach((point) => {
-    if (segment.length && shouldSplitSegment(segment[segment.length - 1], point)) {
-      const path = buildPath(segment);
-      if (path) paths.push({ path, labelPoint: segment[Math.floor(segment.length / 2)] });
-      segment = [];
-    }
-    segment.push(point);
+const pathLength = (points) => {
+  let total = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const dx = points[i].x - points[i - 1].x;
+    const dy = points[i].y - points[i - 1].y;
+    total += Math.sqrt((dx * dx) + (dy * dy));
+  }
+  return total;
+};
+
+const buildContourPathsFromSegments = (segments, mapGeoToDisplay) => {
+  if (!segments.length) return [];
+  const endpointMap = new Map();
+  const visited = new Array(segments.length).fill(false);
+
+  const addEndpoint = (key, segmentIndex, end) => {
+    const list = endpointMap.get(key) || [];
+    list.push({ segmentIndex, end });
+    endpointMap.set(key, list);
+  };
+
+  segments.forEach((segment, idx) => {
+    addEndpoint(segment.a.key, idx, 'a');
+    addEndpoint(segment.b.key, idx, 'b');
   });
-  const path = buildPath(segment);
-  if (path) paths.push({ path, labelPoint: segment[Math.floor(segment.length / 2)] });
-  return paths;
+
+  const findNext = (key) => {
+    const list = endpointMap.get(key);
+    if (!list) return null;
+    return list.find((entry) => !visited[entry.segmentIndex]) || null;
+  };
+
+  const contours = [];
+
+  segments.forEach((segment, idx) => {
+    if (visited[idx]) return;
+    visited[idx] = true;
+
+    const points = [segment.a.point, segment.b.point];
+    let startKey = segment.a.key;
+    let endKey = segment.b.key;
+
+    for (;;) {
+      const next = findNext(endKey);
+      if (!next) break;
+      visited[next.segmentIndex] = true;
+      const nextSegment = segments[next.segmentIndex];
+      if (next.end === 'a') {
+        points.push(nextSegment.b.point);
+        endKey = nextSegment.b.key;
+      } else {
+        points.push(nextSegment.a.point);
+        endKey = nextSegment.a.key;
+      }
+    }
+
+    for (;;) {
+      const next = findNext(startKey);
+      if (!next) break;
+      visited[next.segmentIndex] = true;
+      const nextSegment = segments[next.segmentIndex];
+      if (next.end === 'a') {
+        points.unshift(nextSegment.b.point);
+        startKey = nextSegment.b.key;
+      } else {
+        points.unshift(nextSegment.a.point);
+        startKey = nextSegment.a.key;
+      }
+    }
+
+    const displayPoints = points.map((point) => mapGeoToDisplay(point.x, point.y));
+    const path = buildPath(displayPoints);
+    if (path) {
+      const length = pathLength(displayPoints);
+      contours.push({
+        path,
+        labelPoint: displayPoints[Math.floor(displayPoints.length / 2)],
+        length,
+      });
+    }
+  });
+
+  return contours.sort((a, b) => b.length - a.length);
 };
 
-const buildLatContourPaths = (geoData, targetLat, mapGeoToDisplay) => {
-  const points = [];
+const buildScalarContourPaths = (geoData, targetValue, bounds, readDelta, mapGeoToDisplay) => {
+  const segments = [];
+  const minCellX = Math.max(0, Math.floor((bounds?.minX ?? 0) - 1));
+  const minCellY = Math.max(0, Math.floor((bounds?.minY ?? 0) - 1));
+  const maxCellX = Math.min(GEO_GRID_SIZE - 2, Math.ceil(bounds?.maxX ?? (GEO_GRID_SIZE - 1)));
+  const maxCellY = Math.min(GEO_GRID_SIZE - 2, Math.ceil(bounds?.maxY ?? (GEO_GRID_SIZE - 1)));
 
-  for (let x = 0; x < GEO_GRID_SIZE; x += 2) {
-    let previous = null;
-    for (let y = 0; y < GEO_GRID_SIZE; y += 2) {
-      const lat = getGeoLat(geoData, x, y);
-      if (!isValidLat(lat)) {
-        previous = null;
-        continue;
+  for (let y = minCellY; y <= maxCellY; y += 1) {
+    for (let x = minCellX; x <= maxCellX; x += 1) {
+      const deltas = [
+        readDelta(geoData, x, y, targetValue),
+        readDelta(geoData, x + 1, y, targetValue),
+        readDelta(geoData, x + 1, y + 1, targetValue),
+        readDelta(geoData, x, y + 1, targetValue),
+      ];
+
+      if (deltas.some((delta) => !Number.isFinite(delta))) continue;
+
+      const intersections = [];
+      contourEdgeDefinitions.forEach((definition) => {
+        const aValue = deltas[definition.a];
+        const bValue = deltas[definition.b];
+        if (!crossesContour(aValue, bValue)) return;
+        const t = interpolateCrossing(aValue, bValue);
+        intersections.push({
+          edge: definition.edge,
+          key: definition.key(x, y),
+          point: definition.point(x, y, t),
+        });
+      });
+
+      if (intersections.length < 2) continue;
+      intersections.sort((a, b) => a.edge - b.edge);
+      for (let idx = 0; idx + 1 < intersections.length; idx += 2) {
+        if (intersections[idx].key === intersections[idx + 1].key) continue;
+        segments.push({ a: intersections[idx], b: intersections[idx + 1] });
       }
-      const current = { y, delta: lat - targetLat };
-      if (previous && (
-        current.delta === 0
-        || previous.delta === 0
-        || Math.sign(current.delta) !== Math.sign(previous.delta)
-      )) {
-        const t = interpolateCrossing(previous.delta, current.delta);
-        points.push(mapGeoToDisplay(x, previous.y + ((current.y - previous.y) * t)));
-        break;
-      }
-      previous = current;
     }
   }
 
-  return buildContourPathsFromPoints(points);
+  return buildContourPathsFromSegments(segments, mapGeoToDisplay);
 };
 
-const buildLonContourPaths = (geoData, targetLon, mapGeoToDisplay) => {
-  const points = [];
+const buildLatContourPaths = (geoData, targetLat, bounds, mapGeoToDisplay) => (
+  buildScalarContourPaths(
+    geoData,
+    targetLat,
+    bounds,
+    (data, x, y, target) => {
+      const lat = getGeoLat(data, x, y);
+      return isValidLat(lat) ? lat - target : NaN;
+    },
+    mapGeoToDisplay
+  )
+);
 
-  for (let y = 0; y < GEO_GRID_SIZE; y += 2) {
-    let previous = null;
-    for (let x = 0; x < GEO_GRID_SIZE; x += 2) {
-      const lon = getGeoLon(geoData, x, y);
-      if (!isValidLon(lon)) {
-        previous = null;
-        continue;
+const buildLonContourPaths = (geoData, targetLon, bounds, mapGeoToDisplay) => (
+  buildScalarContourPaths(
+    geoData,
+    targetLon,
+    bounds,
+    (data, x, y, target) => {
+      const lon = getGeoLon(data, x, y);
+      if (!isValidLon(lon)) return NaN;
+      const delta = angularDifferenceDeg(lon, target);
+      return Number.isFinite(delta) && Math.abs(delta) <= 120 ? delta : NaN;
+    },
+    mapGeoToDisplay
+  )
+);
+
+const isValidGeoPoint = (geoData, x, y) => (
+  isValidLat(getGeoLat(geoData, x, y)) && isValidLon(getGeoLon(geoData, x, y))
+);
+
+const buildGeoMaskContourPaths = (geoData, bounds, mapGeoToDisplay) => {
+  const segments = [];
+  const minCellX = Math.max(0, Math.floor((bounds?.minX ?? 0) - 1));
+  const minCellY = Math.max(0, Math.floor((bounds?.minY ?? 0) - 1));
+  const maxCellX = Math.min(GEO_GRID_SIZE - 2, Math.ceil(bounds?.maxX ?? (GEO_GRID_SIZE - 1)));
+  const maxCellY = Math.min(GEO_GRID_SIZE - 2, Math.ceil(bounds?.maxY ?? (GEO_GRID_SIZE - 1)));
+
+  for (let y = minCellY; y <= maxCellY; y += 1) {
+    for (let x = minCellX; x <= maxCellX; x += 1) {
+      const valid = [
+        isValidGeoPoint(geoData, x, y),
+        isValidGeoPoint(geoData, x + 1, y),
+        isValidGeoPoint(geoData, x + 1, y + 1),
+        isValidGeoPoint(geoData, x, y + 1),
+      ];
+      if (valid.every(Boolean) || valid.every((value) => !value)) continue;
+
+      const intersections = [];
+      contourEdgeDefinitions.forEach((definition) => {
+        if (valid[definition.a] === valid[definition.b]) return;
+        intersections.push({
+          edge: definition.edge,
+          key: definition.key(x, y),
+          point: definition.point(x, y, 0.5),
+        });
+      });
+
+      intersections.sort((a, b) => a.edge - b.edge);
+      for (let idx = 0; idx + 1 < intersections.length; idx += 2) {
+        if (intersections[idx].key === intersections[idx + 1].key) continue;
+        segments.push({ a: intersections[idx], b: intersections[idx + 1] });
       }
-      const delta = angularDifferenceDeg(lon, targetLon);
-      if (!Number.isFinite(delta) || Math.abs(delta) > 120) {
-        previous = null;
-        continue;
-      }
-      const current = { x, delta };
-      if (previous && (
-        current.delta === 0
-        || previous.delta === 0
-        || Math.sign(current.delta) !== Math.sign(previous.delta)
-      )) {
-        const t = interpolateCrossing(previous.delta, current.delta);
-        points.push(mapGeoToDisplay(previous.x + ((current.x - previous.x) * t), y));
-        break;
-      }
-      previous = current;
     }
   }
 
-  return buildContourPathsFromPoints(points);
+  return buildContourPathsFromSegments(segments, mapGeoToDisplay);
 };
 
 const ClickableImage = ({ 
@@ -667,18 +856,21 @@ const ClickableImage = ({
         y: imagePoint.y * displayScaleY,
       };
     };
+    const limbBounds = transform.geoBounds || getGeoBounds(geoCubeData);
 
     return {
       width,
       height,
+      limbContours: buildGeoMaskContourPaths(geoCubeData, limbBounds, mapGeoToDisplay),
+      limbEllipse: mapGeoBoundsToDisplayEllipse(limbBounds, mapGeoToDisplay),
       latContours: LAT_GRID_LINES.map((lat) => ({
         value: lat,
-        contours: buildLatContourPaths(geoCubeData, lat, mapGeoToDisplay),
+        contours: buildLatContourPaths(geoCubeData, lat, limbBounds, mapGeoToDisplay),
       })),
       lonContours: LON_LABEL_STEPS.map((lon) => ({
         value: lon,
         normalizedValue: normalizeLongitudeDeg(lon),
-        contours: buildLonContourPaths(geoCubeData, lon, mapGeoToDisplay),
+        contours: buildLonContourPaths(geoCubeData, lon, limbBounds, mapGeoToDisplay),
       })),
     };
   }, [showLatLonGrid, geoCubeData, imageSize.width, imageSize.height, imageGeoTransform]);
@@ -826,6 +1018,33 @@ const ClickableImage = ({
               height={gridOverlay.height}
               style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none', zIndex: 12 }}
             >
+              {gridOverlay.limbContours?.length > 0 ? (
+                gridOverlay.limbContours.map(({ path }, idx) => (
+                  <path
+                    key={`limb-${idx}`}
+                    d={path}
+                    fill="none"
+                    stroke="rgba(145,230,255,0.9)"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 6px rgba(0,0,0,1))' }}
+                  />
+                ))
+              ) : gridOverlay.limbEllipse && (
+                <ellipse
+                  cx={gridOverlay.limbEllipse.cx}
+                  cy={gridOverlay.limbEllipse.cy}
+                  rx={gridOverlay.limbEllipse.rx}
+                  ry={gridOverlay.limbEllipse.ry}
+                  fill="none"
+                  stroke="rgba(145,230,255,0.9)"
+                  strokeWidth="3.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 6px rgba(0,0,0,1))' }}
+                />
+              )}
               {gridOverlay.latContours.map(({ value, contours }) => {
                 const labelPoint = contours[0]?.labelPoint;
                 return (

@@ -1389,7 +1389,7 @@ function App() {
         const shouldUseHazeZeroReference = imageType === 'irColor' || imageType === 'monoBand';
         if (shouldUseHazeZeroReference && hazePropertiesModel === 'doose') {
           const referenceFolderName = `doose_0.0_meth${methaneImageSetting}`;
-          loadPds4Image(assetPhaseDeg, imageTypeToLoad, referenceFolderName, requestedAlbedo)
+          loadPds4Image(0, imageTypeToLoad, referenceFolderName, requestedAlbedo)
             .then((referenceResult) => {
               if (!stale()) {
                 setCurrentImageAlignmentReference(referenceResult?.url || null);
