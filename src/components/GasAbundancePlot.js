@@ -1,18 +1,20 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, memo } from 'react';
 import Plot from './PlotlyPlot';
 
 const ATMOSPHERE_URL = '/data/atmosphere_vertical_profiles.json';
 const HASI_URL = '/data/hasi_atmosphere_profile.json';
 const GAS_URL = '/data/gas_profiles.json';
-const INIT_MODEL_URL = '/data/init_gui_model.json';
+const HAZE_PROFILE_URL = '/data/rt_model_haze_tau.json';
 
 const HAZE_CHANNELS = [3, 68, 255];
 const HAZE_TRACE_COLORS = ['#81c784', '#aed581', '#dce775'];
 
-function canRenderFallbackHaze(atmData) {
-  if (!atmData?.altitude_km?.length) return false;
-  if (!atmData?.haze_relative?.length) return false;
-  return atmData.altitude_km.length === atmData.haze_relative.length;
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.json();
 }
 
 const plotConfig = {
@@ -52,7 +54,7 @@ const GasAbundancePlot = ({
   const [gasData, setGasData] = useState(null);
   const [atmData, setAtmData] = useState(null);
   const [hasiData, setHasiData] = useState(null);
-  const [initModelData, setInitModelData] = useState(null);
+  const [hazeProfileData, setHazeProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [gasError, setGasError] = useState(false);
   const [hasiError, setHasiError] = useState(false);
@@ -60,49 +62,77 @@ const GasAbundancePlot = ({
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setGasError(false);
-      setHasiError(false);
-      setModelError(false);
-      try {
-        const [gasRes, atmRes, hasiRes, modelRes] = await Promise.all([
-          fetch(GAS_URL),
-          fetch(ATMOSPHERE_URL),
-          fetch(HASI_URL),
-          fetch(INIT_MODEL_URL)
-        ]);
-        if (!cancelled) {
-          if (gasRes.ok) setGasData(await gasRes.json());
-          else setGasError(true);
-          if (atmRes.ok) setAtmData(await atmRes.json());
-          if (hasiRes.ok) setHasiData(await hasiRes.json());
-          else setHasiError(true);
-          if (modelRes.ok) {
-            const modelText = await modelRes.text();
-            try {
-              setInitModelData(JSON.parse(modelText));
-            } catch {
-              setInitModelData(JSON.parse(modelText.replace(/\bNaN\b/g, 'null')));
-            }
-          } else {
-            setModelError(true);
-          }
+
+    const loadForActiveProfile = async () => {
+      if (profile === 'gases') {
+        if (gasData) {
+          setLoading(false);
+          return;
         }
-      } catch {
-        if (!cancelled) {
-          setGasError(true);
-          setHasiError(true);
-          setModelError(true);
+
+        setLoading(true);
+        setGasError(false);
+        try {
+          const data = await fetchJson(GAS_URL);
+          if (!cancelled) setGasData(data);
+        } catch {
+          if (!cancelled) setGasError(true);
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
+        return;
       }
-    })();
+
+      if (profile === 'temperature_pressure') {
+        if (atmData && hasiData) {
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+        setHasiError(false);
+        try {
+          const [nextAtmData, nextHasiData] = await Promise.all([
+            atmData ? Promise.resolve(atmData) : fetchJson(ATMOSPHERE_URL),
+            hasiData ? Promise.resolve(hasiData) : fetchJson(HASI_URL)
+          ]);
+          if (!cancelled) {
+            setAtmData(nextAtmData);
+            setHasiData(nextHasiData);
+          }
+        } catch {
+          if (!cancelled) setHasiError(true);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+        return;
+      }
+
+      if (profile === 'haze') {
+        if (hazeProfileData) {
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+        setModelError(false);
+        try {
+          const data = await fetchJson(HAZE_PROFILE_URL);
+          if (!cancelled) setHazeProfileData(data);
+        } catch {
+          if (!cancelled) setModelError(true);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      }
+    };
+
+    loadForActiveProfile();
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profile, gasData, atmData, hasiData, hazeProfileData]);
 
   const maxAltitude = useMemo(() => {
     if (profile === 'gases' && gasData?.altitude_km) {
@@ -111,14 +141,14 @@ const GasAbundancePlot = ({
     if (profile === 'temperature_pressure' && hasiData?.altitude_km?.length) {
       return Math.max(...hasiData.altitude_km);
     }
-    if (profile === 'haze' && initModelData?.layers?.z?.length) {
-      return Math.max(...initModelData.layers.z);
+    if (profile === 'haze' && hazeProfileData?.layer_center_km?.length) {
+      return Math.max(...hazeProfileData.layer_center_km);
     }
     if (atmData?.altitude_km) {
       return Math.max(...atmData.altitude_km);
     }
     return 50;
-  }, [profile, gasData, atmData, hasiData, initModelData]);
+  }, [profile, gasData, atmData, hasiData, hazeProfileData]);
 
   const yAxisDtick = maxAltitude > 120 ? 100 : 10;
 
@@ -306,12 +336,15 @@ const GasAbundancePlot = ({
       };
     }
 
-    if (profile === 'haze' && initModelData?.layers?.tau?.haze?.length && initModelData?.layers?.z?.length) {
-      const rawY = initModelData.layers.z;
-      const hazeTau = initModelData.layers.tau.haze;
+    if (profile === 'haze' && hazeProfileData?.layer_center_km?.length && hazeProfileData?.models) {
+      const rawY = hazeProfileData.layer_center_km;
+      const fallbackModel = hazeProfileData.models['tomasko_1.0'] || Object.values(hazeProfileData.models)[0];
+      const hazeModel = hazeProfileData.models[hazeScenarioKey] || fallbackModel;
+      const hazeTauByChannel = hazeModel?.tau_haze || {};
+      if (!hazeModel) return null;
       const reversedY = [...rawY].reverse();
       const traces = HAZE_CHANNELS.map((channelIndex, i) => {
-        const rawX = hazeTau.map((layer) => (Array.isArray(layer) ? layer[channelIndex] : null));
+        const rawX = hazeTauByChannel[String(channelIndex)] || [];
         const reversedX = [...rawX].reverse().map((v) => (Number.isFinite(v) ? v * hazeScale : null));
         const hasFinite = reversedX.some((v) => Number.isFinite(v));
         if (!hasFinite) return null;
@@ -379,7 +412,7 @@ const GasAbundancePlot = ({
     }
 
     return null;
-  }, [atmData, profile, hasiData, hazeScenarioKey, initModelData, hazeScale]);
+  }, [atmData, profile, hasiData, hazeScenarioKey, hazeProfileData, hazeScale]);
 
   if (loading) {
     return (
@@ -452,7 +485,7 @@ const GasAbundancePlot = ({
     );
   }
 
-  if (profile === 'haze' && modelError && !initModelData) {
+  if (profile === 'haze' && modelError && !hazeProfileData) {
     return (
       <div
         style={{
@@ -468,7 +501,7 @@ const GasAbundancePlot = ({
           lineHeight: 1.45
         }}
       >
-        Could not load haze profile data from the atmospheric model ({INIT_MODEL_URL}).
+        Could not load haze profile data from the atmospheric model ({HAZE_PROFILE_URL}).
       </div>
     );
   }
@@ -490,4 +523,4 @@ const GasAbundancePlot = ({
   );
 };
 
-export default GasAbundancePlot;
+export default memo(GasAbundancePlot);

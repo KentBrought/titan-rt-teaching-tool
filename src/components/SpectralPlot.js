@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import Plot from './PlotlyPlot';
 import { processSpectralData, createSpectralPlotData, getActualAngles } from '../utils/dataProcessing';
 import { getSurfaceMaterialLabel } from '../utils/materialMapLoader';
@@ -163,6 +163,17 @@ const RESOLUTION_BINS = {
   'low': 16,
   'verylow': 8
 };
+
+const spectralPlotConfig = {
+  displayModeBar: false,
+  displaylogo: false,
+  modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+  showTips: false,
+  notifications: false,
+  responsive: true,
+};
+
+const spectralPlotStyle = { width: '100%', height: '100%', maxWidth: '100%' };
 
 const SpectralPlot = ({
   spectralData,
@@ -629,15 +640,9 @@ const SpectralPlot = ({
         <Plot
           data={plotData}
           layout={plotLayout}
-          style={{ width: '100%', height: '100%', maxWidth: '100%' }}
+          style={spectralPlotStyle}
           useResizeHandler={true}
-          config={{
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
-            showTips: false,
-            notifications: false
-          }}
+          config={spectralPlotConfig}
         />
       </div>
 
@@ -815,5 +820,5 @@ const SpectralPlot = ({
   );
 };
 
-export default SpectralPlot;
+export default memo(SpectralPlot);
 

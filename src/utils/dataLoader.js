@@ -5,6 +5,56 @@
 // Cache for loaded data to prevent multiple loads
 const dataCache = new Map();
 const inFlightLoads = new Map();
+let jsonWorker = null;
+let nextWorkerRequestId = 1;
+const workerRequests = new Map();
+
+const getJsonWorker = () => {
+  if (typeof Worker === 'undefined') return null;
+  if (!jsonWorker) {
+    jsonWorker = new Worker(new URL('./jsonLoaderWorker.js', import.meta.url));
+    jsonWorker.onmessage = (event) => {
+      const { id, type, data, error, name, ...progress } = event.data || {};
+      const request = workerRequests.get(id);
+      if (!request) return;
+
+      if (type === 'progress') {
+        request.onProgress?.(progress);
+        return;
+      }
+
+      workerRequests.delete(id);
+      if (type === 'done') {
+        request.resolve(data);
+      } else {
+        const err = new Error(error || 'Worker JSON load failed');
+        err.name = name || 'Error';
+        request.reject(err);
+      }
+    };
+    jsonWorker.onerror = (event) => {
+      const err = new Error(event?.message || 'Worker JSON load failed');
+      workerRequests.forEach((request) => request.reject(err));
+      workerRequests.clear();
+      jsonWorker?.terminate();
+      jsonWorker = null;
+    };
+  }
+  return jsonWorker;
+};
+
+const loadJsonFileInWorker = (url, onProgress) => {
+  const worker = getJsonWorker();
+  if (!worker) return null;
+
+  const id = nextWorkerRequestId;
+  nextWorkerRequestId += 1;
+
+  return new Promise((resolve, reject) => {
+    workerRequests.set(id, { resolve, reject, onProgress });
+    worker.postMessage({ id, url });
+  });
+};
 
 /**
  * Clear the data cache to free memory
@@ -117,7 +167,7 @@ const sampleData = (data, maxPoints = 100) => {
  * @param {number} maxSize - Maximum file size in characters (default: 5MB for large files)
  * @returns {Promise<Object>} The parsed JSON data
  */
-export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
+export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024, onProgress = null) => {
   // Check cache first
   if (dataCache.has(url)) {
     console.log(`Using cached data for ${url}`);
@@ -132,7 +182,15 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024) => {
 
   const loadPromise = (async () => {
     console.log(`Loading ${url}...`);
-    
+
+    const workerPromise = loadJsonFileInWorker(url, onProgress);
+    if (workerPromise) {
+      const data = await workerPromise;
+      dataCache.set(url, data);
+      console.log(`Successfully parsed and cached ${url} in worker`);
+      return data;
+    }
+
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);

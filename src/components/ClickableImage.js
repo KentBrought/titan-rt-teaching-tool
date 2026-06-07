@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, memo } from 'react';
 import './ClickableImage.css';
 
 const GEO_GRID_SIZE = 681;
@@ -1215,6 +1215,6 @@ const zoomButtonStyle = {
   pointerEvents: 'auto',
 };
 
-export default ClickableImage;
+export default memo(ClickableImage);
 
 

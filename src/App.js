@@ -28,6 +28,7 @@ import {
 const SpectralPlot = lazy(() => import('./components/SpectralPlot'));
 const GasAbundancePlot = lazy(() => import('./components/GasAbundancePlot'));
 const SphereView = lazy(() => import('./components/SphereView'));
+const CLICKABLE_IMAGE_STYLE = { width: '100%' };
 
 const FIXED_ALBEDO = 0.1;
 const MAX_SELECTED_POINTS = 5;
@@ -61,6 +62,56 @@ function phaseSliderFromDisplayPhaseDeg(deg) {
 }
 const isFiniteNumber = (value) => Number.isFinite(value);
 const toFiniteOrNull = (value) => (Number.isFinite(value) ? value : null);
+
+function useDebouncedValue(value, delayMs) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    if (!delayMs) {
+      setDebouncedValue(value);
+      return undefined;
+    }
+    const timerId = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+    return () => clearTimeout(timerId);
+  }, [value, delayMs]);
+
+  return debouncedValue;
+}
+
+const DeferredMount = memo(({ children, fallback = null, timeoutMs = 900 }) => {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (ready) return undefined;
+
+    let timeoutId = null;
+    let idleId = null;
+    let cancelled = false;
+    const show = () => {
+      if (!cancelled) setReady(true);
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(show, { timeout: timeoutMs });
+    } else {
+      timeoutId = window.setTimeout(show, timeoutMs);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null && typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null && typeof window !== 'undefined') {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [ready, timeoutMs]);
+
+  return ready ? children : fallback;
+});
 
 const LazyPanelFallback = ({ label = 'Loading...' }) => (
   <div style={{
@@ -359,6 +410,12 @@ function App() {
   const [spectralDataNew, setSpectralDataNew] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [spectralLoadProgress, setSpectralLoadProgress] = useState({
+    stage: 'idle',
+    loaded: 0,
+    total: 0,
+    percent: null,
+  });
   const [angleOptions, setAngleOptions] = useState({ inc: [], emi: [], daz: [] });
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
   const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // { pointIndex: { standard, no_ch4, no_haze } }
@@ -383,6 +440,7 @@ function App() {
   const prevGeoValuesRef = useRef(null);
   const phaseGeoFetchTimerRef = useRef(null);
   const geoValuesRequestIdRef = useRef(0); // Request counter for canceling in-flight geo value fetches
+  const spectralLoadPromiseRef = useRef(null);
   const [compositeType, setCompositeType] = useState('5_2_1.3'); // '5_2_1.3' or '2_1.6_1.3'
   const [monoBandIndex, setMonoBandIndex] = useState(0); // 0 .. COLOR_CUBE_NUM_BANDS-1: grayscale mix on haze-folder composite PNG (not colorCCD.img)
   const [hazePropertiesModel, setHazePropertiesModel] = useState('doose');
@@ -406,6 +464,9 @@ function App() {
   const [surfaceMapMode3d, setSurfaceMapMode3d] = useState('ir'); // 'ir' | 'incidence' | 'emission'
   const [tutorialMode, setTutorialMode] = useState(null);
   const [verticalProfileView, setVerticalProfileView] = useState('gases');
+  const appliedIrSliders = useDebouncedValue(sliders, irDisplayMode === '2d' ? 220 : 0);
+  const activeIrSliders = irDisplayMode === '2d' ? appliedIrSliders : sliders;
+  const activePhaseSlider = activeIrSliders.phaseAngle;
 
   useEffect(() => {
     if (imageType !== 'irColor' && imageType !== 'monoBand') {
@@ -418,10 +479,10 @@ function App() {
     if (name === 'phaseAngle') {
       const v = Math.round(numericValue);
       const clamped = Math.max(PHASE_SLIDER_MIN, Math.min(PHASE_SLIDER_MAX, v));
-      setSliders(prev => ({ ...prev, [name]: clamped }));
+      setSliders(prev => (prev[name] === clamped ? prev : { ...prev, [name]: clamped }));
       return;
     }
-    setSliders(prev => ({ ...prev, [name]: numericValue }));
+    setSliders(prev => (prev[name] === numericValue ? prev : { ...prev, [name]: numericValue }));
   };
 
   const handleGeometryInteractionModeChange = (mode) => {
@@ -576,10 +637,10 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true);
-      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(activePhaseSlider);
       const displayPhaseDeg = phaseAngleOverride !== null
         ? displayPhaseDegFromAssetPhaseDeg(phaseAngleOverride)
-        : displayPhaseDegFromPhaseSlider(sliders.phaseAngle);
+        : displayPhaseDegFromPhaseSlider(activePhaseSlider);
       const values = await extractGeoValues(assetPhaseDeg, x, y);
 
       if (currentRequestId !== geoValuesRequestIdRef.current) {
@@ -630,7 +691,7 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [sliders.phaseAngle, materialAlbedoMap]);
+  }, [activePhaseSlider, materialAlbedoMap]);
 
   // Fetch geo values for multiple positions
   const fetchMultipleGeoValues = useCallback(async (positions, phaseAngleOverride = null) => {
@@ -640,10 +701,10 @@ function App() {
     try {
       setLoadingGeo(true);
       setLoadingSpectral(true);
-      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const assetPhaseDeg = phaseAngleOverride !== null ? phaseAngleOverride : assetPhaseDegFromPhaseSlider(activePhaseSlider);
       const displayPhaseDeg = phaseAngleOverride !== null
         ? displayPhaseDegFromAssetPhaseDeg(phaseAngleOverride)
-        : displayPhaseDegFromPhaseSlider(sliders.phaseAngle);
+        : displayPhaseDegFromPhaseSlider(activePhaseSlider);
       const colorNames = ['red', 'orange', 'yellow', 'green', 'blue', 'purple'];
       const geoValuesPromises = positions.map(async (pos, index) => {
         try {
@@ -734,7 +795,7 @@ function App() {
         setTimeout(() => setLoadingSpectral(false), 100);
       }
     }
-  }, [sliders.phaseAngle, materialAlbedoMap]);
+  }, [activePhaseSlider, materialAlbedoMap]);
 
   const findNearestGeoPixelByLatLon = useCallback(async (targetLat, targetLon, phaseAngleDeg) => {
     const geoData = await getGeoCubeData(phaseAngleDeg);
@@ -815,7 +876,7 @@ function App() {
   // Preload geo cube data when phase angle changes
   useEffect(() => {
     const loadGeoCube = async () => {
-      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(activePhaseSlider);
       if (currentPhaseAngleRef.current !== assetPhaseDeg) {
         try {
           const geoData = await getGeoCubeData(assetPhaseDeg);
@@ -830,7 +891,7 @@ function App() {
       }
     };
     loadGeoCube();
-  }, [sliders.phaseAngle]);
+  }, [activePhaseSlider]);
 
   // Handle image hover to extract geo values (real-time with cached lookups)
   const handleImageHover = useCallback((x, y, position) => {
@@ -851,10 +912,10 @@ function App() {
     const geoData = geoCubeDataRef.current;
     if (!geoData) {
       // If data not loaded yet, fall back to async call
-      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(activePhaseSlider);
       extractGeoValues(assetPhaseDeg, px, py).then(values => {
         setHoverGeoValues(prev => {
-          const merged = { ...values, phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)) };
+          const merged = { ...values, phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(activePhaseSlider)) };
           if (
             prev &&
             prev.x === merged.x &&
@@ -884,7 +945,7 @@ function App() {
       const nextHover = {
         lat: toFiniteOrNull(lat),
         lon: toFiniteOrNull(lon),
-        phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(sliders.phaseAngle)),
+        phase: toFiniteOrNull(displayPhaseDegFromPhaseSlider(activePhaseSlider)),
         incidence: toFiniteOrNull(incidence),
         emis: toFiniteOrNull(emis),
         x: px,
@@ -907,7 +968,7 @@ function App() {
       console.error('Error extracting hover geo values:', error);
       setHoverGeoValues(null);
     }
-  }, [sliders.phaseAngle]);
+  }, [activePhaseSlider]);
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
@@ -922,7 +983,7 @@ function App() {
   }, []);
 
   // Handle image click to extract geo values
-  const handleImageClick = async (x, y, position) => {
+  const handleImageClick = useCallback(async (x, y, position) => {
     if (x === null || y === null) {
       if (toggles.plotMultiple) {
         // Clear all positions in multiple mode
@@ -947,7 +1008,6 @@ function App() {
 
         if (existingIndex >= 0) {
           // Remove existing position - keep color indices of remaining positions unchanged
-          const removedPosition = prev[existingIndex];
           const newPositions = prev.filter((_, idx) => idx !== existingIndex);
           // Reindex case selections: map old array indices to new array indices
           setSelectedCasesByPoint(prevCases => {
@@ -1002,7 +1062,7 @@ function App() {
       // Extract values immediately
       await fetchGeoValues(x, y);
     }
-  };
+  }, [fetchGeoValues, fetchMultipleGeoValues, toggles.plotMultiple]);
 
   const handleClearAllSelectedPoints = useCallback(() => {
     setMultiplePositions([]);
@@ -1040,7 +1100,7 @@ function App() {
   const handleSpherePlotPoint = useCallback(async (point) => {
     if (!point) return;
     const isRemove = Boolean(point.remove);
-    const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+    const assetPhaseDeg = assetPhaseDegFromPhaseSlider(activePhaseSlider);
     let targetX = point.x;
     let targetY = point.y;
     const targetLat = toFiniteOrNull(point.lat);
@@ -1178,7 +1238,7 @@ function App() {
       }
     });
     await fetchGeoValues(targetX, targetY, assetPhaseDeg);
-  }, [clickedPosition, fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, sliders.phaseAngle]);
+  }, [clickedPosition, fetchGeoValues, fetchMultipleGeoValues, findNearestGeoPixelByLatLon, selectionMode, activePhaseSlider]);
 
   const syncedSelectionPointsFor3d = useMemo(() => {
     const hasGeoOrLocal = (point) => (
@@ -1331,7 +1391,8 @@ function App() {
     }
   };
 
-  const hazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
+  const uiHazeAbundanceSetting = getHazeAbundanceValue(sliders.hazeAbundance);
+  const hazeAbundanceSetting = getHazeAbundanceValue(activeIrSliders.hazeAbundance);
   const activeAlbedoValue = FIXED_ALBEDO;
   const activeGridEnabled = irDisplayMode === '3d' ? sphereGridEnabled3d : irGridEnabled2d;
   const optionsPanelTitle = irDisplayMode === '3d' ? 'Observing Geometry Options' : 'IR Image Options';
@@ -1342,7 +1403,7 @@ function App() {
   };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
   const hazeProfileScenarioKey = hazePropertiesModel === 'tomasko' ? 'tomasko_1.0' : hazeFolderName;
-  const methaneImageSetting = sliders.methaneAbundance >= 50 ? 1 : 0;
+  const methaneImageSetting = activeIrSliders.methaneAbundance >= 50 ? 1 : 0;
   const imageFolderName = hazePropertiesModel === 'doose'
     ? `${hazeFolderName}_meth${methaneImageSetting}`
     : hazeFolderName;
@@ -1403,7 +1464,7 @@ function App() {
 
     imageLoadTimerRef.current = setTimeout(async () => {
       try {
-        const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+        const assetPhaseDeg = assetPhaseDegFromPhaseSlider(activePhaseSlider);
 
         revokeMonoBlob();
 
@@ -1461,7 +1522,7 @@ function App() {
         imagePreloadTimerRef.current = null;
       }
     };
-  }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex, hazePropertiesModel, methaneImageSetting]);
+  }, [activePhaseSlider, compositeType, imageFolderName, imageType, monoBandIndex, hazePropertiesModel, methaneImageSetting]);
 
   // Update geo values when phase angle changes and there is an active selection.
   // Debounced to avoid lag while dragging phase in 3D edit mode.
@@ -1481,7 +1542,7 @@ function App() {
         clearTimeout(phaseGeoFetchTimerRef.current);
       }
     };
-  }, [sliders.phaseAngle, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
+  }, [activePhaseSlider, clickedPosition, multiplePositions, toggles.plotMultiple, fetchGeoValues, fetchMultipleGeoValues]);
 
   // In 2D mode, keep selected points tied to lat/lon as phase changes.
   // Points that are no longer visible in the current phase/projection are removed.
@@ -1490,7 +1551,7 @@ function App() {
 
     let cancelled = false;
     const remapSelectionsFor2dPhase = async () => {
-      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(sliders.phaseAngle);
+      const assetPhaseDeg = assetPhaseDegFromPhaseSlider(activePhaseSlider);
 
       if (toggles.plotMultiple) {
         if (!Array.isArray(multiplePositions) || multiplePositions.length === 0) return;
@@ -1548,7 +1609,7 @@ function App() {
     irDisplayMode,
     multiplePositions,
     remapPointToCurrent2dPhase,
-    sliders.phaseAngle,
+    activePhaseSlider,
     toggles.plotMultiple
   ]);
 
@@ -1791,32 +1852,47 @@ function App() {
     };
   }, []);
 
-  // Load default spectral library on mount.
-  useEffect(() => {
-    let isCancelled = false;
+  const ensureSpectralDataLoaded = useCallback(() => {
+    if (spectralDataOld || spectralDataNew) {
+      return Promise.resolve(spectralDataOld || spectralDataNew);
+    }
+    if (spectralLoadPromiseRef.current) {
+      return spectralLoadPromiseRef.current;
+    }
 
-    const loadSpectralData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    setLoading(true);
+    setError(null);
+    setSpectralLoadProgress({
+      stage: 'downloading',
+      loaded: 0,
+      total: 0,
+      percent: null,
+    });
 
-        const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
-        try {
-          const oldSpectralJson = await loadJsonFile(oldDataPath);
-          if (isCancelled) return;
-          if (
-            oldSpectralJson &&
-            oldSpectralJson.wavelength &&
-            (oldSpectralJson.standard || oldSpectralJson.data)
-          ) {
-            setSpectralDataOld(oldSpectralJson);
-          }
-        } catch (oldErr) {
-          /* optional init_gui library missing or invalid */
+    const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
+    const promise = loadJsonFile(oldDataPath, 50 * 1024 * 1024, (progress) => {
+      setSpectralLoadProgress((prev) => ({
+        ...prev,
+        ...progress,
+      }));
+    })
+      .then((oldSpectralJson) => {
+        if (
+          oldSpectralJson &&
+          oldSpectralJson.wavelength &&
+          (oldSpectralJson.standard || oldSpectralJson.data)
+        ) {
+          setSpectralDataOld(oldSpectralJson);
+          setSpectralLoadProgress((prev) => ({
+            ...prev,
+            stage: 'ready',
+            percent: 100,
+          }));
+          return oldSpectralJson;
         }
-
-      } catch (err) {
-        if (isCancelled) return;
+        throw new Error('Spectral library loaded but did not contain expected arrays.');
+      })
+      .catch((err) => {
         console.error('Error loading spectral data:', err);
         const errorMessage = err.message || String(err);
         if (errorMessage.toLowerCase().includes('memory') || errorMessage.toLowerCase().includes('out of')) {
@@ -1825,19 +1901,29 @@ function App() {
           setError(`Unable to load spectral data. ${err.message}`);
         }
         setSpectralData(null);
-      } finally {
-        if (!isCancelled) {
-          setLoading(false);
-        }
-      }
-    };
+        setSpectralLoadProgress((prev) => ({
+          ...prev,
+          stage: 'error',
+        }));
+        throw err;
+      })
+      .finally(() => {
+        spectralLoadPromiseRef.current = null;
+        setLoading(false);
+      });
 
-    loadSpectralData();
+    spectralLoadPromiseRef.current = promise;
+    return promise;
+  }, [spectralDataNew, spectralDataOld]);
 
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+  const spectralPlotRequested = Boolean(geoValues) || Object.values(transmissionToggles).some(Boolean);
+
+  useEffect(() => {
+    if (!spectralPlotRequested) return;
+    ensureSpectralDataLoaded().catch(() => {
+      // Error state is handled inside ensureSpectralDataLoaded.
+    });
+  }, [ensureSpectralDataLoaded, spectralPlotRequested]);
 
   useEffect(() => {
     if (spectralDataOld) {
@@ -1948,12 +2034,14 @@ function App() {
                       </div>
                       <div className="skinny-plot-content">
                         <Suspense fallback={<LazyPanelFallback label="Loading profile plot..." />}>
-                          <GasAbundancePlot
-                            methaneAbundance={100}
-                            profile={verticalProfileView}
-                            hazeScenarioKey={hazeProfileScenarioKey}
-                            hazeScale={hazeAbundanceSetting}
-                          />
+                          <DeferredMount fallback={<LazyPanelFallback label="Preparing profile plot..." />}>
+                            <GasAbundancePlot
+                              methaneAbundance={100}
+                              profile={verticalProfileView}
+                              hazeScenarioKey={verticalProfileView === 'haze' ? hazeProfileScenarioKey : 'tomasko_1.0'}
+                              hazeScale={verticalProfileView === 'haze' ? hazeAbundanceSetting : 1}
+                            />
+                          </DeferredMount>
                         </Suspense>
                       </div>
                     </div>
@@ -2025,13 +2113,13 @@ function App() {
                             <div style={{ width: '100%', height: `${panelMatchHeightPx}px`, borderRadius: '4px', overflow: 'hidden' }}>
                               <Suspense fallback={<LazyPanelFallback label="Loading 3D view..." />}>
                                 <SphereView
-                                  phaseAngle={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                  phaseAngle={assetPhaseDegFromPhaseSlider(activePhaseSlider)}
                                   compositeType={compositeType}
                                   viewMode="weightedPhase"
                                   minHeight={0}
                                   incidenceDeg={sliders.incidenceAngle}
                                   emissionDeg={sliders.emissionAngle}
-                                  phaseDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                  phaseDeg={assetPhaseDegFromPhaseSlider(activePhaseSlider)}
                                   titanYawDeg={sliders.titanYaw}
                                   obliquityDeg={sliders.obliquity}
                                   cameraPreset={cameraPreset3d || 'none'}
@@ -2075,7 +2163,7 @@ function App() {
                               onImageClick={handleImageClick}
                               onImageHover={handleImageHover}
                               className="ir-color-image"
-                              style={{ width: '100%' }}
+                              style={CLICKABLE_IMAGE_STYLE}
                               initialPosition={toggles.plotMultiple ? null : clickedPosition}
                               multiplePositions={toggles.plotMultiple ? multiplePositions : []}
                               plotMultiple={toggles.plotMultiple}
@@ -2121,7 +2209,7 @@ function App() {
                             geoValues={geoValues}
                             plotMultiple={toggles.plotMultiple}
                             loadingGeo={loadingGeo}
-                            currentPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                            currentPhaseAngle={displayPhaseDegFromPhaseSlider(activePhaseSlider)}
                             onClearAllPoints={handleClearAllSelectedPoints}
                             onRemovePoint={handleRemoveSelectedPoint}
                           />
@@ -2239,13 +2327,14 @@ function App() {
                               onChange={(e) => {
                                 const stepValue = parseInt(e.target.value, 10);
                                 const sliderValue = stepValue * 50;
-                                setSliders((prev) => ({
-                                  ...prev,
-                                  hazeAbundance: sliderValue,
-                                }));
+                                setSliders((prev) => (
+                                  prev.hazeAbundance === sliderValue
+                                    ? prev
+                                    : { ...prev, hazeAbundance: sliderValue }
+                                ));
                               }}
                             />
-                            <span>{hazeAbundanceSetting}</span>
+                            <span>{uiHazeAbundanceSetting}</span>
                           </label>
 
                           <label style={{ color: '#ccc' }}>
@@ -2763,14 +2852,46 @@ function App() {
                       </h2>
                       {loading ? (
                         <div style={{
-                          padding: '40px',
+                          padding: '36px',
                           textAlign: 'center',
-                          backgroundColor: '#f8f9fa',
+                          backgroundColor: '#161b22',
                           borderRadius: '8px',
-                          margin: '10px'
+                          margin: '10px',
+                          border: '1px solid #334155',
+                          color: '#dbeafe',
                         }}>
-                          <div style={{ fontSize: '18px', marginBottom: '10px' }}>Loading</div>
-                          <p>Loading spectral data...</p>
+                          <div style={{ fontSize: '18px', marginBottom: '10px' }}>
+                            {spectralLoadProgress.stage === 'parsing'
+                              ? 'Parsing spectral library'
+                              : 'Loading spectral library'}
+                          </div>
+                          <div style={{
+                            height: '10px',
+                            width: '100%',
+                            maxWidth: '420px',
+                            margin: '14px auto 10px',
+                            borderRadius: '999px',
+                            backgroundColor: '#0f172a',
+                            overflow: 'hidden',
+                            border: '1px solid #334155',
+                          }}>
+                            <div style={{
+                              height: '100%',
+                              width: `${Number.isFinite(spectralLoadProgress.percent) ? spectralLoadProgress.percent : 12}%`,
+                              minWidth: '12%',
+                              borderRadius: '999px',
+                              backgroundColor: '#38bdf8',
+                              transition: 'width 180ms ease',
+                            }}></div>
+                          </div>
+                          <p style={{ margin: 0, color: '#93c5fd', fontSize: '13px' }}>
+                            {Number.isFinite(spectralLoadProgress.percent)
+                              ? `${spectralLoadProgress.percent}%`
+                              : 'Preparing download...'}
+                          </p>
+                          <p style={{ margin: '8px 0 0', color: '#94a3b8', fontSize: '12px' }}>
+                            The main controls should stay usable while this runs in the background.
+                          </p>
                         </div>
                       ) : error ? (
                         <div style={{
@@ -2789,7 +2910,7 @@ function App() {
                             Consider using a more powerful machine or a different browser for this visualization.
                           </p>
                         </div>
-                      ) : spectralData ? (
+                      ) : spectralData && spectralPlotRequested ? (
                         <>
                           <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', position: 'relative', display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0 }}>
                             {loadingSpectral && (
@@ -2819,7 +2940,7 @@ function App() {
                                   transmissionToggles={transmissionToggles}
                                   spectralUnits={toggles.spectralUnits}
                                   spectralResolution={spectralResolution}
-                                  selectedPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                  selectedPhaseAngle={displayPhaseDegFromPhaseSlider(activePhaseSlider)}
                                   albedo={FIXED_ALBEDO}
                                   spectralLoading={loadingSpectral}
                                 />
@@ -2853,9 +2974,13 @@ function App() {
                             </div>
                           )}
                         </>
+                      ) : !spectralPlotRequested ? (
+                        <div className="plot-placeholder">
+                          <p>Click on the IR image to load spectra for a point.</p>
+                        </div>
                       ) : (
                         <div className="plot-placeholder">
-                          <p>No spectral data available</p>
+                          <p>Spectral data is not loaded yet.</p>
                         </div>
                       )}
                     </div>
