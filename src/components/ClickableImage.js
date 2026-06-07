@@ -81,7 +81,14 @@ const getImageContentBounds = (img) => {
       }
     }
     if (maxX < minX || maxY < minY) return null;
-    return { minX, minY, maxX, maxY };
+    return {
+      minX,
+      minY,
+      maxX,
+      maxY,
+      naturalWidth: canvas.width,
+      naturalHeight: canvas.height,
+    };
   } catch (_err) {
     return null;
   }
@@ -109,6 +116,7 @@ const mapGeoBoundsToImageBounds = (img, geoBounds) => {
 };
 
 const buildImageGeoTransform = (img, geoData, referenceImageBounds = null) => {
+  const hasGeoData = geoData && typeof geoData.length === 'number' && geoData.length >= GEO_BAND_SIZE * 2;
   const geoBounds = getGeoBounds(geoData) || {
     minX: 0,
     minY: 0,
@@ -116,10 +124,8 @@ const buildImageGeoTransform = (img, geoData, referenceImageBounds = null) => {
     maxY: GEO_GRID_SIZE - 1,
   };
   const identityBounds = getIdentityImageBounds(img);
-  // Keep the grid anchored to the solid-surface footprint from the geo cube;
-  // haze brightness can extend beyond this and should not resize the grid.
-  const imageBounds = referenceImageBounds
-    || mapGeoBoundsToImageBounds(img, geoBounds)
+  const imageBounds = (hasGeoData ? mapGeoBoundsToImageBounds(img, geoBounds) : null)
+    || referenceImageBounds
     || getImageContentBounds(img)
     || identityBounds;
   return {
@@ -129,6 +135,117 @@ const buildImageGeoTransform = (img, geoData, referenceImageBounds = null) => {
     naturalHeight: img?.naturalHeight || GEO_GRID_SIZE,
   };
 };
+
+const scaleBoundsToImageSize = (bounds, naturalWidth, naturalHeight) => {
+  if (!bounds || !naturalWidth || !naturalHeight) return null;
+  const sourceWidth = bounds.naturalWidth || naturalWidth;
+  const sourceHeight = bounds.naturalHeight || naturalHeight;
+  const scaleX = Math.max(1, naturalWidth - 1) / Math.max(1, sourceWidth - 1);
+  const scaleY = Math.max(1, naturalHeight - 1) / Math.max(1, sourceHeight - 1);
+  return {
+    minX: bounds.minX * scaleX,
+    minY: bounds.minY * scaleY,
+    maxX: bounds.maxX * scaleX,
+    maxY: bounds.maxY * scaleY,
+  };
+};
+
+const boundsNearlyEqual = (a, b, tolerance = 0.35) => (
+  a && b
+  && Math.abs(a.minX - b.minX) <= tolerance
+  && Math.abs(a.minY - b.minY) <= tolerance
+  && Math.abs(a.maxX - b.maxX) <= tolerance
+  && Math.abs(a.maxY - b.maxY) <= tolerance
+);
+
+const normalizeImageToGeoFootprintUrl = (imageSrc, sourceBounds, geoBounds, geoData) => (
+  new Promise((resolve) => {
+    if (!imageSrc || !sourceBounds || !geoBounds) {
+      resolve(null);
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      const naturalWidth = img.naturalWidth || GEO_GRID_SIZE;
+      const naturalHeight = img.naturalHeight || GEO_GRID_SIZE;
+      const scaledSourceBounds = scaleBoundsToImageSize(sourceBounds, naturalWidth, naturalHeight);
+      const targetBounds = mapGeoBoundsToImageBounds(img, geoBounds);
+      const hasGeoMask = geoData && typeof geoData.length === 'number' && geoData.length >= GEO_BAND_SIZE * 2;
+      if (!scaledSourceBounds || !targetBounds) {
+        resolve(null);
+        return;
+      }
+
+      const sourceW = scaledSourceBounds.maxX - scaledSourceBounds.minX;
+      const sourceH = scaledSourceBounds.maxY - scaledSourceBounds.minY;
+      const targetW = targetBounds.maxX - targetBounds.minX;
+      const targetH = targetBounds.maxY - targetBounds.minY;
+      if (sourceW <= 1 || sourceH <= 1 || targetW <= 1 || targetH <= 1) {
+        resolve(null);
+        return;
+      }
+
+      const needsFit = !boundsNearlyEqual(scaledSourceBounds, targetBounds);
+      const scaleX = needsFit ? targetW / sourceW : 1;
+      const scaleY = needsFit ? targetH / sourceH : 1;
+      const translateX = needsFit ? targetBounds.minX - (scaledSourceBounds.minX * scaleX) : 0;
+      const translateY = needsFit ? targetBounds.minY - (scaledSourceBounds.minY * scaleY) : 0;
+
+      if (!needsFit && !hasGeoMask) {
+        resolve(null);
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = naturalWidth;
+      canvas.height = naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+
+      try {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.setTransform(scaleX, 0, 0, scaleY, translateX, translateY);
+        ctx.drawImage(img, 0, 0);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+        if (hasGeoMask) {
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const maskTransform = {
+            imageBounds: targetBounds,
+            geoBounds,
+          };
+          for (let y = 0; y < canvas.height; y += 1) {
+            for (let x = 0; x < canvas.width; x += 1) {
+              const geoPoint = mapImageNaturalToGeo(x, y, maskTransform);
+              if (isValidGeoPoint(geoData, geoPoint.x, geoPoint.y)) continue;
+              const idx = (y * canvas.width + x) * 4;
+              imageData.data[idx] = 0;
+              imageData.data[idx + 1] = 0;
+              imageData.data[idx + 2] = 0;
+              imageData.data[idx + 3] = 255;
+            }
+          }
+          ctx.putImageData(imageData, 0, 0);
+        }
+
+        canvas.toBlob((blob) => {
+          resolve(blob ? URL.createObjectURL(blob) : null);
+        }, 'image/png');
+      } catch (_err) {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imageSrc;
+  })
+);
 
 const mapImageNaturalToGeo = (x, y, transform) => {
   const t = transform || {
@@ -446,6 +563,7 @@ const ClickableImage = ({
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [imageGeoTransform, setImageGeoTransform] = useState(null);
   const [referenceImageBounds, setReferenceImageBounds] = useState(null);
+  const [normalizedImageUrl, setNormalizedImageUrl] = useState(null);
   const [overlayRevision, setOverlayRevision] = useState(0);
   const [hoveredMarker, setHoveredMarker] = useState(null); // { type: 'single' } | { type: 'multiple', index }
   const [markerTooltip, setMarkerTooltip] = useState({ visible: false, x: 0, y: 0 });
@@ -453,8 +571,10 @@ const ClickableImage = ({
   const containerRef = useRef(null);
   const imageContainerRef = useRef(null);
   const materialCanvasRef = useRef(null);
+  const normalizedImageUrlRef = useRef(null);
   const dragStateRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, panStartX: 0, panStartY: 0 });
   const clickPositionRef = useRef(clickPosition);
+  const displaySrc = normalizedImageUrl || src;
   
   // Keep ref in sync with state
   useEffect(() => {
@@ -560,7 +680,7 @@ const ClickableImage = ({
       }
       window.removeEventListener('resize', handleResize);
     };
-  }, [src, initialPosition, geoCubeData, referenceImageBounds]);
+  }, [displaySrc, initialPosition, geoCubeData, referenceImageBounds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -586,6 +706,53 @@ const ClickableImage = ({
       cancelled = true;
     };
   }, [alignmentReferenceSrc]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const clearNormalizedUrl = () => {
+      if (normalizedImageUrlRef.current) {
+        URL.revokeObjectURL(normalizedImageUrlRef.current);
+        normalizedImageUrlRef.current = null;
+      }
+      setNormalizedImageUrl(null);
+    };
+
+    const geoBounds = getGeoBounds(geoCubeData);
+    if (!src || !referenceImageBounds || !geoBounds) {
+      clearNormalizedUrl();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    clearNormalizedUrl();
+
+    normalizeImageToGeoFootprintUrl(src, referenceImageBounds, geoBounds, geoCubeData)
+      .then((url) => {
+        if (cancelled) {
+          if (url) URL.revokeObjectURL(url);
+          return;
+        }
+
+        if (normalizedImageUrlRef.current) {
+          URL.revokeObjectURL(normalizedImageUrlRef.current);
+        }
+        normalizedImageUrlRef.current = url;
+        setNormalizedImageUrl(url);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src, referenceImageBounds, geoCubeData]);
+
+  useEffect(() => () => {
+    if (normalizedImageUrlRef.current) {
+      URL.revokeObjectURL(normalizedImageUrlRef.current);
+      normalizedImageUrlRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     setZoom(1);
@@ -640,7 +807,7 @@ const ClickableImage = ({
     ctx.putImageData(imageData, 0, 0);
     canvas.style.width = `${dw}px`;
     canvas.style.height = `${dh}px`;
-  }, [materialOverlay, materialVisKey, materialVisibility, src, zoom, pan, overlayRevision]);
+  }, [materialOverlay, materialVisKey, materialVisibility, displaySrc, zoom, pan, overlayRevision]);
 
   useEffect(() => {
     const el = imageRef.current;
@@ -654,7 +821,7 @@ const ClickableImage = ({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [src, materialOverlay, showLatLonGrid]);
+  }, [displaySrc, materialOverlay, showLatLonGrid]);
 
   const calculateCoordinates = (e) => {
     if (!imageRef.current || !imageContainerRef.current) return null;
@@ -923,7 +1090,7 @@ const ClickableImage = ({
           -
         </button>
       </div>
-      {src && (
+      {displaySrc && (
         <div
           ref={imageContainerRef}
           className="image-marker-container"
@@ -936,10 +1103,15 @@ const ClickableImage = ({
         >
           <img
             ref={imageRef}
-            src={src}
+            src={displaySrc}
             alt={alt}
             className="clickable-image"
-            style={{ maxWidth: '100%', height: 'auto', objectFit: 'contain', display: 'block' }}
+            style={{
+              maxWidth: '100%',
+              height: 'auto',
+              objectFit: 'contain',
+              display: 'block',
+            }}
             onLoad={() => {
               if (imageRef.current) {
                 const img = imageRef.current;
