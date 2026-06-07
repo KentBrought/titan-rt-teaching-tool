@@ -363,7 +363,6 @@ function App() {
   const [selectedCases, setSelectedCases] = useState({ standard: true, no_ch4: false, no_haze: false });
   const [selectedCasesByPoint, setSelectedCasesByPoint] = useState({}); // { pointIndex: { standard, no_ch4, no_haze } }
   const [currentImage, setCurrentImage] = useState(null);
-  const [currentImageAlignmentReference, setCurrentImageAlignmentReference] = useState(null);
   const [loadingImage, setLoadingImage] = useState(false);
   const [currentGeoCubeData, setCurrentGeoCubeData] = useState(null);
   const [geoValues, setGeoValues] = useState(null);
@@ -809,6 +808,7 @@ function App() {
   const lastHoverPixelRef = useRef({ x: null, y: null });
   // Debounce timer ref for image loading
   const imageLoadTimerRef = useRef(null);
+  const imagePreloadTimerRef = useRef(null);
   const imageLoadRequestIdRef = useRef(0);
   const monoBlobUrlRef = useRef(null);
 
@@ -914,6 +914,9 @@ function App() {
     return () => {
       if (imageLoadTimerRef.current) {
         clearTimeout(imageLoadTimerRef.current);
+      }
+      if (imagePreloadTimerRef.current) {
+        clearTimeout(imagePreloadTimerRef.current);
       }
     };
   }, []);
@@ -1381,6 +1384,10 @@ function App() {
     if (imageLoadTimerRef.current) {
       clearTimeout(imageLoadTimerRef.current);
     }
+    if (imagePreloadTimerRef.current) {
+      clearTimeout(imagePreloadTimerRef.current);
+      imagePreloadTimerRef.current = null;
+    }
 
     setLoadingImage(true);
     const loadId = ++imageLoadRequestIdRef.current;
@@ -1405,22 +1412,6 @@ function App() {
         const result = await loadPds4Image(assetPhaseDeg, imageTypeToLoad, imageFolderName, requestedAlbedo);
         if (stale()) return;
 
-        const shouldUseHazeZeroReference = imageType === 'irColor' || imageType === 'monoBand';
-        if (shouldUseHazeZeroReference && hazePropertiesModel === 'doose') {
-          const referenceFolderName = `doose_0.0_meth${methaneImageSetting}`;
-          loadPds4Image(0, imageTypeToLoad, referenceFolderName, requestedAlbedo)
-            .then((referenceResult) => {
-              if (!stale()) {
-                setCurrentImageAlignmentReference(referenceResult?.url || null);
-              }
-            })
-            .catch(() => {
-              if (!stale()) setCurrentImageAlignmentReference(null);
-            });
-        } else {
-          setCurrentImageAlignmentReference(null);
-        }
-
         if (imageType === 'monoBand') {
           const blobUrl = await compositeImageUrlToGrayscaleObjectURL(result.url, monoBandIndex);
           if (stale()) {
@@ -1437,18 +1428,22 @@ function App() {
           setCurrentImage(result.url);
         }
 
-        preloadAdjacentImages(
-          assetPhaseDeg,
-          imageTypeToLoad,
-          result?.actualFolder || imageFolderName,
-          2,
-          result?.actualAlbedo ?? requestedAlbedo
-        );
+        const preloadFolder = result?.actualFolder || imageFolderName;
+        const preloadAlbedo = result?.actualAlbedo ?? requestedAlbedo;
+        imagePreloadTimerRef.current = setTimeout(() => {
+          if (stale()) return;
+          preloadAdjacentImages(
+            assetPhaseDeg,
+            imageTypeToLoad,
+            preloadFolder,
+            1,
+            preloadAlbedo
+          );
+        }, 450);
       } catch (error) {
         if (!stale()) {
           console.error('Error loading image:', error);
           setCurrentImage(null);
-          setCurrentImageAlignmentReference(null);
         }
       } finally {
         if (!stale()) {
@@ -1460,6 +1455,10 @@ function App() {
     return () => {
       if (imageLoadTimerRef.current) {
         clearTimeout(imageLoadTimerRef.current);
+      }
+      if (imagePreloadTimerRef.current) {
+        clearTimeout(imagePreloadTimerRef.current);
+        imagePreloadTimerRef.current = null;
       }
     };
   }, [sliders.phaseAngle, compositeType, imageFolderName, imageType, monoBandIndex, hazePropertiesModel, methaneImageSetting]);
@@ -2082,7 +2081,6 @@ function App() {
                               plotMultiple={toggles.plotMultiple}
                               showLatLonGrid={irGridEnabled2d}
                               geoCubeData={currentGeoCubeData}
-                              alignmentReferenceSrc={currentImageAlignmentReference}
                             />
                             {loadingImage && (
                               <div className="loading-indicator">

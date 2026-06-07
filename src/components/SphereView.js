@@ -2,7 +2,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { USDZLoader } from 'three/examples/jsm/loaders/USDZLoader.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -835,65 +834,6 @@ function SphereView({
         sunCore.castShadow = false;
         sunCore.receiveShadow = false;
         sunBody.add(sunCore);
-
-        const sunLoader = new USDZLoader();
-        const sunModelUrl = getPublicAssetUrl('/assets/3d-model/Sun.usdz');
-        sunLoader.load(
-          sunModelUrl,
-          (sunModel) => {
-            if (cancelled || !sunBody) return;
-            const box = new THREE.Box3().setFromObject(sunModel);
-            const size = new THREE.Vector3();
-            box.getSize(size);
-            const maxDim = Math.max(size.x, size.y, size.z) || 1;
-            const targetSize = 0.32;
-            const scale = targetSize / maxDim;
-            sunModel.scale.setScalar(scale);
-            sunModel.updateMatrixWorld(true);
-            box.setFromObject(sunModel);
-            const center = box.getCenter(new THREE.Vector3());
-            sunModel.position.sub(center);
-
-            sunModel.traverse((node) => {
-              if (node.isMesh && node.material) {
-                const mats = Array.isArray(node.material) ? node.material : [node.material];
-                mats.forEach((m) => {
-                  m.emissive = new THREE.Color(0xffcc66);
-                  m.emissiveIntensity = 2.1;
-                  m.color = new THREE.Color(0xffe6a6);
-                  m.side = THREE.DoubleSide;
-                  m.transparent = true;
-                  m.opacity = 1;
-                  m.needsUpdate = true;
-                });
-                node.castShadow = false;
-                node.receiveShadow = false;
-              }
-            });
-
-            sunVisualRadius = Math.max(sunVisualRadius, targetSize * 0.5);
-            sunBody.add(sunModel);
-          },
-          undefined,
-          () => {
-            if (cancelled || !sunBody) return;
-            const fallback = new THREE.Mesh(
-              new THREE.SphereGeometry(0.16, 24, 24),
-              new THREE.MeshStandardMaterial({
-                color: 0xffd95c,
-                emissive: 0xffaa44,
-                emissiveIntensity: 2.1,
-                roughness: 0.4,
-                metalness: 0.1,
-                transparent: true,
-                opacity: 1,
-                side: THREE.DoubleSide,
-              })
-            );
-            sunBody.add(fallback);
-            sunVisualRadius = 0.16;
-          }
-        );
 
         const gltfLoader = new GLTFLoader();
         const cassiniModelUrlsRaw = [

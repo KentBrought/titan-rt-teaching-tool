@@ -6,6 +6,12 @@
 
 // Cache for parsed geo cube data (by phase angle)
 const geoCubeCache = new Map();
+const MAX_GEO_CUBE_CACHE_ENTRIES = 6;
+const IS_LITTLE_ENDIAN = (() => {
+  const buffer = new ArrayBuffer(4);
+  new DataView(buffer).setFloat32(0, 1, true);
+  return new Float32Array(buffer)[0] === 1;
+})();
 
 /**
  * Load geo cube data from a .img file
@@ -38,13 +44,18 @@ export const loadGeoCubeFile = async (phaseAngle) => {
  * @returns {Float32Array} 1D array with data in [band][line][sample] order
  */
 export const parseGeoCube = (buffer) => {
-  // The data is stored as 32-bit floats (4 bytes each)
-  // Total size: 9 * 681 * 681 * 4 = 16,695,396 bytes
-  const view = new DataView(buffer);
   const numBands = 9;
   const numLines = 681;
   const numSamples = 681;
   const totalElements = numBands * numLines * numSamples;
+  const expectedBytes = totalElements * 4;
+
+  if (IS_LITTLE_ENDIAN && buffer.byteLength >= expectedBytes) {
+    return new Float32Array(buffer, 0, totalElements);
+  }
+
+  // Fallback for unusual big-endian runtimes.
+  const view = new DataView(buffer);
   const data = new Float32Array(totalElements);
   
   // Read the data (little-endian 32-bit floats)
@@ -159,7 +170,10 @@ export const getGeoCubeData = async (phaseAngle) => {
   
   // Check cache first
   if (geoCubeCache.has(cacheKey)) {
-    return geoCubeCache.get(cacheKey);
+    const cached = geoCubeCache.get(cacheKey);
+    geoCubeCache.delete(cacheKey);
+    geoCubeCache.set(cacheKey, cached);
+    return cached;
   }
   
   // Load and parse
@@ -168,6 +182,10 @@ export const getGeoCubeData = async (phaseAngle) => {
   
   // Cache the parsed data
   geoCubeCache.set(cacheKey, geoData);
+  while (geoCubeCache.size > MAX_GEO_CUBE_CACHE_ENTRIES) {
+    const oldestKey = geoCubeCache.keys().next().value;
+    geoCubeCache.delete(oldestKey);
+  }
   
   return geoData;
 };
