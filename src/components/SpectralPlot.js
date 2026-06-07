@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import Plot from 'react-plotly.js';
+import Plot from './PlotlyPlot';
 import { processSpectralData, createSpectralPlotData, getActualAngles } from '../utils/dataProcessing';
 import { getSurfaceMaterialLabel } from '../utils/materialMapLoader';
 
@@ -292,7 +292,6 @@ const SpectralPlot = ({
 
     const traces = [];
     const colors = ['#ff0000', '#ffa500', '#ffff00', '#00ff00', '#0000ff', '#800080'];
-    const colorNames = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
 
     if (plotMultiple && Array.isArray(geoValues) && geoValues.length > 0) {
       // Multiple mode: create traces for each point and each selected case
@@ -310,7 +309,6 @@ const SpectralPlot = ({
         // Use colorIndex from geoValue if available, otherwise fall back to array index
         const colorIndex = geoValue.colorIndex !== undefined ? geoValue.colorIndex : pointIndex;
         const baseColor = colors[colorIndex] || '#ff0000';
-        const pointColor = colorNames[colorIndex] || 'Red';
 
         // Create traces for each selected case with different shades
         selectedCaseTypes.forEach((caseType, caseIndex) => {
@@ -386,7 +384,7 @@ const SpectralPlot = ({
             traces.push({
               x: wavelengths,
               y: intensities,
-              type: 'scattergl',
+              type: 'scatter',
               mode: 'lines+markers',
               name: traceName,
               meta: {
@@ -465,7 +463,7 @@ const SpectralPlot = ({
             traces.push({
               x: wavelengths,
               y: intensities,
-              type: 'scattergl',
+              type: 'scatter',
               mode: 'lines+markers',
               name: traceName,
               line: {
@@ -530,7 +528,7 @@ const SpectralPlot = ({
           traces.push({
             x: gasWavelengths,
             y: gasTransmission,
-            type: 'scattergl',
+            type: 'scatter',
             mode: 'lines',
             name: `${gasLabels[gasName] || gasName}`,
             yaxis: 'y2',

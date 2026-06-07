@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Plot from 'react-plotly.js';
+import Plot from './PlotlyPlot';
 
 const ATMOSPHERE_URL = '/data/atmosphere_vertical_profiles.json';
 const HASI_URL = '/data/hasi_atmosphere_profile.json';

@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, memo, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
-import SpectralPlot from './components/SpectralPlot';
 import ClickableImage from './components/ClickableImage';
-import GasAbundancePlot from './components/GasAbundancePlot';
 import ErrorBoundary from './components/ErrorBoundary';
 import UserGuide from './components/UserGuide';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ScrollToTop from './components/ScrollToTop';
 import Tooltip from './components/Tooltip';
-import SphereView from './components/SphereView';
 import { loadJsonFile, clearDataCache } from './utils/dataLoader';
 import { loadPds4Image, getAvailablePhaseAngles, preloadAdjacentImages } from './utils/imageLoader';
 import {
@@ -27,6 +24,10 @@ import {
   formatSurfaceMaterialWithSpectrumAlbedo,
   getSurfaceMaterialLabel,
 } from './utils/materialMapLoader';
+
+const SpectralPlot = lazy(() => import('./components/SpectralPlot'));
+const GasAbundancePlot = lazy(() => import('./components/GasAbundancePlot'));
+const SphereView = lazy(() => import('./components/SphereView'));
 
 const FIXED_ALBEDO = 0.1;
 const MAX_SELECTED_POINTS = 5;
@@ -60,6 +61,22 @@ function phaseSliderFromDisplayPhaseDeg(deg) {
 }
 const isFiniteNumber = (value) => Number.isFinite(value);
 const toFiniteOrNull = (value) => (Number.isFinite(value) ? value : null);
+
+const LazyPanelFallback = ({ label = 'Loading...' }) => (
+  <div style={{
+    width: '100%',
+    height: '100%',
+    minHeight: '160px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#ccc',
+    background: '#05070a',
+    boxSizing: 'border-box',
+  }}>
+    {label}
+  </div>
+);
 
 // Memoized component for geoValues display to prevent unnecessary re-renders
 const GeoValuesDisplay = memo(({
@@ -274,12 +291,14 @@ function SpherePage() {
         </button>
       </div>
       <div style={{ flex: 1, minHeight: '400px', width: '100%' }}>
-        <SphereView
-          phaseAngle={40}
-          compositeType="5_2_1.3"
-          viewMode={viewMode}
-          onCoverage={handleCoverage}
-        />
+        <Suspense fallback={<LazyPanelFallback label="Loading 3D view..." />}>
+          <SphereView
+            phaseAngle={40}
+            compositeType="5_2_1.3"
+            viewMode={viewMode}
+            onCoverage={handleCoverage}
+          />
+        </Suspense>
       </div>
       {viewMode === 'weightedPhase' && coverageReport && (
         <div style={{ marginTop: '16px', padding: '12px', background: '#1a1a2e', borderRadius: '8px', fontSize: '14px', color: '#ccc' }}>
@@ -1929,12 +1948,14 @@ function App() {
                         </div>
                       </div>
                       <div className="skinny-plot-content">
-                        <GasAbundancePlot
-                          methaneAbundance={100}
-                          profile={verticalProfileView}
-                          hazeScenarioKey={hazeProfileScenarioKey}
-                          hazeScale={hazeAbundanceSetting}
-                        />
+                        <Suspense fallback={<LazyPanelFallback label="Loading profile plot..." />}>
+                          <GasAbundancePlot
+                            methaneAbundance={100}
+                            profile={verticalProfileView}
+                            hazeScenarioKey={hazeProfileScenarioKey}
+                            hazeScale={hazeAbundanceSetting}
+                          />
+                        </Suspense>
                       </div>
                     </div>
                     )}
@@ -2003,44 +2024,46 @@ function App() {
                         <>
                           <div style={{ position: 'relative', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                             <div style={{ width: '100%', height: `${panelMatchHeightPx}px`, borderRadius: '4px', overflow: 'hidden' }}>
-                              <SphereView
-                                phaseAngle={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
-                                compositeType={compositeType}
-                                viewMode="weightedPhase"
-                                minHeight={0}
-                                incidenceDeg={sliders.incidenceAngle}
-                                emissionDeg={sliders.emissionAngle}
-                                phaseDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
-                                titanYawDeg={sliders.titanYaw}
-                                obliquityDeg={sliders.obliquity}
-                                cameraPreset={cameraPreset3d || 'none'}
-                                cameraCenter={cameraCenter3d}
-                                geometryInteractionMode={geometryInteractionMode3d}
-                                onGeometryChange={handleGeometryChangeFrom3d}
-                                onCameraPresetRelease={() => setCameraPreset3d('')}
-                                onVectorPlaced={() => {
-                                  setCameraPreset3d('');
-                                }}
-                                introAnimation={true}
-                                showLatLonGrid={sphereGridEnabled3d}
-                                showGeometryGrid={geometryGridEnabled3d}
-                                showRotationAxis={rotationAxisEnabled3d}
-                                showAngleArcs={showAngleArcs3d}
-                                showVectorLabels={showVectorLabels3d}
-                                showExtendedVectorLines={showVectorGuideLines3d}
-                                allowMultipleVectors={selectionMode === 'multipleVectorSelection'}
-                                showThroughSurface={showVectorsThroughTitan3d}
-                                surfaceMapMode={surfaceMapMode3d}
-                                showAtmosphere={toggles.showAtmosphere}
-                                interactionMode={
-                                  selectionMode === 'plotPoint'
-                                    ? 'plotPoint'
-                                    : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')
-                                }
-                                onSurfacePointSelect={handleSpherePlotPoint}
-                                multiplePoints={syncedSelectionPointsFor3d}
-                                geoCubeData={currentGeoCubeData}
-                              />
+                              <Suspense fallback={<LazyPanelFallback label="Loading 3D view..." />}>
+                                <SphereView
+                                  phaseAngle={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                  compositeType={compositeType}
+                                  viewMode="weightedPhase"
+                                  minHeight={0}
+                                  incidenceDeg={sliders.incidenceAngle}
+                                  emissionDeg={sliders.emissionAngle}
+                                  phaseDeg={assetPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                  titanYawDeg={sliders.titanYaw}
+                                  obliquityDeg={sliders.obliquity}
+                                  cameraPreset={cameraPreset3d || 'none'}
+                                  cameraCenter={cameraCenter3d}
+                                  geometryInteractionMode={geometryInteractionMode3d}
+                                  onGeometryChange={handleGeometryChangeFrom3d}
+                                  onCameraPresetRelease={() => setCameraPreset3d('')}
+                                  onVectorPlaced={() => {
+                                    setCameraPreset3d('');
+                                  }}
+                                  introAnimation={true}
+                                  showLatLonGrid={sphereGridEnabled3d}
+                                  showGeometryGrid={geometryGridEnabled3d}
+                                  showRotationAxis={rotationAxisEnabled3d}
+                                  showAngleArcs={showAngleArcs3d}
+                                  showVectorLabels={showVectorLabels3d}
+                                  showExtendedVectorLines={showVectorGuideLines3d}
+                                  allowMultipleVectors={selectionMode === 'multipleVectorSelection'}
+                                  showThroughSurface={showVectorsThroughTitan3d}
+                                  surfaceMapMode={surfaceMapMode3d}
+                                  showAtmosphere={toggles.showAtmosphere}
+                                  interactionMode={
+                                    selectionMode === 'plotPoint'
+                                      ? 'plotPoint'
+                                      : (selectionMode === 'plotMultiplePoints' ? 'plotMultiple' : 'vector')
+                                  }
+                                  onSurfacePointSelect={handleSpherePlotPoint}
+                                  multiplePoints={syncedSelectionPointsFor3d}
+                                  geoCubeData={currentGeoCubeData}
+                                />
+                              </Suspense>
                             </div>
                           </div>
                         </>
@@ -2778,29 +2801,31 @@ function App() {
                               </div>
                             )}
                             <ErrorBoundary>
-                              <SpectralPlot
-                                spectralData={spectralData}
-                                incidenceAngle={geoValues
-                                  ? (Array.isArray(geoValues)
-                                    ? (Number.isFinite(geoValues[0]?.incidence) ? geoValues[0].incidence : NaN)
-                                    : (Number.isFinite(geoValues.incidence) ? geoValues.incidence : NaN))
-                                  : NaN}
-                                emissionAngle={geoValues
-                                  ? (Array.isArray(geoValues)
-                                    ? (Number.isFinite(geoValues[0]?.emis) ? geoValues[0].emis : NaN)
-                                    : (Number.isFinite(geoValues.emis) ? geoValues.emis : NaN))
-                                  : NaN}
-                                selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
-                                plotMultiple={toggles.plotMultiple}
-                                multiplePositions={toggles.plotMultiple ? multiplePositions : null}
-                                geoValues={geoValues}
-                                transmissionToggles={transmissionToggles}
-                                spectralUnits={toggles.spectralUnits}
-                                spectralResolution={spectralResolution}
-                                selectedPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
-                                albedo={FIXED_ALBEDO}
-                                spectralLoading={loadingSpectral}
-                              />
+                              <Suspense fallback={<LazyPanelFallback label="Loading spectral plot..." />}>
+                                <SpectralPlot
+                                  spectralData={spectralData}
+                                  incidenceAngle={geoValues
+                                    ? (Array.isArray(geoValues)
+                                      ? (Number.isFinite(geoValues[0]?.incidence) ? geoValues[0].incidence : NaN)
+                                      : (Number.isFinite(geoValues.incidence) ? geoValues.incidence : NaN))
+                                    : NaN}
+                                  emissionAngle={geoValues
+                                    ? (Array.isArray(geoValues)
+                                      ? (Number.isFinite(geoValues[0]?.emis) ? geoValues[0].emis : NaN)
+                                      : (Number.isFinite(geoValues.emis) ? geoValues.emis : NaN))
+                                    : NaN}
+                                  selectedCases={toggles.plotMultiple ? selectedCasesByPoint : selectedCases}
+                                  plotMultiple={toggles.plotMultiple}
+                                  multiplePositions={toggles.plotMultiple ? multiplePositions : null}
+                                  geoValues={geoValues}
+                                  transmissionToggles={transmissionToggles}
+                                  spectralUnits={toggles.spectralUnits}
+                                  spectralResolution={spectralResolution}
+                                  selectedPhaseAngle={displayPhaseDegFromPhaseSlider(sliders.phaseAngle)}
+                                  albedo={FIXED_ALBEDO}
+                                  spectralLoading={loadingSpectral}
+                                />
+                              </Suspense>
                             </ErrorBoundary>
                           </div>
                           {!geoValues && !Object.values(transmissionToggles).some(v => v) && (

@@ -158,7 +158,7 @@ const boundsNearlyEqual = (a, b, tolerance = 0.35) => (
   && Math.abs(a.maxY - b.maxY) <= tolerance
 );
 
-const normalizeImageToGeoFootprintUrl = (imageSrc, sourceBounds, geoBounds, geoData) => (
+const normalizeImageToGeoFootprintUrl = (imageSrc, sourceBounds, geoBounds) => (
   new Promise((resolve) => {
     if (!imageSrc || !sourceBounds || !geoBounds) {
       resolve(null);
@@ -171,7 +171,6 @@ const normalizeImageToGeoFootprintUrl = (imageSrc, sourceBounds, geoBounds, geoD
       const naturalHeight = img.naturalHeight || GEO_GRID_SIZE;
       const scaledSourceBounds = scaleBoundsToImageSize(sourceBounds, naturalWidth, naturalHeight);
       const targetBounds = mapGeoBoundsToImageBounds(img, geoBounds);
-      const hasGeoMask = geoData && typeof geoData.length === 'number' && geoData.length >= GEO_BAND_SIZE * 2;
       if (!scaledSourceBounds || !targetBounds) {
         resolve(null);
         return;
@@ -192,7 +191,7 @@ const normalizeImageToGeoFootprintUrl = (imageSrc, sourceBounds, geoBounds, geoD
       const translateX = needsFit ? targetBounds.minX - (scaledSourceBounds.minX * scaleX) : 0;
       const translateY = needsFit ? targetBounds.minY - (scaledSourceBounds.minY * scaleY) : 0;
 
-      if (!needsFit && !hasGeoMask) {
+      if (!needsFit) {
         resolve(null);
         return;
       }
@@ -214,26 +213,6 @@ const normalizeImageToGeoFootprintUrl = (imageSrc, sourceBounds, geoBounds, geoD
         ctx.setTransform(scaleX, 0, 0, scaleY, translateX, translateY);
         ctx.drawImage(img, 0, 0);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-        if (hasGeoMask) {
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const maskTransform = {
-            imageBounds: targetBounds,
-            geoBounds,
-          };
-          for (let y = 0; y < canvas.height; y += 1) {
-            for (let x = 0; x < canvas.width; x += 1) {
-              const geoPoint = mapImageNaturalToGeo(x, y, maskTransform);
-              if (isValidGeoPoint(geoData, geoPoint.x, geoPoint.y)) continue;
-              const idx = (y * canvas.width + x) * 4;
-              imageData.data[idx] = 0;
-              imageData.data[idx + 1] = 0;
-              imageData.data[idx + 2] = 0;
-              imageData.data[idx + 3] = 255;
-            }
-          }
-          ctx.putImageData(imageData, 0, 0);
-        }
 
         canvas.toBlob((blob) => {
           resolve(blob ? URL.createObjectURL(blob) : null);
@@ -728,22 +707,25 @@ const ClickableImage = ({
 
     clearNormalizedUrl();
 
-    normalizeImageToGeoFootprintUrl(src, referenceImageBounds, geoBounds, geoCubeData)
-      .then((url) => {
-        if (cancelled) {
-          if (url) URL.revokeObjectURL(url);
-          return;
-        }
+    const timerId = setTimeout(() => {
+      normalizeImageToGeoFootprintUrl(src, referenceImageBounds, geoBounds)
+        .then((url) => {
+          if (cancelled) {
+            if (url) URL.revokeObjectURL(url);
+            return;
+          }
 
-        if (normalizedImageUrlRef.current) {
-          URL.revokeObjectURL(normalizedImageUrlRef.current);
-        }
-        normalizedImageUrlRef.current = url;
-        setNormalizedImageUrl(url);
-      });
+          if (normalizedImageUrlRef.current) {
+            URL.revokeObjectURL(normalizedImageUrlRef.current);
+          }
+          normalizedImageUrlRef.current = url;
+          setNormalizedImageUrl(url);
+        });
+    }, 120);
 
     return () => {
       cancelled = true;
+      clearTimeout(timerId);
     };
   }, [src, referenceImageBounds, geoCubeData]);
 
