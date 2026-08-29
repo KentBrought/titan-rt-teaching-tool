@@ -4,7 +4,7 @@
  * Layers: 0=lat, 1=lon, 2=xres, 3=yres, 4=phase, 5=incidence, 6=emis, 7=azimuth, 8=distance
  */
 
-// Cache for parsed geo cube data (by phase angle)
+// Cache for parsed geo cube data (by folder and phase angle)
 const geoCubeCache = new Map();
 const MAX_GEO_CUBE_CACHE_ENTRIES = 6;
 const IS_LITTLE_ENDIAN = (() => {
@@ -14,30 +14,40 @@ const IS_LITTLE_ENDIAN = (() => {
 })();
 
 /**
- * Load geo cube data from a .img file
+ * Load geo cube data from a binary file
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {string} folderName - Subfolder name inside /assets/dt/ (e.g. 'haze0.5_methane0')
  * @returns {Promise<ArrayBuffer>} ArrayBuffer containing the geo cube data
  */
-export const loadGeoCubeFile = async (phaseAngle) => {
+export const loadGeoCubeFile = async (phaseAngle, folderName = 'haze0.5_methane0') => {
   const paddedPhase = String(Math.round(phaseAngle)).padStart(3, '0');
-  const filename = `2012_A0.1_p${paddedPhase}_geo.img`;
-  const url = `/assets/dt/tomasko_1.0/${filename}`;
+  
+  // Convert folder name 'haze0.5_methane0' to tag format 'haze0.5methane0'
+  const tag = folderName.replace(/_/g, '');
+  const filenameBase = `runsforgui_${tag}_p${paddedPhase}_geo`;
+
+  // Standard path attempt (.img extension)
+  const url = `/assets/dt/${folderName}/${filenameBase}.img`;
   
   try {
-    const response = await fetch(url);
+    let response = await fetch(url);
+    if (!response.ok) {
+      // Fallback try without extension
+      response = await fetch(`/assets/dt/${folderName}/${filenameBase}`);
+    }
     if (!response.ok) {
       throw new Error(`Failed to load geo cube: ${response.status}`);
     }
     return await response.arrayBuffer();
   } catch (error) {
-    console.error(`Error loading geo cube file ${filename}:`, error);
+    console.error(`Error loading geo cube file ${filenameBase}:`, error);
     throw error;
   }
 };
 
 /**
  * Parse geo cube data from ArrayBuffer
- * Geo cube structure: [9 bands, 681 lines, 681 samples]
+ * Geo cube structure: [9 bands, 641 lines, 641 samples]
  * Data type: IEEE754LSBSingle (32-bit float, little-endian)
  * Layout: Last Index Fastest (Sample fastest, then Line, then Band)
  * @param {ArrayBuffer} buffer - The binary data buffer
@@ -45,8 +55,8 @@ export const loadGeoCubeFile = async (phaseAngle) => {
  */
 export const parseGeoCube = (buffer) => {
   const numBands = 9;
-  const numLines = 681;
-  const numSamples = 681;
+  const numLines = 641;
+  const numSamples = 641;
   const totalElements = numBands * numLines * numSamples;
   const expectedBytes = totalElements * 4;
 
@@ -69,8 +79,8 @@ export const parseGeoCube = (buffer) => {
 /**
  * Get value from geo cube at specific position and band
  * @param {Float32Array} geoCubeData - Parsed geo cube data (1D array)
- * @param {number} x - Sample coordinate (0-680)
- * @param {number} y - Line coordinate (0-680)
+ * @param {number} x - Sample coordinate (0-640)
+ * @param {number} y - Line coordinate (0-640)
  * @param {number} band - Band index (0-8)
  * @returns {number} The value at the specified position
  */
@@ -79,10 +89,9 @@ export const getGeoValue = (geoCubeData, x, y, band) => {
     return null;
   }
   const numBands = 9;
-  const numLines = 681;
-  const numSamples = 681;
+  const numLines = 641;
+  const numSamples = 641;
   
-  // Clamp and validate coordinates
   const clampedX = Math.max(0, Math.min(Math.floor(x), numSamples - 1));
   const clampedY = Math.max(0, Math.min(Math.floor(y), numLines - 1));
   const clampedBand = Math.max(0, Math.min(Math.floor(band), numBands - 1));
@@ -113,8 +122,8 @@ const normalizeLongitudeDeg = (lonDeg) => {
 
 const estimateLatLonFromGrid = (geoData, x, y, maxRadius = 24) => {
   if (!geoData) return { lat: null, lon: null };
-  const centerX = Math.max(0, Math.min(680, Math.round(x)));
-  const centerY = Math.max(0, Math.min(680, Math.round(y)));
+  const centerX = Math.max(0, Math.min(640, Math.round(x)));
+  const centerY = Math.max(0, Math.min(640, Math.round(y)));
 
   for (let radius = 0; radius <= maxRadius; radius += 1) {
     let weightedLat = 0;
@@ -123,9 +132,9 @@ const estimateLatLonFromGrid = (geoData, x, y, maxRadius = 24) => {
     let weightTotal = 0;
 
     const minX = Math.max(0, centerX - radius);
-    const maxX = Math.min(680, centerX + radius);
+    const maxX = Math.min(640, centerX + radius);
     const minY = Math.max(0, centerY - radius);
-    const maxY = Math.min(680, centerY + radius);
+    const maxY = Math.min(640, centerY + radius);
 
     for (let yy = minY; yy <= maxY; yy += 1) {
       for (let xx = minX; xx <= maxX; xx += 1) {
@@ -163,10 +172,11 @@ const estimateLatLonFromGrid = (geoData, x, y, maxRadius = 24) => {
 /**
  * Get or load parsed geo cube data for a phase angle (with caching)
  * @param {number} phaseAngle - Phase angle in degrees
+ * @param {string} folderName - Folder containing the geo file
  * @returns {Promise<Float32Array>} Parsed geo cube data
  */
-export const getGeoCubeData = async (phaseAngle) => {
-  const cacheKey = Math.round(phaseAngle);
+export const getGeoCubeData = async (phaseAngle, folderName = 'haze0.5_methane0') => {
+  const cacheKey = `${folderName}_${Math.round(phaseAngle)}`;
   
   // Check cache first
   if (geoCubeCache.has(cacheKey)) {
@@ -177,7 +187,7 @@ export const getGeoCubeData = async (phaseAngle) => {
   }
   
   // Load and parse
-  const buffer = await loadGeoCubeFile(phaseAngle);
+  const buffer = await loadGeoCubeFile(phaseAngle, folderName);
   const geoData = parseGeoCube(buffer);
   
   // Cache the parsed data
@@ -193,16 +203,17 @@ export const getGeoCubeData = async (phaseAngle) => {
 /**
  * Extract values from layers 0, 1, 4, 5, 6, and 7 at a specific position
  * @param {number} phaseAngle - Phase angle in degrees
- * @param {number} x - Sample coordinate (0-680)
- * @param {number} y - Line coordinate (0-680)
+ * @param {number} x - Sample coordinate (0-640)
+ * @param {number} y - Line coordinate (0-640)
+ * @param {string} folderName - Subfolder name (e.g. 'haze0.5_methane0')
  * @returns {Promise<Object>} Object with lat, lon, phase, incidence, emis, and azimuth values
  */
-export const extractGeoValues = async (phaseAngle, x, y) => {
+export const extractGeoValues = async (phaseAngle, x, y, folderName = 'haze0.5_methane0') => {
   try {
-    const geoData = await getGeoCubeData(phaseAngle);
+    const geoData = await getGeoCubeData(phaseAngle, folderName);
 
-    const rawLat = getGeoValue(geoData, x, y, 0);       // Layer 0: lat (negative = North)
-    const rawLon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon (negative = West)
+    const rawLat = getGeoValue(geoData, x, y, 0);       // Layer 0: lat
+    const rawLon = getGeoValue(geoData, x, y, 1);       // Layer 1: lon
     const rawPhase = getGeoValue(geoData, x, y, 4);     // Layer 4: phase (Deg)
     const rawIncidence = getGeoValue(geoData, x, y, 5); // Layer 5: incidence (Deg)
     const rawEmis = getGeoValue(geoData, x, y, 6);      // Layer 6: emis (Deg)
@@ -214,11 +225,9 @@ export const extractGeoValues = async (phaseAngle, x, y) => {
     const incidence = toFiniteInRangeOrNull(rawIncidence, 0, 180);
     const emis = toFiniteInRangeOrNull(rawEmis, 0, 180);
     const azimuth = toFiniteInRangeOrNull(rawAzimuth, -360, 360);
-    const estimatedLatLon = (!Number.isFinite(lat) || !Number.isFinite(lon))
-      ? estimateLatLonFromGrid(geoData, x, y)
-      : { lat: null, lon: null };
-    const resolvedLat = Number.isFinite(lat) ? lat : estimatedLatLon.lat;
-    const resolvedLon = Number.isFinite(lon) ? lon : estimatedLatLon.lon;
+    // Strict lookup: If click is on background space, do NOT estimate or snap to disk edge
+    const resolvedLat = Number.isFinite(lat) ? lat : null;
+    const resolvedLon = Number.isFinite(lon) ? lon : null;
     
     return {
       lat: resolvedLat,

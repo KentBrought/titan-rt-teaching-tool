@@ -12,7 +12,7 @@ def read_geo_cube(img_path):
     """
     Read a geo cube .img file and return the 9 layers as a numpy array.
     
-    Structure: 9 bands, 681 lines, 681 samples
+    Structure: 9 bands, 641 lines, 641 samples
     Layers: 0=lat, 1=lon, 2=xres, 3=yres, 4=phase, 5=incidence, 6=emis, 7=azimuth, 8=distance
     """
     with open(img_path, 'rb') as f:
@@ -21,8 +21,8 @@ def read_geo_cube(img_path):
     
     # Parse as 32-bit floats (little-endian)
     num_bands = 9
-    num_lines = 681
-    num_samples = 681
+    num_lines = 641
+    num_samples = 641
     total_elements = num_bands * num_lines * num_samples
     
     # Convert bytes to float32 array
@@ -78,7 +78,7 @@ def create_grayscale_image(geo_data, layer_idx, layer_name='', phase_angle=None)
     Create a grayscale image from a specific layer.
     
     Args:
-        geo_data: 3D numpy array [9, 681, 681]
+        geo_data: 3D numpy array [9, 641, 641]
         layer_idx: Index of layer to extract (4=phase, 5=incidence, 6=emission)
         layer_name: Name of the layer for debugging
         phase_angle: Phase angle in degrees (for phase layer uniform circle)

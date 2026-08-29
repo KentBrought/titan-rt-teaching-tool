@@ -1,8 +1,8 @@
 import { getGeoValue } from './geoCubeLoader';
 import { getMaterialClassAtLatLon } from './materialMapLoader';
 
-const NUM_SAMPLES = 681;
-const NUM_LINES = 681;
+const NUM_SAMPLES = 641;
+const NUM_LINES = 641;
 
 const isValidClass = (v) => v === 0 || v === 1 || v === 2;
 

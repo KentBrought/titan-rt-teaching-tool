@@ -39,7 +39,7 @@ function Header() {
           onMouseLeave={() => setRtExpanded(false)}
         >
           <img
-            src="/assets/dt/tomasko_1.0/2012_A0.1_p000_5_2_1.3.png"
+            src="/assets/dt/haze0_methane0/runsforgui_haze0methane0_p000_5_2_1.3.png"
             alt=""
             className="header-logo"
           />

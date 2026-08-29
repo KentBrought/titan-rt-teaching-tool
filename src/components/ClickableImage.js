@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, memo } from 'react';
 import './ClickableImage.css';
 
-const GEO_GRID_SIZE = 681;
+const GEO_GRID_SIZE = 641;
 const GEO_BAND_SIZE = GEO_GRID_SIZE * GEO_GRID_SIZE;
 const LAT_GRID_LINES = [-60, -30, 0, 30, 60];
 const LON_LABEL_STEPS = [-180, -150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150];
-const GEO_SURFACE_DISK_BOUNDS = { minX: 83, minY: 83, maxX: 597, maxY: 597, naturalWidth: 681, naturalHeight: 681 };
-const VISUAL_SOURCE_DISK_BOUNDS = { minX: 66, minY: 67, maxX: 613, maxY: 613, naturalWidth: 681, naturalHeight: 681 };
+const GEO_SURFACE_DISK_BOUNDS = { minX: 83, minY: 83, maxX: 597, maxY: 597, naturalWidth: 641, naturalHeight: 641 };
+const VISUAL_SOURCE_DISK_BOUNDS = { minX: 66, minY: 67, maxX: 613, maxY: 613, naturalWidth: 641, naturalHeight: 641 };
 const geoBoundsCache = new WeakMap();
 
 const normalizeLongitudeDeg = (lonDeg) => {
@@ -673,24 +673,23 @@ const ClickableImage = ({
         relativeY >= 0 && relativeY <= img.offsetHeight) {
       
       // Calculate position in natural image coordinates
+      // Calculate position in natural image coordinates
       const scaleX = img.naturalWidth / img.offsetWidth;
       const scaleY = img.naturalHeight / img.offsetHeight;
       const imageNaturalX = Math.round(relativeX * scaleX);
       const imageNaturalY = Math.round(relativeY * scaleY);
-      const geoPoint = mapImageNaturalToGeo(imageNaturalX, imageNaturalY, imageGeoTransform);
       
-      // Clamp coordinates to valid range (geo cubes are 681x681)
-      const clampedImageX = Math.max(0, Math.min(imageNaturalX, img.naturalWidth - 1));
-      const clampedImageY = Math.max(0, Math.min(imageNaturalY, img.naturalHeight - 1));
+      // FORCE 1:1 MAPPING: Drop mapImageNaturalToGeo completely!
+      const clampedX = Math.max(0, Math.min(imageNaturalX, img.naturalWidth - 1));
+      const clampedY = Math.max(0, Math.min(imageNaturalY, img.naturalHeight - 1));
       
-      // Position relative to inner container (which matches image dimensions)
       return {
         displayX: relativeX,
         displayY: relativeY,
-        naturalX: geoPoint.x,
-        naturalY: geoPoint.y,
-        imageNaturalX: clampedImageX,
-        imageNaturalY: clampedImageY,
+        naturalX: clampedX,      // Use exact image pixel for geo X
+        naturalY: clampedY,      // Use exact image pixel for geo Y
+        imageNaturalX: clampedX,
+        imageNaturalY: clampedY,
       };
     }
     return null;
@@ -996,7 +995,6 @@ const ClickableImage = ({
               height: 'auto',
               objectFit: 'contain',
               display: 'block',
-              ...(imageVisualFitStyle || {}),
             }}
             onLoad={() => {
               if (imageRef.current) {

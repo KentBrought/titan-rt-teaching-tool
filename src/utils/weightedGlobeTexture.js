@@ -6,8 +6,8 @@
 import { getGeoCubeData, getGeoValue } from './geoCubeLoader';
 import { getImageUrl, getAvailablePhaseAngles } from './imageLoader';
 
-const NUM_SAMPLES = 681;
-const NUM_LINES = 681;
+const NUM_SAMPLES = 641;
+const NUM_LINES = 641;
 const OUT_HEIGHT = 1024;
 const OUT_WIDTH = 2 * OUT_HEIGHT; // 2:1 equirectangular
 const BACKGROUND_R = 0x1a;

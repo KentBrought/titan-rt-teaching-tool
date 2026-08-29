@@ -6,18 +6,25 @@
  * so the wavelength slider still changes appearance while keeping disk geometry identical to color IR.
  */
 
-const NUM_BANDS = 8;
+const NUM_BANDS = 15;
 
 /** Per-band RGB weights (rows sum to 1). Tunable; order is short → long emphasis. */
 const RGB_WEIGHTS = [
-  [0.10, 0.38, 0.52],
-  [0.12, 0.42, 0.46],
-  [0.16, 0.45, 0.39],
-  [0.20, 0.48, 0.32],
-  [0.26, 0.50, 0.24],
-  [0.34, 0.46, 0.20],
-  [0.48, 0.38, 0.14],
-  [0.58, 0.30, 0.12],
+  [0.05, 0.25, 0.70], // Band 1  (~0.93 um)
+  [0.08, 0.30, 0.62], // Band 2  (~0.99 um)
+  [0.10, 0.35, 0.55], // Band 3  (~1.08 um)
+  [0.12, 0.38, 0.50], // Band 4  (~1.21 um)
+  [0.15, 0.42, 0.43], // Band 5  (~1.28 um)
+  [0.18, 0.45, 0.37], // Band 6  (~1.39 um)
+  [0.22, 0.48, 0.30], // Band 7  (~1.59 um)
+  [0.26, 0.50, 0.24], // Band 8  (~1.70 um)
+  [0.32, 0.48, 0.20], // Band 9  (~2.02 um)
+  [0.38, 0.44, 0.18], // Band 10 (~2.10 um)
+  [0.44, 0.40, 0.16], // Band 11 (~2.20 um)
+  [0.50, 0.36, 0.14], // Band 12 (~2.39 um)
+  [0.56, 0.32, 0.12], // Band 13 (~2.70 um)
+  [0.62, 0.28, 0.10], // Band 14 (~2.80 um)
+  [0.70, 0.22, 0.08], // Band 15 (~5.01 um)
 ].map((row) => {
   const s = row[0] + row[1] + row[2];
   return row.map((v) => v / s);
