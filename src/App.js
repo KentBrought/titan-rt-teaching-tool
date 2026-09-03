@@ -1893,7 +1893,7 @@ function App() {
       percent: null,
     });
 
-    const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
+    const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json.gz`;
     const promise = loadJsonFile(oldDataPath, 50 * 1024 * 1024, (progress) => {
       setSpectralLoadProgress((prev) => ({
         ...prev,

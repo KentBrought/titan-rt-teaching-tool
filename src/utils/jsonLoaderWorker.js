@@ -34,10 +34,17 @@ self.onmessage = async (event) => {
     }
 
     const total = Number(response.headers.get('content-length') || 0);
+    let stream = response.body;
+
+    // Pipe through browser gzip decompressor if requesting a .gz file
+    if (url.endsWith('.gz') && typeof DecompressionStream !== 'undefined') {
+      stream = stream.pipeThrough(new DecompressionStream('gzip'));
+    }
+
     let text = '';
 
-    if (response.body && typeof response.body.getReader === 'function') {
-      const reader = response.body.getReader();
+    if (stream && typeof stream.getReader === 'function') {
+      const reader = stream.getReader();
       const decoder = new TextDecoder();
       const chunks = [];
       let loaded = 0;
@@ -53,7 +60,8 @@ self.onmessage = async (event) => {
       text = chunks.join('');
       postProgress('downloading', loaded, total || loaded);
     } else {
-      text = await response.text();
+      const resp = new Response(stream);
+      text = await resp.text();
       postProgress('downloading', text.length, total || text.length);
     }
 
