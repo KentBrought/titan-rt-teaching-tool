@@ -1,42 +1,46 @@
 /**
- * Load 8-band VIMS-style spectral cubes (colorCCD.img) from `tomasko_1.0`.
- * The main IR UI grayscale mode uses haze-folder composite PNGs instead (`irCompositeGrayscale.js`).
- * Cubes are float32, shape [Band=8, Line=681, Sample=681], sample index fastest (PDS "Last Index Fastest").
- * Data in-repo: public/assets/dt/tomasko_1.0/2012_A{albedo}_p{phase}_colorCCD.img
+ * Load 15-band VIMS-style spectral cubes (colorCCD.img) dynamically from matrix folders.
+ * Updated to match true scientific float32 cube arrays exactly.
+ * Cubes are float32, shape [Band=15, Line=641, Sample=641], sample index fastest.
  */
 
-const TOMASKO_DT = '/assets/dt/tomasko_1.0';
-const NUM_LINES = 681;
-const NUM_SAMPLES = 681;
-export const COLOR_CUBE_NUM_BANDS = 8;
+const NUM_LINES = 641;   
+const NUM_SAMPLES = 641; 
+export const COLOR_CUBE_NUM_BANDS = 15;
 const PLANE_SIZE = NUM_LINES * NUM_SAMPLES;
 const EXPECTED_BYTES = COLOR_CUBE_NUM_BANDS * PLANE_SIZE * 4;
 
 const cubeCache = new Map();
 
-function cacheKey(phaseDeg, albedo) {
-  return `${Math.round(phaseDeg)}_${Number(albedo)}`;
+function cacheKey(phaseDeg, albedo, folderName) {
+  return `${Math.round(phaseDeg)}_${Number(albedo)}_${folderName}`;
 }
 
-/**
- * Approximate band-center wavelengths (µm) for UI labels.
- * Replace with PDS bin-center table if bundled with your dataset.
- */
-export const COLOR_CUBE_BAND_CENTERS_UM = [0.93, 1.08, 1.28, 1.59, 1.99, 2.69, 4.97, 5.07];
+export const COLOR_CUBE_BAND_CENTERS_UM = [
+  0.93, 1.00, 1.08, 1.21, 1.28, 1.39, 1.59, 1.70, 
+  2.02, 2.10, 2.20, 2.39, 2.70, 2.80, 5.01
+];
 
-export async function loadColorCubeData(phaseAngleDeg, albedo = 0.1) {
+// In src/utils/colorCubeLoader.js
+
+export async function loadColorCubeData(phaseAngleDeg, folderName, albedo = 0.1) {
   const phase = Math.round(phaseAngleDeg);
   const padded = String(phase).padStart(3, '0');
-  const albedoStr = Number(albedo).toFixed(1);
-  const key = cacheKey(phase, albedo);
+  
+  const key = cacheKey(phase, albedo, folderName);
   const cached = cubeCache.get(key);
   if (cached) return cached;
 
-  const filename = `2012_A${albedoStr}_p${padded}_colorCCD.img`;
-  const url = `${TOMASKO_DT}/${filename}`;
+  // 1. Strip the underscore JUST for the filename (e.g., haze0methane0)
+  const tag = folderName.replace(/_/g, '');
+  const filename = `runsforgui_${tag}_p${padded}_colorCCD.img`;
+  
+  // 2. Use the original folderName WITH the underscore for the directory path
+  const url = `/assets/dt/${folderName}/${filename}`;
+  
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`colorCCD fetch failed: ${res.status} ${filename}`);
+    throw new Error(`colorCCD fetch failed: ${res.status} ${filename} in ${folderName}`);
   }
   const buf = await res.arrayBuffer();
   if (buf.byteLength !== EXPECTED_BYTES) {
@@ -61,9 +65,6 @@ function robustStretchRange(slice) {
   return { lo, hi };
 }
 
-/**
- * @returns {Promise<string|null>} object URL for a PNG blob; caller must revoke
- */
 export async function renderColorCubeBandToObjectURL(cubeData, bandIndex) {
   if (!cubeData || bandIndex < 0 || bandIndex >= COLOR_CUBE_NUM_BANDS) {
     return null;
@@ -107,7 +108,7 @@ export async function renderColorCubeBandToObjectURL(cubeData, bandIndex) {
   });
 }
 
-export async function getMonoBandImageObjectUrl(phaseAngleDeg, bandIndex, albedo = 0.1) {
-  const cube = await loadColorCubeData(phaseAngleDeg, albedo);
+export async function getMonoBandImageObjectUrl(phaseAngleDeg, bandIndex, folderName, albedo = 0.1) {
+  const cube = await loadColorCubeData(phaseAngleDeg, folderName, albedo);
   return renderColorCubeBandToObjectURL(cube, bandIndex);
 }

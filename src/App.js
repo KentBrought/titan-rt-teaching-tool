@@ -19,16 +19,18 @@ import { extractGeoValues, getGeoCubeData, getGeoValue } from './utils/geoCubeLo
 import { processSpectralData, createSpectralPlotData } from './utils/dataProcessing';
 import {
   loadMaterialAlbedoMap,
-  getMaterialClassAtPixel,
+  getMaterialClassAtLatLon,
   mapMaterialClassToSpectralAlbedo,
   formatSurfaceMaterialWithSpectrumAlbedo,
   getSurfaceMaterialLabel,
 } from './utils/materialMapLoader';
+import { SURFACE_MATERIAL_LABELS } from './utils/materialMapLoader';
+
 
 const SpectralPlot = lazy(() => import('./components/SpectralPlot'));
 const GasAbundancePlot = lazy(() => import('./components/GasAbundancePlot'));
 const SphereView = lazy(() => import('./components/SphereView'));
-const CLICKABLE_IMAGE_STYLE = { width: '100%' };
+const CLICKABLE_IMAGE_STYLE = { width: '100%'};
 
 const FIXED_ALBEDO = 0.1;
 const MAX_SELECTED_POINTS = 5;
@@ -399,6 +401,11 @@ function App() {
     if (sliderValue <= 67) return 0.5;
     return 1;
   };
+  const getMethaneAbundanceValue = (sliderValue) => {
+    if (sliderValue <= 33) return 0;
+    if (sliderValue <= 67) return 0.5;
+    return 1;
+  };
 
   const handleTransmissionToggleChange = (name) => {
     setTransmissionToggles(prev => ({ ...prev, [name]: !prev[name] }));
@@ -652,7 +659,9 @@ function App() {
         Number.isFinite(values?.lon) &&
         Number.isFinite(values?.incidence) &&
         Number.isFinite(values?.emis);
-      const materialClass = hasValidSurfaceData ? getMaterialClassAtPixel(materialAlbedoMap, x, y) : null;
+      const materialClass = hasValidSurfaceData && Number.isFinite(values?.lat) && Number.isFinite(values?.lon)
+        ? getMaterialClassAtLatLon(materialAlbedoMap, values.lat, values.lon)
+        : null;
       const surfaceAlbedo = Number.isFinite(materialClass)
         ? mapMaterialClassToSpectralAlbedo(materialClass)
         : null;
@@ -721,8 +730,8 @@ function App() {
             Number.isFinite(values?.lon) &&
             Number.isFinite(values?.incidence) &&
             Number.isFinite(values?.emis);
-          const materialClass = hasValidSurfaceData
-            ? getMaterialClassAtPixel(materialAlbedoMap, pos.x, pos.y)
+          const materialClass = hasValidSurfaceData && Number.isFinite(values?.lat) && Number.isFinite(values?.lon)
+            ? getMaterialClassAtLatLon(materialAlbedoMap, values.lat, values.lon)
             : null;
           const surfaceAlbedo = Number.isFinite(materialClass)
             ? mapMaterialClassToSpectralAlbedo(materialClass)
@@ -799,8 +808,8 @@ function App() {
 
   const findNearestGeoPixelByLatLon = useCallback(async (targetLat, targetLon, phaseAngleDeg) => {
     const geoData = await getGeoCubeData(phaseAngleDeg);
-    const numSamples = 681;
-    const numLines = 681;
+    const numSamples = 641;
+    const numLines = 641;
     const bandSize = numSamples * numLines;
     const latOffset = 0;
     const lonOffset = bandSize;
@@ -900,8 +909,8 @@ function App() {
       setHoverGeoValues(null);
       return;
     }
-    const px = Math.max(0, Math.min(680, Math.round(x)));
-    const py = Math.max(0, Math.min(680, Math.round(y)));
+    const px = Math.max(0, Math.min(640, Math.round(x)));
+    const py = Math.max(0, Math.min(640, Math.round(y)));
 
     // Skip no-op updates for the same hovered pixel.
     if (lastHoverPixelRef.current.x === px && lastHoverPixelRef.current.y === py) {
@@ -1403,9 +1412,9 @@ function App() {
   };
   const hazeFolderName = `${hazePropertiesModel}_${hazeAbundanceSetting.toFixed(1)}`;
   const hazeProfileScenarioKey = hazePropertiesModel === 'tomasko' ? 'tomasko_1.0' : hazeFolderName;
-  const methaneImageSetting = activeIrSliders.methaneAbundance >= 50 ? 1 : 0;
+  const methaneImageSetting = getMethaneAbundanceValue(activeIrSliders.methaneAbundance);
   const imageFolderName = hazePropertiesModel === 'doose'
-    ? `${hazeFolderName}_meth${methaneImageSetting}`
+    ? `haze${hazeAbundanceSetting}_methane${methaneImageSetting}`
     : hazeFolderName;
 
   // Processed spectral data for checking if a point has spectral plot data
@@ -1441,6 +1450,9 @@ function App() {
     return toggles.plotMultiple ? [] : false;
   }, [processedSpectralData, geoValues, toggles.plotMultiple]);
   // Load image when relevant parameters change (with debouncing for smoother slider interaction)
+  // Load image when relevant parameters change (with debouncing for smoother slider interaction)
+  // Load image when relevant parameters change (with debouncing for smoother slider interaction)
+  // Load image when relevant parameters change (with debouncing for smoother slider interaction)
   useEffect(() => {
     if (imageLoadTimerRef.current) {
       clearTimeout(imageLoadTimerRef.current);
@@ -1468,34 +1480,46 @@ function App() {
 
         revokeMonoBlob();
 
-        const imageTypeToLoad = imageType === 'irColor' || imageType === 'monoBand' ? compositeType : imageType;
-        const requestedAlbedo = FIXED_ALBEDO;
-        const result = await loadPds4Image(assetPhaseDeg, imageTypeToLoad, imageFolderName, requestedAlbedo);
-        if (stale()) return;
+        let activeImageTypeToLoad = compositeType;
+        let activeRequestedAlbedo = FIXED_ALBEDO;
+
 
         if (imageType === 'monoBand') {
-          const blobUrl = await compositeImageUrlToGrayscaleObjectURL(result.url, monoBandIndex);
+          // Import getMonoBandImageObjectUrl from colorCubeLoader
+          const { getMonoBandImageObjectUrl } = await import('./utils/colorCubeLoader');
+          
+          // Fetch the actual slice for the requested band index directly from colorCCD.img
+          const blobUrl = await getMonoBandImageObjectUrl(
+            assetPhaseDeg,
+            monoBandIndex,
+            imageFolderName, // Pass the active haze/methane folder (e.g., haze0.5_methane1)
+            FIXED_ALBEDO
+          );
+
           if (stale()) {
             if (blobUrl) URL.revokeObjectURL(blobUrl);
             return;
           }
-          if (!blobUrl) {
-            setCurrentImage(result.url);
-          } else {
+
+          if (blobUrl) {
             monoBlobUrlRef.current = blobUrl;
             setCurrentImage(blobUrl);
           }
         } else {
+          // Color mode remains as PNG composite loading
+          const result = await loadPds4Image(assetPhaseDeg, compositeType, imageFolderName, activeRequestedAlbedo);
+          if (stale()) return;
           setCurrentImage(result.url);
         }
+        
 
-        const preloadFolder = result?.actualFolder || imageFolderName;
-        const preloadAlbedo = result?.actualAlbedo ?? requestedAlbedo;
+        const preloadFolder = imageFolderName;
+        const preloadAlbedo = activeRequestedAlbedo;
         imagePreloadTimerRef.current = setTimeout(() => {
           if (stale()) return;
           preloadAdjacentImages(
             assetPhaseDeg,
-            imageTypeToLoad,
+            activeImageTypeToLoad,
             preloadFolder,
             1,
             preloadAlbedo
@@ -1869,7 +1893,7 @@ function App() {
       percent: null,
     });
 
-    const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json`;
+    const oldDataPath = `/assets/dt/tomasko_1.0/init_gui_library.json.gz`;
     const promise = loadJsonFile(oldDataPath, 50 * 1024 * 1024, (progress) => {
       setSpectralLoadProgress((prev) => ({
         ...prev,
@@ -1880,7 +1904,7 @@ function App() {
         if (
           oldSpectralJson &&
           oldSpectralJson.wavelength &&
-          (oldSpectralJson.standard || oldSpectralJson.data)
+          (oldSpectralJson.standard || oldSpectralJson.data || oldSpectralJson.spectra)
         ) {
           setSpectralDataOld(oldSpectralJson);
           setSpectralLoadProgress((prev) => ({
@@ -1966,10 +1990,16 @@ function App() {
   }, [activeAlbedoValue, spectralDataNew]);
 
   useEffect(() => {
-    loadMaterialAlbedoMap()
-      .then(setMaterialAlbedoMap)
-      .catch(() => setMaterialAlbedoMap(null));
-  }, []);
+  loadMaterialAlbedoMap()
+    .then(map => {
+      console.log('Material map loaded:', map);   // check width/height/data
+      setMaterialAlbedoMap(map);
+    })
+    .catch(err => {
+      console.error('Failed to load material map:', err);
+      setMaterialAlbedoMap(null);
+    });
+}, []);
 
   // Cleanup effect
   useEffect(() => {
@@ -2350,16 +2380,21 @@ function App() {
                             <input
                               type="range"
                               min="0"
-                              max="1"
+                              max="2"
                               step="1"
-                              value={sliders.methaneAbundance >= 50 ? 1 : 0}
+                              value={sliders.methaneAbundance / 50}
                               onChange={(e) => {
-                                const bit = parseInt(e.target.value, 10);
-                                handleSliderChange('methaneAbundance', bit === 1 ? 100 : 0);
+                                const stepValue = parseInt(e.target.value, 10);
+                                const sliderValue = stepValue * 50;
+                                setSliders((prev) => (
+                                  prev.methaneAbundance === sliderValue
+                                    ? prev
+                                    : { ...prev, methaneAbundance: sliderValue }
+                                ));
                               }}
                             />
                             <span>
-                              {sliders.methaneAbundance >= 50 ? '1' : '0'}
+                              {getMethaneAbundanceValue(sliders.methaneAbundance)}
                             </span>
                           </label>
 
@@ -2943,6 +2978,8 @@ function App() {
                                   selectedPhaseAngle={displayPhaseDegFromPhaseSlider(activePhaseSlider)}
                                   albedo={FIXED_ALBEDO}
                                   spectralLoading={loadingSpectral}
+                                  hazeAbundance={getHazeAbundanceValue(sliders.hazeAbundance)}
+                                  methaneAbundance={getMethaneAbundanceValue(sliders.methaneAbundance)}
                                 />
                               </Suspense>
                             </ErrorBoundary>

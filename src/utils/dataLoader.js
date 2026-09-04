@@ -203,7 +203,13 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024, onProgress =
 
     let data;
     try {
-      data = await response.json();
+      if (url.endsWith('.gz')) {
+        const stream = response.body.pipeThrough(new DecompressionStream('gzip'));
+        const decompressedText = await new Response(stream).text();
+        data = JSON.parse(decompressedText);
+      } else {
+        data = await response.json();
+      }
     } catch (parseErr) {
       const errorMsg = parseErr.message || String(parseErr);
       if (

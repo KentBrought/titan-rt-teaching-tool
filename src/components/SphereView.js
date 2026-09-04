@@ -12,7 +12,7 @@ import { CASSINI_GLB_BASE64 } from '../assets/cassiniModelBase64';
 
 const POINT_COLOR_PALETTE = [0xff0000, 0xffa500, 0xffff00, 0x00ff00, 0x0000ff, 0x800080];
 const MAX_SYNCED_VECTORS = 5;
-const GEO_GRID_SIZE = 681;
+const GEO_GRID_SIZE = 641;
 const GEO_BAND_SIZE = GEO_GRID_SIZE * GEO_GRID_SIZE;
 const LAT_GRID_LABELS = [60, 30, 0, -30, -60];
 const VECTOR_LEFT_SHIFT_DEG = 0;
@@ -1621,7 +1621,7 @@ function SphereView({
           }
 
           if (notifySelection && uv && interactionRef.current.onSurfacePointSelect) {
-            const gridSize = 681;
+            const gridSize = 641;
             const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
             const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
             const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
@@ -2035,7 +2035,7 @@ function SphereView({
 
             const uv = intersects[0].uv;
             if (uv && interactionRef.current.onSurfacePointSelect) {
-              const gridSize = 681;
+              const gridSize = 641;
               const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
               const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
               const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
@@ -2061,7 +2061,7 @@ function SphereView({
           if (mode === 'plotMultiple') {
             const uv = intersects[0].uv;
             if (uv && interactionRef.current.onSurfacePointSelect) {
-              const gridSize = 681;
+              const gridSize = 641;
               const x = Math.max(0, Math.min(gridSize - 1, Math.round(uv.x * (gridSize - 1))));
               const y = Math.max(0, Math.min(gridSize - 1, Math.round((1 - uv.y) * (gridSize - 1))));
               const localHit = mesh.worldToLocal(hitPoint.clone()).normalize();
@@ -2506,7 +2506,7 @@ function SphereView({
               setMarkerHoverState(null);
               hideVectorTooltip();
 
-              const gridSize = 681;
+              const gridSize = 641;
               incomingPoints.slice(0, MAX_SYNCED_VECTORS).forEach((point, index) => {
                 const hasLocal = Number.isFinite(point?.local?.x) && Number.isFinite(point?.local?.y) && Number.isFinite(point?.local?.z);
                 const hasGeo = Number.isFinite(point?.lat) && Number.isFinite(point?.lon);

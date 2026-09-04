@@ -189,7 +189,9 @@ const SpectralPlot = ({
   albedo = 0.1,
   spectralResolution = 'high',
   selectedPhaseAngle = null,
-  spectralLoading = false
+  spectralLoading = false,
+  hazeAbundance = 1.0,
+  methaneAbundance = 1.0
 }) => {
   const [actualAngles, setActualAngles] = useState({ incidence: 0, emission: 0, azimuth: 0 });
   const [gasTransmissionData, setGasTransmissionData] = useState(null);
@@ -329,7 +331,8 @@ const SpectralPlot = ({
             pointEmission,
             pointAzimuth,
             caseType,
-            pointAlbedo
+            pointAlbedo,
+            { hazeAbundance, methaneAbundance}
           );
 
           if (data && data.wavelengths && data.wavelengths.length > 0) {
@@ -433,7 +436,8 @@ const SpectralPlot = ({
             selectedEmission,
             selectedAzimuth,
             caseType,
-            surfaceAlbedo
+            surfaceAlbedo,
+            { hazeAbundance, methaneAbundance }
           );
 
           if (data && data.wavelengths && data.wavelengths.length > 0) {
@@ -554,7 +558,7 @@ const SpectralPlot = ({
     }
 
     return traces;
-  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins, spectralResolution, selectedPhaseAngle]);
+  }, [processedData, incidenceAngle, emissionAngle, azimuthAngle, selectedCases, plotMultiple, geoValues, transmissionToggles, gasTransmissionData, spectralUnits, solarSpectrum, getSolarFlux, albedo, numBins, spectralResolution, selectedPhaseAngle, hazeAbundance, methaneAbundance]);
 
   // Update actualAngles in a separate effect to avoid infinite loop
   useEffect(() => {

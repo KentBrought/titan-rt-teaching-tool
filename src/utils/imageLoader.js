@@ -18,23 +18,22 @@ export const formatPhaseAngle = (phaseAngle) => {
  * Generate the filename for a given phase angle
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {number} albedo - Albedo value (0.1 or 0.2)
+ * @param {string} folderName - Folder name for haze/methane (e.g., 'haze0_methane0')
  * @returns {string} Filename for the image
  */
-export const getImageFilename = (phaseAngle, albedo = 0.1) => {
+export const getImageFilename = (phaseAngle, albedo = 0.1, folderName = '') => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  return `2012_A${albedo}_p${paddedPhase}_colorCCD.img`;
+  const tag = folderName.replace(/_/g, '');
+  return `runsforgui_${tag}_p${paddedPhase}_colorCCD.img`;
 };
 
-/**
- * Generate the XML filename for a given phase angle
- * @param {number} phaseAngle - Phase angle in degrees
- * @param {number} albedo - Albedo value (0.1 or 0.2)
- * @returns {string} Filename for the XML metadata
- */
-export const getXmlFilename = (phaseAngle, albedo = 0.1) => {
+export const getXmlFilename = (phaseAngle, albedo = 0.1, folderName = '') => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
-  return `2012_A${albedo}_p${paddedPhase}_colorCCD.xml`;
+  const tag = folderName.replace(/_/g, '');
+  return `runsforgui_${tag}_p${paddedPhase}_colorCCD.xml`;
 };
+
+
 
 function canonicalDtFolder(hazeFolder, albedo, compositeType) {
   const geo = compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase';
@@ -98,25 +97,21 @@ const getAssetBasePath = (hazeFolder) => `/assets/dt/${hazeFolder}`;
  * Generate the image URL for a given phase angle, composite type, haze folder, and albedo
  * @param {number} phaseAngle - Phase angle in degrees
  * @param {string} compositeType - Type of composite image: '5_2_1.3' or '2_1.6_1.3', or 'incidence', 'emission', 'phase'
- * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'doose_0.5')
+ * @param {string} hazeFolder - Folder name for haze configuration (e.g., 'haze0_methane0')
  * @param {number} albedo - Albedo value (0.1 or 0.2)
  * @returns {string} Public URL to the image file
  */
+
 export const getImageUrl = (phaseAngle, compositeType = '5_2_1.3', hazeFolder, albedo = 0.1) => {
   const paddedPhase = formatPhaseAngle(phaseAngle);
   const resolved = resolveFolderAndAlbedo(hazeFolder, albedo, compositeType);
   const folder = resolved.folder;
-  const effectiveAlbedo = resolved.albedo;
   const basePath = getAssetBasePath(folder);
-  
-  // Handle geo-based image types (incidence, emission, phase)
-  // These are only available with albedo 0.1 in tomasko_1.0
-  if (compositeType === 'incidence' || compositeType === 'emission' || compositeType === 'phase') {
-    return `/assets/dt/tomasko_1.0/2012_A0.1_p${paddedPhase}_${compositeType}.png`;
-  }
-  
-  // Handle composite image types with albedo
-  return `${basePath}/2012_A${effectiveAlbedo}_p${paddedPhase}_${compositeType}.png`;
+
+
+  // Strip the underscore JUST for the filename
+  const tag = folder.replace(/_/g, '');
+  return `${basePath}/runsforgui_${tag}_p${paddedPhase}_${compositeType}.png`;
 };
 
 /**

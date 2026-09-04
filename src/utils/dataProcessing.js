@@ -1,22 +1,33 @@
 /**
  * Data processing utilities for PyDISORT spectral and atmospheric data
- * Updated to support albedo dimension
+ * Supports old format, albedo format, and gui_v3 7D format.
  */
 
 /**
  * Process spectral library data for visualization
- * Handles both old format (343 spectra with inc/emi/daz arrays) and new format (with albedo)
- * @param {Object} spectralData - The spectral library JSON data
- * @returns {Object} Processed data with wavelength and spectral arrays
  */
 export const processSpectralData = (spectralData) => {
   if (!spectralData) return null;
 
-  // Check if this is the new format with albedo
+  // 1. Format: gui_v3 (7D array with haze, methane, surface class)
+  if (spectralData.format === 'gui_v3' || (spectralData.spectra && spectralData.haze_scale)) {
+    return {
+      wavelength: spectralData.wavelength,
+      inc: spectralData.inc,
+      emi: spectralData.emi,
+      daz: spectralData.azimuth || spectralData.daz,
+      haze_scale: spectralData.haze_scale,
+      methane_scale: spectralData.methane_scale,
+      surface_class: spectralData.surface_class,
+      spectra: spectralData.spectra,
+      isGuiV3: true,
+      isNewFormat: false,
+    };
+  }
+
+  // 2. Format: Albedo dictionary
   if (spectralData.data && spectralData.albedo) {
-    // New format with albedo
     const { wavelength, inc, emi, daz, albedo, data } = spectralData;
-    
     return {
       wavelength,
       inc,
@@ -24,34 +35,32 @@ export const processSpectralData = (spectralData) => {
       daz,
       albedo,
       data,
-      isNewFormat: true
-    };
-  } else {
-    // Old format without albedo
-    const { wavelength, inc, emi, daz, standard, no_ch4, no_haze } = spectralData;
-
-    return {
-      wavelength,
-      inc,
-      emi,
-      daz,
-      standard,
-      no_ch4,
-      no_haze,
-      isNewFormat: false
+      isGuiV3: false,
+      isNewFormat: true,
     };
   }
+
+  // 3. Format: Legacy flat
+  const { wavelength, inc, emi, daz, standard, no_ch4, no_haze } = spectralData;
+  return {
+    wavelength,
+    inc,
+    emi,
+    daz,
+    standard,
+    no_ch4,
+    no_haze,
+    isGuiV3: false,
+    isNewFormat: false,
+  };
 };
 
 /**
  * Get available angles from spectral data
- * @param {Object} spectralData - The spectral library data
- * @returns {Object} Available angles
  */
 export const getAvailableAngles = (spectralData) => {
   if (!spectralData) return { incidence: [], emission: [], azimuth: [] };
-  
-  // Handle both TypedArrays and regular arrays
+
   const toArray = (arr) => {
     if (!arr) return [];
     if (arr instanceof Float32Array || arr instanceof Float64Array || Array.isArray(arr)) {
@@ -59,289 +68,278 @@ export const getAvailableAngles = (spectralData) => {
     }
     return [];
   };
-  
-  // For new format, inc/emi/daz are already unique arrays
-  // For old format, we need to get unique values
-  if (spectralData.isNewFormat) {
+
+  if (spectralData.isGuiV3 || spectralData.isNewFormat) {
     return {
       incidence: toArray(spectralData.inc),
       emission: toArray(spectralData.emi),
-      azimuth: toArray(spectralData.daz)
+      azimuth: toArray(spectralData.daz || spectralData.azimuth),
     };
   }
-  
+
   return {
     incidence: [...new Set(toArray(spectralData.inc))],
     emission: [...new Set(toArray(spectralData.emi))],
-    azimuth: [...new Set(toArray(spectralData.daz))]
+    azimuth: [...new Set(toArray(spectralData.daz || spectralData.azimuth))],
   };
 };
 
 /**
- * Find the closest angle value in an array and return its index
- * @param {Array} angleArray - Array of available angles
- * @param {number} targetAngle - Target angle to find
- * @returns {number} Index of closest angle
+ * Find the closest value in an array and return its index
  */
 export const findClosestAngleIndex = (angleArray, targetAngle) => {
   if (!angleArray || angleArray.length === 0) return 0;
-  
-  // Handle both TypedArrays and regular arrays
-  const getValue = (arr, index) => arr[index];
-  const getLength = (arr) => arr.length;
-  
-  // First try exact match
-  const length = getLength(angleArray);
+
   let exactIndex = -1;
-  for (let i = 0; i < length; i++) {
-    if (Math.abs(getValue(angleArray, i) - targetAngle) < 1e-6) {
+  for (let i = 0; i < angleArray.length; i++) {
+    if (Math.abs(angleArray[i] - targetAngle) < 1e-6) {
       exactIndex = i;
       break;
     }
   }
   if (exactIndex !== -1) return exactIndex;
-  
-  // Find closest match
+
   let closestIndex = 0;
-  let minDiff = Math.abs(getValue(angleArray, 0) - targetAngle);
-  
-  for (let i = 1; i < length; i++) {
-    const diff = Math.abs(getValue(angleArray, i) - targetAngle);
+  let minDiff = Math.abs(angleArray[0] - targetAngle);
+
+  for (let i = 1; i < angleArray.length; i++) {
+    const diff = Math.abs(angleArray[i] - targetAngle);
     if (diff < minDiff) {
       minDiff = diff;
       closestIndex = i;
     }
   }
-  
+
   return closestIndex;
 };
 
-/**
- * Get the actual angles from data that are closest to the provided angles
- * @param {Object} processedData - Processed spectral data
- * @param {number} incidenceAngle - Target incidence angle
- * @param {number} emissionAngle - Target emission angle
- * @param {number} azimuthAngle - Target azimuth angle
- * @returns {Object} Object with actual incidence, emission, and azimuth angles
- */
 export const getActualAngles = (processedData, incidenceAngle, emissionAngle, azimuthAngle) => {
   if (!processedData) return { incidence: 0, emission: 0, azimuth: 0 };
 
-  const { inc, emi, daz, isNewFormat } = processedData;
-  
-  if (isNewFormat) {
-    // New format: inc/emi/daz are unique angle arrays
+  const { inc, emi, daz, isGuiV3, isNewFormat } = processedData;
+
+  if (isGuiV3 || isNewFormat) {
     const incidenceIndex = findClosestAngleIndex(inc, incidenceAngle);
     const emissionIndex = findClosestAngleIndex(emi, emissionAngle);
     const azimuthIndex = findClosestAngleIndex(daz, azimuthAngle);
-    
+
     return {
       incidence: inc[incidenceIndex] ?? incidenceAngle,
       emission: emi[emissionIndex] ?? emissionAngle,
-      azimuth: daz[azimuthIndex] ?? azimuthAngle
-    };
-  } else {
-    // Old format: find closest match in the 343 combinations
-    const incidenceIndex = inc ? findClosestAngleIndex(inc, incidenceAngle) : 0;
-    const emissionIndex = emi ? findClosestAngleIndex(emi, emissionAngle) : 0;
-    const azimuthIndex = daz ? findClosestAngleIndex(daz, azimuthAngle) : 0;
-
-    const getValue = (arr, index) => arr && arr[index] !== undefined ? arr[index] : undefined;
-    
-    return {
-      incidence: getValue(inc, incidenceIndex) ?? incidenceAngle,
-      emission: getValue(emi, emissionIndex) ?? emissionAngle,
-      azimuth: getValue(daz, azimuthIndex) ?? azimuthAngle
+      azimuth: daz[azimuthIndex] ?? azimuthAngle,
     };
   }
+
+  const incidenceIndex = inc ? findClosestAngleIndex(inc, incidenceAngle) : 0;
+  const emissionIndex = emi ? findClosestAngleIndex(emi, emissionAngle) : 0;
+  const azimuthIndex = daz ? findClosestAngleIndex(daz, azimuthAngle) : 0;
+
+  return {
+    incidence: inc?.[incidenceIndex] ?? incidenceAngle,
+    emission: emi?.[emissionIndex] ?? emissionAngle,
+    azimuth: daz?.[azimuthIndex] ?? azimuthAngle,
+  };
 };
 
-/**
- * Calculate the flat index for a 3D angle combination in the new format
- * The data is stored as a flat array where the indices correspond to:
- * index = inc_idx * (num_emi * num_az) + emi_idx * num_az + az_idx
- * @param {number} incIdx - Incidence angle index
- * @param {number} emiIdx - Emission angle index
- * @param {number} azIdx - Azimuth angle index
- * @param {number} numEmi - Number of emission angles
- * @param {number} numAz - Number of azimuth angles
- * @returns {number} Flat array index
- */
 const calculateFlatIndex = (incIdx, emiIdx, azIdx, numEmi, numAz) => {
   return incIdx * (numEmi * numAz) + emiIdx * numAz + azIdx;
 };
 
 /**
- * Create spectral plot data for a specific angle combination and case
- * @param {Object} processedData - Processed spectral data
- * @param {number} incidenceAngle - Selected incidence angle
- * @param {number} emissionAngle - Selected emission angle
- * @param {number} azimuthAngle - Selected azimuth angle
- * @param {string} caseType - Type of case ('standard', 'no_ch4', 'no_haze')
- * @param {number} albedo - Albedo value (0, 0.1, or 0.2) - only used for new format
- * @returns {Object} Plot data with wavelengths and intensities arrays
+ * Main dispatcher to create spectral plot data
  */
-export const createSpectralPlotData = (processedData, incidenceAngle, emissionAngle, azimuthAngle, caseType, albedo = 0.1) => {
+export const createSpectralPlotData = (
+  processedData,
+  incidenceAngle,
+  emissionAngle,
+  azimuthAngle,
+  caseType,
+  albedo = 0.1,
+  options = {}
+) => {
   if (!processedData || !processedData.wavelength) return { wavelengths: [], intensities: [] };
-  // Invalid/off-disc geo samples can produce NaN angles. Never map those to a spectrum.
   if (!Number.isFinite(incidenceAngle) || !Number.isFinite(emissionAngle) || !Number.isFinite(azimuthAngle)) {
     return { wavelengths: [], intensities: [] };
   }
 
-  const { wavelength, inc, emi, daz, isNewFormat } = processedData;
-
-  if (isNewFormat) {
-    // New format with albedo
-    return createSpectralPlotDataNewFormat(processedData, incidenceAngle, emissionAngle, azimuthAngle, caseType, albedo);
-  } else {
-    // Old format without albedo
-    return createSpectralPlotDataOldFormat(processedData, incidenceAngle, emissionAngle, azimuthAngle, caseType);
+  if (processedData.isGuiV3) {
+    return createSpectralPlotDataGuiV3(
+      processedData,
+      incidenceAngle,
+      emissionAngle,
+      azimuthAngle,
+      caseType,
+      options.hazeAbundance ?? 1.0,
+      options.methaneAbundance ?? 1.0,
+      options.surfaceClass ?? 0
+    );
   }
+
+  if (processedData.isNewFormat) {
+    return createSpectralPlotDataNewFormat(
+      processedData,
+      incidenceAngle,
+      emissionAngle,
+      azimuthAngle,
+      caseType,
+      albedo
+    );
+  }
+
+  return createSpectralPlotDataOldFormat(
+    processedData,
+    incidenceAngle,
+    emissionAngle,
+    azimuthAngle,
+    caseType
+  );
 };
 
 /**
- * Create spectral plot data for the new format with albedo
+ * Handler for GUI v3 (7D array)
  */
-const createSpectralPlotDataNewFormat = (processedData, incidenceAngle, emissionAngle, azimuthAngle, caseType, albedo) => {
-  const { wavelength, inc, emi, daz, data } = processedData;
-  
-  // Find closest angle indices
+const createSpectralPlotDataGuiV3 = (
+  processedData,
+  incidenceAngle,
+  emissionAngle,
+  azimuthAngle,
+  caseType,
+  hazeValue = 1.0,
+  methaneValue = 1.0,
+  surfaceClass = 0
+) => {
+  const { wavelength, inc, emi, daz, haze_scale, methane_scale, surface_class, spectra } = processedData;
+
+  // 1. Determine Haze and Methane targets based on caseType override or slider values
+  let targetHaze = caseType === 'no_haze' ? 0.0 : hazeValue;
+  let targetMethane = caseType === 'no_ch4' ? 0.0 : methaneValue;
+
+  const hazeIdx = findClosestAngleIndex(haze_scale, targetHaze);
+  const methaneIdx = findClosestAngleIndex(methane_scale, targetMethane);
+  const surfIdx = findClosestAngleIndex(surface_class, surfaceClass);
+
+  // 2. Find angle indices
   const incIdx = findClosestAngleIndex(inc, incidenceAngle);
   const emiIdx = findClosestAngleIndex(emi, emissionAngle);
   const azIdx = findClosestAngleIndex(daz, azimuthAngle);
-  
-  // Check if angle differences are too large (> 10 degrees)
-  const incDiff = Math.abs(inc[incIdx] - incidenceAngle);
-  const emiDiff = Math.abs(emi[emiIdx] - emissionAngle);
-  const azDiff = Math.abs(daz[azIdx] - azimuthAngle);
-  
-  if (incDiff > 10 || emiDiff > 10 || azDiff > 10) {
-    console.log(`Angle differences too large: incidence ${incDiff.toFixed(2)}°, emission ${emiDiff.toFixed(2)}°, azimuth ${azDiff.toFixed(2)}° - returning empty data`);
+
+  // 3. Extract 1D spectral array directly from nested 7D matrix
+  const spectralValues = spectra?.[hazeIdx]?.[methaneIdx]?.[surfIdx]?.[incIdx]?.[emiIdx]?.[azIdx];
+
+  if (!spectralValues || !Array.isArray(spectralValues)) {
     return { wavelengths: [], intensities: [] };
   }
-  
-  // Calculate flat index
+
+  const length = Math.min(wavelength.length, spectralValues.length);
+  return {
+    wavelengths: wavelength.slice(0, length),
+    intensities: spectralValues.slice(0, length),
+  };
+};
+
+/**
+ * Handler for multi-albedo dictionary format
+ */
+const createSpectralPlotDataNewFormat = (
+  processedData,
+  incidenceAngle,
+  emissionAngle,
+  azimuthAngle,
+  caseType,
+  albedo
+) => {
+  const { wavelength, inc, emi, daz, data } = processedData;
+
+  const incIdx = findClosestAngleIndex(inc, incidenceAngle);
+  const emiIdx = findClosestAngleIndex(emi, emissionAngle);
+  const azIdx = findClosestAngleIndex(daz, azimuthAngle);
+
   const numEmi = emi.length;
   const numAz = daz.length;
   const flatIndex = calculateFlatIndex(incIdx, emiIdx, azIdx, numEmi, numAz);
-  
-  // Get the albedo key
+
   const albedoKey = `albedo_${albedo}`;
-  
-  if (!data[albedoKey]) {
-    const fallbackKey = 'albedo_0.1';
-    if (!data[fallbackKey]) {
-      console.error('No albedo data found');
-      return { wavelengths: [], intensities: [] };
-    }
-  }
-  const albedoData = data[albedoKey] || data['albedo_0.1'];
-  
-  // Get spectral values for the case type
+  const albedoData = data[albedoKey] || data['albedo_0.1'] || data['albedo_0'] || Object.values(data)[0];
+
+  if (!albedoData) return { wavelengths: [], intensities: [] };
+
   let spectralValues = null;
   switch (caseType) {
-    case 'standard':
-      spectralValues = albedoData.standard?.[flatIndex];
-      break;
     case 'no_ch4':
       spectralValues = albedoData.no_ch4?.[flatIndex];
       break;
     case 'no_haze':
       spectralValues = albedoData.no_haze?.[flatIndex];
       break;
+    case 'standard':
     default:
       spectralValues = albedoData.standard?.[flatIndex];
+      break;
   }
-  
-  if (!spectralValues) {
-    return { wavelengths: [], intensities: [] };
-  }
-  
+
+  if (!spectralValues) return { wavelengths: [], intensities: [] };
+
   const length = Math.min(wavelength.length, spectralValues.length);
-  
   return {
     wavelengths: wavelength.slice(0, length),
-    intensities: spectralValues.slice(0, length)
+    intensities: spectralValues.slice(0, length),
   };
 };
 
 /**
- * Create spectral plot data for the old format without albedo
+ * Handler for legacy flat format
  */
-const createSpectralPlotDataOldFormat = (processedData, incidenceAngle, emissionAngle, azimuthAngle, caseType) => {
+const createSpectralPlotDataOldFormat = (
+  processedData,
+  incidenceAngle,
+  emissionAngle,
+  azimuthAngle,
+  caseType
+) => {
   const { wavelength, inc, emi, daz, standard, no_ch4, no_haze } = processedData;
-  
-  // The inc, emi, daz arrays contain the angle values for each spectrum (343 elements each)
-  // We need to find the spectrum index that matches the requested angles
-  const getValue = (arr, index) => arr && arr[index] !== undefined ? arr[index] : undefined;
-  const getLength = (arr) => arr ? arr.length : 0;
-  
-  const numSpectra = getLength(inc);
+
+  const numSpectra = inc ? inc.length : 0;
   let bestMatchIndex = -1;
   let minDistance = Infinity;
-  
-  // Find the spectrum with angles closest to the requested angles
+
   for (let i = 0; i < numSpectra; i++) {
-    const incVal = getValue(inc, i);
-    const emiVal = getValue(emi, i);
-    const dazVal = getValue(daz, i);
-    
+    const incVal = inc[i];
+    const emiVal = emi[i];
+    const dazVal = daz[i];
     if (incVal === undefined || emiVal === undefined || dazVal === undefined) continue;
-    
-    // Calculate distance (sum of squared differences)
-    const distance = Math.pow(incVal - incidenceAngle, 2) + 
-                     Math.pow(emiVal - emissionAngle, 2) + 
-                     Math.pow(dazVal - azimuthAngle, 2);
-    
+
+    const distance =
+      Math.pow(incVal - incidenceAngle, 2) +
+      Math.pow(emiVal - emissionAngle, 2) +
+      Math.pow(dazVal - azimuthAngle, 2);
+
     if (distance < minDistance) {
       minDistance = distance;
       bestMatchIndex = i;
     }
   }
 
-  const angleIndex = bestMatchIndex;
+  if (bestMatchIndex < 0) return { wavelengths: [], intensities: [] };
 
-  if (angleIndex >= 0) {
-    const foundInc = getValue(inc, angleIndex);
-    const foundEmi = getValue(emi, angleIndex);
-    const foundDaz = getValue(daz, angleIndex);
-    
-    // Check if any angle difference is greater than 10 degrees
-    const incDiff = Math.abs(foundInc - incidenceAngle);
-    const emiDiff = Math.abs(foundEmi - emissionAngle);
-    const dazDiff = Math.abs(foundDaz - azimuthAngle);
-    
-    if (incDiff > 10 || emiDiff > 10 || dazDiff > 10) {
-      return { wavelengths: [], intensities: [] };
-    }
-  } else {
-    return { wavelengths: [], intensities: [] };
-  }
-
-  // Get the spectral data for the selected case
   let spectralValues = null;
   switch (caseType) {
-    case 'standard':
-      spectralValues = standard?.[angleIndex];
-      break;
     case 'no_ch4':
-      spectralValues = no_ch4?.[angleIndex];
+      spectralValues = no_ch4?.[bestMatchIndex];
       break;
     case 'no_haze':
-      spectralValues = no_haze?.[angleIndex];
+      spectralValues = no_haze?.[bestMatchIndex];
       break;
+    case 'standard':
     default:
-      spectralValues = standard?.[angleIndex];
+      spectralValues = standard?.[bestMatchIndex];
+      break;
   }
 
-  if (!spectralValues) {
-    return { wavelengths: [], intensities: [] };
-  }
+  if (!spectralValues) return { wavelengths: [], intensities: [] };
 
   const length = Math.min(wavelength.length, spectralValues.length);
-  
   return {
     wavelengths: wavelength.slice(0, length),
-    intensities: spectralValues.slice(0, length)
+    intensities: spectralValues.slice(0, length),
   };
 };
