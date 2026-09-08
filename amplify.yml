@@ -7,6 +7,8 @@ frontend:
         - nvm use 18
         - node -v
         - npm -v
+        - git lfs install
+        - git lfs pull
         - rm -rf build
         - npm install
     build:
