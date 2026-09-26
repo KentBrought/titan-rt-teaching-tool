@@ -226,6 +226,13 @@ const createSpectralPlotDataGuiV3 = (
   // 3. Extract 1D spectral array directly from nested 7D matrix
   const spectralValues = spectra?.[hazeIdx]?.[methaneIdx]?.[surfIdx]?.[incIdx]?.[emiIdx]?.[azIdx];
 
+  console.log("=== CHECKING ZERO ATMOSPHERE ===");
+  console.log("Available haze_scale values:", haze_scale);
+  console.log("Available methane_scale values:", methane_scale);
+  console.log("Target Haze:", targetHaze, "-> Matched Index:", hazeIdx, "-> Value:", haze_scale?.[hazeIdx]);
+  console.log("Target Methane:", targetMethane, "-> Matched Index:", methaneIdx, "-> Value:", methane_scale?.[methaneIdx]);
+  console.log("Returned Spectral Array (first 5 values):", spectralValues?.slice(0, 5));
+  
   if (!spectralValues || !Array.isArray(spectralValues)) {
     return { wavelengths: [], intensities: [] };
   }
@@ -235,6 +242,8 @@ const createSpectralPlotDataGuiV3 = (
     wavelengths: wavelength.slice(0, length),
     intensities: spectralValues.slice(0, length),
   };
+
+
 };
 
 /**

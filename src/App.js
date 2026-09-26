@@ -2807,7 +2807,7 @@ function App() {
                                     Color composite (um)
                                   </Tooltip>
                                 </h3>
-                                <div className="radio-group">
+                                <div className="radio-group" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                   <label className="radio-label">
                                     <input
                                       type="radio"
@@ -2816,7 +2816,7 @@ function App() {
                                       checked={compositeType === '5_2_1.3'}
                                       onChange={(e) => setCompositeType(e.target.value)}
                                     />
-                                    <span>5, 2, 1.3 um</span>
+                                    <span>5, 2, 1.3 μm</span>
                                   </label>
                                   <label className="radio-label">
                                     <input
@@ -2826,7 +2826,37 @@ function App() {
                                       checked={compositeType === '2_1.6_1.3'}
                                       onChange={(e) => setCompositeType(e.target.value)}
                                     />
-                                    <span>2, 1.6, 1.3 um</span>
+                                    <span>2, 1.6, 1.3 μm</span>
+                                  </label>
+                                  <label className="radio-label">
+                                    <input
+                                      type="radio"
+                                      name="compositeType"
+                                      value="2.2_2.1_2.0"
+                                      checked={compositeType === '2.2_2.1_2.0'}
+                                      onChange={(e) => setCompositeType(e.target.value)}
+                                    />
+                                    <span>2.2, 2.1, 2.0 μm</span>
+                                  </label>
+                                  <label className="radio-label">
+                                    <input
+                                      type="radio"
+                                      name="compositeType"
+                                      value="2.4_1.7_1.2"
+                                      checked={compositeType === '2.4_1.7_1.2'}
+                                      onChange={(e) => setCompositeType(e.target.value)}
+                                    />
+                                    <span>2.4, 1.7, 1.2 μm</span>
+                                  </label>
+                                  <label className="radio-label">
+                                    <input
+                                      type="radio"
+                                      name="compositeType"
+                                      value="1.4_1.2_1.0"
+                                      checked={compositeType === '1.4_1.2_1.0'}
+                                      onChange={(e) => setCompositeType(e.target.value)}
+                                    />
+                                    <span>1.4, 1.2, 1.0 μm</span>
                                   </label>
                                 </div>
                               </div>

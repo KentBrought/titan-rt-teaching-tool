@@ -5,7 +5,6 @@ Temporary script to generate composite RGB images from CCD color image layers.
 import numpy as np
 from PIL import Image
 import os
-import struct
 
 def read_ccd_image(img_path):
     """
@@ -20,12 +19,11 @@ def read_ccd_image(img_path):
     num_samples = 641
     total_elements = num_bands * num_lines * num_samples
     
-    floats = struct.unpack(f'<{total_elements}f', data[:total_elements * 4])
-    image_data = np.array(floats).reshape((num_bands, num_lines, num_samples))
-    
-    return image_data
+    # Fast binary read directly into numpy array
+    image_data = np.frombuffer(data, dtype='<f4')[:total_elements]
+    return image_data.reshape((num_bands, num_lines, num_samples))
 
-def normalize_layer(layer_data, method='logarithmic'):
+def normalize_layer(layer_data, method='percentile'):
     """
     Normalize a single layer to 0-255 range independently.
     Supports 'percentile', 'logarithmic', and 'gamma' to enhance image details.
@@ -35,24 +33,20 @@ def normalize_layer(layer_data, method='logarithmic'):
         return np.zeros_like(layer_data, dtype=np.uint8)
         
     if method == 'logarithmic':
-        # 1. Shift to positive domain and take log to compress bright haze highlights
         min_val = np.min(valid_data)
         log_data = np.log10(layer_data - min_val + 1.0)
-        
         p2 = np.percentile(log_data[np.isfinite(log_data)], 2)
         p98 = np.percentile(log_data[np.isfinite(log_data)], 98)
         normalized = (log_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(log_data)
         
     elif method == 'gamma':
-        # 2. Power-law scaling (Gamma = 0.5 pulls up surface details out of shadows)
         p2 = np.percentile(valid_data, 2)
         p98 = np.percentile(valid_data, 98)
         normalized = (layer_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(layer_data)
         normalized = np.clip(normalized, 0, 1)
-        normalized = np.power(normalized, 0.5) # Gamma tuning adjustment
+        normalized = np.power(normalized, 0.5)
         
     else:
-        # 3. Your original standard linear percentile stretch
         p2 = np.percentile(valid_data, 2)
         p98 = np.percentile(valid_data, 98)
         normalized = (layer_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(layer_data)
@@ -60,7 +54,7 @@ def normalize_layer(layer_data, method='logarithmic'):
     normalized = np.clip(normalized, 0, 1)
     return (normalized * 255).astype(np.uint8)
 
-def create_composite(ccd_data, red_layer_idx, green_layer_idx, blue_layer_idx, method='logarithmic'):
+def create_composite(ccd_data, red_layer_idx, green_layer_idx, blue_layer_idx, method='percentile'):
     """
     Create an RGB composite image from specified layers, normalizing each layer independently.
     """
@@ -72,21 +66,22 @@ def create_composite(ccd_data, red_layer_idx, green_layer_idx, blue_layer_idx, m
     return Image.fromarray(rgb_array, 'RGB')
 
 def generate_composites_for_all_angles():
-    """
-    Generate composite images for all phase angles across all 9 matrix folders dynamically.
-    """
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    base_raw_dir = os.path.join(script_dir, 'public', 'assets', 'raw')
-    base_frontend_dir = os.path.join(script_dir, 'public', 'assets', 'dt')
+    base_dt_dir = os.path.join(script_dir, 'public', 'assets', 'dt')
     
     phase_angles = range(0, 185, 15)
     
     composites = {
-        '5_2_1.3': {'red': 14, 'green': 8, 'blue': 4},
-        '2_1.6_1.3': {'red': 8, 'green': 6, 'blue': 4}
+        # Cloud-detection: RGB = 2.2, 2.1, 2.0 um
+        '2.2_2.1_2.0': {'red': 10, 'green': 9, 'blue': 8},
+        
+        # Haze 1: RGB = 2.4, 1.7, 1.2 um (bands 2.39, 1.70, 1.21 um)
+        '2.4_1.7_1.2': {'red': 11, 'green': 7, 'blue': 3},
+        
+        # Haze 2: RGB = 1.4, 1.2, 1.0 um (bands 1.39, 1.21, 1.00 um)
+        '1.4_1.2_1.0': {'red': 5, 'green': 3, 'blue': 1}
     }
     
-    # CHOOSE METHOD: Try 'percentile', 'logarithmic', or 'gamma' to see what looks best!
     normalization_method = 'percentile'
     
     haze_levels = ['0', '0.5', '1']
@@ -94,22 +89,20 @@ def generate_composites_for_all_angles():
     
     for h in haze_levels:
         for m in methane_levels:
-            raw_folder = f"haze{h}methane{m}"
+            folder_name = f"haze{h}_methane{m}"
+            dt_dir = os.path.join(base_dt_dir, folder_name)
             
-            # The directory where your new .img files are (and where PNGs will now be saved)
-            base_dir = os.path.join(base_raw_dir, raw_folder)
-            
-            if not os.path.exists(base_dir):
+            if not os.path.exists(dt_dir):
                 continue
                 
-            print(f"\n=== Processing Matrix Folder: {raw_folder} ===")
+            tag = f"haze{h}methane{m}"
+            print(f"\n=== Processing Folder: {folder_name} ===")
     
             for phase_angle in phase_angles:
                 padded_phase = f'{phase_angle:03d}'
                 
-                # 1. READ THE NEW FILENAME FORMAT
-                img_filename = f'runsforgui_{raw_folder}_p{padded_phase}_colorCCD.img'
-                img_path = os.path.join(base_dir, img_filename)
+                img_filename = f'runsforgui_{tag}_p{padded_phase}_colorCCD.img'
+                img_path = os.path.join(dt_dir, img_filename)
                 
                 if not os.path.exists(img_path):
                     continue
@@ -126,19 +119,16 @@ def generate_composites_for_all_angles():
                             method=normalization_method
                         )
                         
-                        # 2. OUTPUT THE NEW STANDARDIZED FILENAME FORMAT
-                        output_filename = f'runsforgui_{raw_folder}_p{padded_phase}_{comp_key}.png'
-                        
-                        # 3. SAVE DIRECTLY TO THE 'RAW' FOLDER (base_dir)
-                        output_path = os.path.join(base_dir, output_filename)
+                        output_filename = f'runsforgui_{tag}_p{padded_phase}_{comp_key}.png'
+                        output_path = os.path.join(dt_dir, output_filename)
                         composite_img.save(output_path)
                         print(f'    Saved: {output_filename}')
                 
                 except Exception as e:
                     print(f'  Error processing {img_filename}: {e}')
                     continue
-    
-    print('\nDone!')
+
+    print("\nAll composite images generated successfully!")
 
 if __name__ == '__main__':
     generate_composites_for_all_angles()

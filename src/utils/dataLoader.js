@@ -188,6 +188,25 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024, onProgress =
       const data = await workerPromise;
       dataCache.set(url, data);
       console.log(`Successfully parsed and cached ${url} in worker`);
+
+      // Keep spectral library data as-is (no conversion to avoid memory spikes)
+    // Modern JS engines handle arrays efficiently, and conversion causes temporary memory doubling
+    if (url.includes('init_gui_library.json')) {
+      console.log('Loaded spectral data (keeping all wavelength points, no conversion)...');
+      console.log(`Full data: ${data.wavelength?.length || 0} wavelengths, ${data.standard?.length || 0} spectra`);
+      
+      // --- ADD THESE DEBUG LOGS ---
+      console.log("=== DATASET KEYS IN JSON ===");
+      console.log("All top-level keys:", Object.keys(data));
+      console.log("no_ch4 present?", !!data.no_ch4, data.no_ch4?.length);
+      console.log("no_haze present?", !!data.no_haze, data.no_haze?.length);
+      console.log("Is there a no_atm key?", data.no_atm || data.no_atmosphere || data.surface || data.surface_albedo || "NONE FOUND");
+      console.log("============================");
+      // ----------------------------
+
+      // Log memory usage for monitoring
+      const memoryInfo = getMemoryInfo();
+    }
       return data;
     }
 
@@ -222,18 +241,7 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024, onProgress =
       throw parseErr;
     }
     
-    // Keep spectral library data as-is (no conversion to avoid memory spikes)
-    // Modern JS engines handle arrays efficiently, and conversion causes temporary memory doubling
-    if (url.includes('init_gui_library.json')) {
-      console.log('Loaded spectral data (keeping all wavelength points, no conversion)...');
-      console.log(`Full data: ${data.wavelength?.length || 0} wavelengths, ${data.standard?.length || 0} spectra`);
-      
-      // Log memory usage for monitoring
-      const memoryInfo = getMemoryInfo();
-      if (memoryInfo) {
-        console.log('Memory usage after loading:', memoryInfo);
-      }
-    }
+    
     
     // Cache the data
     dataCache.set(url, data);
