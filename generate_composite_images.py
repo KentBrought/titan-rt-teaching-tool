@@ -23,34 +23,51 @@ def read_ccd_image(img_path):
     image_data = np.frombuffer(data, dtype='<f4')[:total_elements]
     return image_data.reshape((num_bands, num_lines, num_samples))
 
-def normalize_layer(layer_data, method='percentile'):
+def normalize_layer(layer_data, method='percentile', noise_floor=1e-10):
     """
     Normalize a single layer to 0-255 range independently.
     Supports 'percentile', 'logarithmic', and 'gamma' to enhance image details.
+
+    Some RT runs (notably haze=0 cases at high emission/incidence angles in
+    deep methane-absorption bands) have essentially no real signal: the true
+    radiance underflows float32 and what's left is subnormal floating-point
+    noise on the order of 1e-20 to 1e-40 (or exact 0), rather than a smoothly
+    varying physical value. Real signal in this dataset is always many orders
+    of magnitude above that (>>1e-6). If that noise is fed into the
+    percentile stretch, p98 can itself land on a tiny noise value, so dividing
+    by it blows the noise up to full brightness (0-255) - producing a bright,
+    hard-edged "bullseye" where the noise happens to be nonzero, sitting on
+    top of a black region where it's exactly zero. Treating anything at or
+    below `noise_floor` as no-signal (clamped to 0) keeps that noise out of
+    the percentile calculation and out of the final image, so a channel with
+    no real signal renders as black instead of a false bright spot.
     """
-    valid_data = layer_data[np.isfinite(layer_data)]
+    finite_mask = np.isfinite(layer_data)
+    clean_data = np.where(finite_mask & (np.abs(layer_data) > noise_floor), layer_data, 0.0)
+    valid_data = clean_data[finite_mask]
     if len(valid_data) == 0:
         return np.zeros_like(layer_data, dtype=np.uint8)
-        
+
     if method == 'logarithmic':
         min_val = np.min(valid_data)
-        log_data = np.log10(layer_data - min_val + 1.0)
-        p2 = np.percentile(log_data[np.isfinite(log_data)], 2)
-        p98 = np.percentile(log_data[np.isfinite(log_data)], 98)
+        log_data = np.log10(clean_data - min_val + 1.0)
+        valid_log = log_data[finite_mask]
+        p2 = np.percentile(valid_log[np.isfinite(valid_log)], 2)
+        p98 = np.percentile(valid_log[np.isfinite(valid_log)], 98)
         normalized = (log_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(log_data)
-        
+
     elif method == 'gamma':
         p2 = np.percentile(valid_data, 2)
         p98 = np.percentile(valid_data, 98)
-        normalized = (layer_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(layer_data)
+        normalized = (clean_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(clean_data)
         normalized = np.clip(normalized, 0, 1)
         normalized = np.power(normalized, 0.5)
-        
+
     else:
         p2 = np.percentile(valid_data, 2)
         p98 = np.percentile(valid_data, 98)
-        normalized = (layer_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(layer_data)
-        
+        normalized = (clean_data - p2) / (p98 - p2) if p98 != p2 else np.zeros_like(clean_data)
+
     normalized = np.clip(normalized, 0, 1)
     return (normalized * 255).astype(np.uint8)
 

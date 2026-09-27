@@ -332,7 +332,7 @@ const SpectralPlot = ({
             pointAzimuth,
             caseType,
             pointAlbedo,
-            { hazeAbundance, methaneAbundance}
+            { hazeAbundance, methaneAbundance, surfaceClass: geoValue?.materialClass ?? 0 }
           );
 
           if (data && data.wavelengths && data.wavelengths.length > 0) {
@@ -437,7 +437,7 @@ const SpectralPlot = ({
             selectedAzimuth,
             caseType,
             surfaceAlbedo,
-            { hazeAbundance, methaneAbundance }
+            { hazeAbundance, methaneAbundance, surfaceClass: geoValues?.materialClass ?? 0 }
           );
 
           if (data && data.wavelengths && data.wavelengths.length > 0) {
