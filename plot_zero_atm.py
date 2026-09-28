@@ -3,7 +3,7 @@ import json
 import matplotlib.pyplot as plt
 
 # 1. Path to your compressed dataset
-file_path = "public/assets/dt/tomasko_1.0/init_gui_library.json.gz"
+file_path = "public/assets/dt/tomasko_1.0/4th_gui_library.json.gz"
 
 print(f"Loading {file_path}...")
 with gzip.open(file_path, "rt", encoding="utf-8") as f:
