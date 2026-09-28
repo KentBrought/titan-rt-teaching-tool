@@ -191,7 +191,7 @@ export const loadJsonFile = async (url, maxSize = 50 * 1024 * 1024, onProgress =
 
       // Keep spectral library data as-is (no conversion to avoid memory spikes)
     // Modern JS engines handle arrays efficiently, and conversion causes temporary memory doubling
-    if (url.includes('init_gui_library.json')) {
+    if (url.includes('4th_gui_library.json')) {
       console.log('Loaded spectral data (keeping all wavelength points, no conversion)...');
       console.log(`Full data: ${data.wavelength?.length || 0} wavelengths, ${data.standard?.length || 0} spectra`);
       
