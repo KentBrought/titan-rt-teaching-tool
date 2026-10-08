@@ -7,6 +7,9 @@ frontend:
         - nvm use 18
         - node -v
         - npm -v
+        - 'command -v git-lfs >/dev/null 2>&1 || dnf install -y git-lfs || yum install -y git-lfs || sudo dnf install -y git-lfs || sudo yum install -y git-lfs || true'
+        - 'command -v git-lfs >/dev/null 2>&1 || (curl -fsSL -o /tmp/git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.8.0/git-lfs-linux-amd64-v3.8.0.tar.gz && rm -rf /tmp/git-lfs-extract && mkdir -p /tmp/git-lfs-extract && tar -xzf /tmp/git-lfs.tar.gz -C /tmp/git-lfs-extract --strip-components=1 && cp /tmp/git-lfs-extract/git-lfs /usr/local/bin/git-lfs && chmod 755 /usr/local/bin/git-lfs)'
+        - git lfs version
         - git lfs install
         - git lfs pull
         - rm -rf build
